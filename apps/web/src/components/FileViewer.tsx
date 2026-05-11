@@ -4959,7 +4959,9 @@ function HtmlViewer({
             ) : null}
             {boardMode ? (
               <CommentSidePanel
-                comments={previewComments.filter((comment) => comment.filePath === file.name)}
+                comments={previewComments.filter(
+                  (comment) => comment.filePath === file.name && comment.status === 'open',
+                )}
                 selectedIds={selectedSideCommentIds}
                 onToggleSelect={(commentId) => {
                   setSelectedSideCommentIds((current) => {
