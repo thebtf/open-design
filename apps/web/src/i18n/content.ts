@@ -56,6 +56,12 @@ const DE_SKILL_COPY: Record<string, LocalizedSkillCopy> = {
     description:
       'Audio-Generierung für Jingles, Musikbetten, Voiceover und Soundeffekte. Musik-Anfragen werden an Suno V5 / Udio / Lyria geleitet, Sprache an MiniMax TTS / FishAudio / ElevenLabs V3 und SFX an ElevenLabs SFX oder AudioCraft. Die Ausgabe ist eine MP3/WAV-Datei im Projektordner.',
   },
+  'agent-browser': {
+    examplePrompt:
+      'Verifizieren Sie die lokale Open-Design-Vorschau mit agent-browser: starten oder verbinden Sie CDP Chrome, öffnen Sie http://127.0.0.1:17573/, melden Sie Titel, URL, sichtbare Texte und speichern Sie einen Screenshot.',
+    description:
+      'Browser-Automation für lokale Open-Design-Preview-Validierung. Verbindet sich mit einem geprüften CDP-Chrome-Endpunkt, liest gerenderten Seitenzustand, kann bei Bedarf klicken/tippen und speichert einen Screenshot.',
+  },
   'blog-post': {
     examplePrompt:
       'Ein Long-form-Artikel / Blogpost — Masthead, Hero-Bild-Platzhalter, Artikeltext mit Abbildungen und Pull Quotes, Autorenzeile, verwandte Beiträge.',

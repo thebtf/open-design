@@ -7,6 +7,12 @@ export const FR_SKILL_COPY: Record<string, { description?: string; examplePrompt
     description:
       'Génération audio pour jingles, musiques de fond, voix off et effets sonores. Les demandes de musique partent vers Suno V5 / Udio / Lyria, la voix vers MiniMax TTS / FishAudio / ElevenLabs V3, et les SFX vers ElevenLabs SFX ou AudioCraft. La sortie est un fichier MP3/WAV dans le dossier projet.',
   },
+  'agent-browser': {
+    examplePrompt:
+      'Vérifiez la preview locale Open Design avec agent-browser : démarrez ou connectez Chrome CDP, ouvrez http://127.0.0.1:17573/, puis rapportez le titre, l’URL, le texte visible et enregistrez un screenshot.',
+    description:
+      'Automatisation navigateur pour valider la preview locale Open Design. Se connecte à un endpoint Chrome CDP vérifié, lit l’état rendu de la page, peut cliquer/saisir si nécessaire et enregistre un screenshot.',
+  },
   'blog-post': {
     examplePrompt:
       'Un article long-form / blog post — masthead, placeholder d’image hero, corps d’article avec figures et pull quotes, ligne auteur, articles associés.',

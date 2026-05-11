@@ -7,6 +7,12 @@ export const RU_SKILL_COPY: Record<string, { description?: string; examplePrompt
     description:
       'Генерация аудио для джинглов, музыкальных подложек, закадрового голоса и звуковых эффектов. Музыкальные запросы направляются в Suno V5 / Udio / Lyria, речь — в MiniMax TTS / FishAudio / ElevenLabs V3, а SFX — в ElevenLabs SFX или AudioCraft. На выходе — файл MP3/WAV в папке проекта.',
   },
+  'agent-browser': {
+    examplePrompt:
+      'Проверьте локальный preview Open Design через agent-browser: запустите или подключите CDP Chrome, откройте http://127.0.0.1:17573/, сообщите title, URL, видимый текст и сохраните screenshot.',
+    description:
+      'Автоматизация браузера для проверки локального preview Open Design. Подключается к проверенному CDP-эндпоинту Chrome, считывает отрендеренное состояние страницы, при необходимости кликает/вводит текст и сохраняет screenshot.',
+  },
   'blog-post': {
     examplePrompt:
       'Развернутая статья / пост для блога — masthead, hero-изображение-заглушка, основной текст с иллюстрациями и врезками с цитатами, строка автора, связанные материалы.',
