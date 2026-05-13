@@ -278,6 +278,7 @@ export interface Dict {
   'settings.connectorsSaveKey': string;
   'settings.connectorsSaveKeyTitle': string;
   'settings.connectorsKeySaving': string;
+  'settings.connectorsKeySaved': string;
   'settings.connectorsKeyError': string;
   'settings.connectorsHelpSaved': string;
   'settings.connectorsHelpUnsaved': string;
@@ -407,6 +408,7 @@ export interface Dict {
   'settings.memoryExtractionsHint': string;
   'settings.memoryExtractionsEmpty': string;
   'settings.memoryExtractionsRefresh': string;
+  'settings.memoryExtractionsRefreshing': string;
   'settings.memoryExtractionPhaseRunning': string;
   'settings.memoryExtractionPhaseSuccess': string;
   'settings.memoryExtractionPhaseSkipped': string;
@@ -1578,7 +1580,7 @@ export interface Dict {
   'sketch.textPrompt': string;
   'sketch.textModalTitle': string;
   // Critique Theater (Phase 8 components; Phase 9 fills non-English locales)
-  'critiqueTheater.title': string;
+  'critiqueTheater.userFacingName': string;
   'critiqueTheater.roleDesigner': string;
   'critiqueTheater.roleCritic': string;
   'critiqueTheater.roleBrand': string;

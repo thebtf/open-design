@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatComposer } from '../../src/components/ChatComposer';
@@ -92,11 +94,27 @@ describe('ChatComposer /search command', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'drawing.png' });
     expect(dialog).toBeTruthy();
+    expect(dialog.classList.contains('staged-preview-modal')).toBe(true);
+    expect(dialog.querySelector('.staged-preview-card')).toBeTruthy();
+    expect(dialog.querySelector('.staged-preview-head')).toBeTruthy();
     const previewImage = screen.getByRole('img', { name: 'drawing.png' }) as HTMLImageElement;
     expect(previewImage.src).toContain('/api/projects/project-1/raw/uploads/drawing.png');
+    expect(dialog.querySelector('.staged-preview-card > img')).toBe(previewImage);
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: 'drawing.png' })).toBeNull();
+  });
+
+  it('keeps staged image preview modal styling available', () => {
+    const css = readFileSync(join(process.cwd(), 'src/index.css'), 'utf8');
+
+    expect(css).toContain('.staged-preview-modal');
+    expect(css).toContain('position: fixed;');
+    expect(css).toContain('.staged-preview-card');
+    expect(css).toContain('max-height: calc(100vh - 48px);');
+    expect(css).toContain('.staged-preview-head');
+    expect(css).toContain('.staged-preview-card > img');
+    expect(css).toContain('object-fit: contain;');
   });
 
   it('expands /search into a first-action research command prompt', () => {
