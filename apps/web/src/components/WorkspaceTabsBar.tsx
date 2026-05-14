@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import { navigate, type EntryHomeView, type Route } from '../router';
 import type { Project } from '../types';
@@ -45,7 +45,6 @@ interface DisplayTab {
 interface Props {
   route: Route;
   projects: Project[];
-  actions?: ReactNode;
 }
 
 const STORAGE_KEY = 'open-design:workspace-tabs:v1';
@@ -203,32 +202,30 @@ function initialTabsState(route: Route): WorkspaceTabsState {
 function syncStateToRoute(state: WorkspaceTabsState, route: Route): WorkspaceTabsState {
   const timestamp = Date.now();
   const currentActive = state.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
-  let nextTabs = state.tabs;
-  let activeTabId = state.activeTabId;
-
-  if (route.kind === 'home' && currentActive?.kind === 'entry') {
-    activeTabId = currentActive.id;
-    nextTabs = state.tabs.map((tab) =>
-      tab.id === currentActive.id
-        ? { ...tab, view: route.view, lastActiveAt: timestamp }
-        : tab,
-    );
-  } else {
+  if (!currentActive) {
     const existing = state.tabs.find((tab) => tabMatchesRoute(tab, route)) ?? null;
-    if (existing) {
-      activeTabId = existing.id;
-      nextTabs = state.tabs.map((tab) =>
-        tab.id === existing.id
-          ? { ...tabFromRoute(route, tab.createdAt), lastActiveAt: timestamp, id: tab.id }
-          : tab,
-      );
-    } else {
-      const nextTab = tabFromRoute(route, timestamp);
-      activeTabId = nextTab.id;
-      nextTabs = [...state.tabs, nextTab];
-    }
+    const nextTab = existing
+      ? { ...tabFromRoute(route, existing.createdAt), lastActiveAt: timestamp, id: existing.id }
+      : tabFromRoute(route, timestamp);
+    const nextTabs = existing
+      ? state.tabs.map((tab) => (tab.id === existing.id ? nextTab : tab))
+      : [...state.tabs, nextTab];
+    const capped = capTabs(nextTabs, nextTab.id);
+    return {
+      tabs: capped,
+      activeTabId: capped.some((tab) => tab.id === nextTab.id) ? nextTab.id : capped[0]?.id ?? '',
+    };
   }
 
+  const replacement = {
+    ...tabFromRoute(route, currentActive.createdAt),
+    id: currentActive.id,
+    lastActiveAt: timestamp,
+  };
+  const nextTabs = state.tabs
+    .filter((tab) => tab.id === currentActive.id || !tabMatchesRoute(tab, route))
+    .map((tab) => (tab.id === currentActive.id ? replacement : tab));
+  const activeTabId = replacement.id;
   const capped = capTabs(nextTabs, activeTabId);
   return {
     tabs: capped,
@@ -248,7 +245,7 @@ function normalizeSearch(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-export function WorkspaceTabsBar({ route, projects, actions }: Props) {
+export function WorkspaceTabsBar({ route, projects }: Props) {
   const t = useT();
   const [state, setState] = useState<WorkspaceTabsState>(() => initialTabsState(route));
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false);
@@ -339,20 +336,6 @@ export function WorkspaceTabsBar({ route, projects, actions }: Props) {
     navigate(routeForTab(tab));
   }
 
-  function openHomeTab() {
-    const existingHome = state.tabs.find((tab) => tab.kind === 'entry' && tab.view === 'home');
-    if (existingHome) {
-      openTab(existingHome);
-      return;
-    }
-    const tab = createEntryTab('home');
-    setState((current) => ({
-      tabs: capTabs([...current.tabs, tab], tab.id),
-      activeTabId: tab.id,
-    }));
-    navigate({ kind: 'home', view: 'home' });
-  }
-
   function createNewTab() {
     const tab = createEntryTab('home');
     setState((current) => ({
@@ -387,21 +370,6 @@ export function WorkspaceTabsBar({ route, projects, actions }: Props) {
   return (
     <header className="app-chrome-header workspace-tabs-chrome" aria-label="Workspace tabs">
       <div className="app-chrome-traffic-space workspace-tabs-traffic" aria-hidden />
-      <button
-        type="button"
-        className="workspace-tabs-identity"
-        onClick={openHomeTab}
-        title={t('entry.navHome')}
-        aria-label={t('entry.navHome')}
-      >
-        <span className="workspace-tabs-identity__mark" aria-hidden>
-          <img src="/app-icon.svg" alt="" draggable={false} />
-        </span>
-        <span className="workspace-tabs-identity__text">
-          <span className="workspace-tabs-identity__name">{t('app.brand')}</span>
-          <span className="workspace-tabs-identity__meta">Workspace</span>
-        </span>
-      </button>
       <div className="workspace-tabs-strip" role="tablist" aria-label="Open workspaces">
         {visibleTabs.map((tab) => {
           const display = displayTabById.get(tab.id) ?? displayTabFor(tab, projectById, t);
@@ -449,7 +417,6 @@ export function WorkspaceTabsBar({ route, projects, actions }: Props) {
         ) : null}
       </div>
       <div className="workspace-tabs-spacer" aria-hidden />
-      {actions ? <div className="workspace-tabs-extra-actions">{actions}</div> : null}
       <div className="workspace-tabs-actions" ref={menuRef}>
         <button
           type="button"

@@ -452,8 +452,6 @@ const MAC_WINDOW_CHROME_CSS = `
   .app-chrome-header [contenteditable],
   .app-chrome-actions,
   .app-chrome-actions *,
-  .workspace-tabs-extra-actions,
-  .workspace-tabs-extra-actions *,
   .avatar-popover,
   .avatar-popover *,
   .inline-switcher__popover,

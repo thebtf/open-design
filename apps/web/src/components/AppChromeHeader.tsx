@@ -25,12 +25,6 @@ export function AppChromeHeader({
   return (
     <header className="app-chrome-header">
       {showTrafficSpace ? <div className="app-chrome-traffic-space" aria-hidden /> : null}
-      <div className="app-chrome-brand" aria-label={t('app.brand')}>
-        <span className="app-chrome-mark" aria-hidden>
-          <img src="/app-icon.svg" alt="" className="brand-mark-img" draggable={false} />
-        </span>
-        <span className="app-chrome-name">{t('app.brand')}</span>
-      </div>
       {onBack ? (
         <button
           type="button"

@@ -16,9 +16,6 @@ import { PetOverlay } from './components/pet/PetOverlay';
 import { migrateCustomPetAtlas } from './components/pet/pets';
 import { ProjectView } from './components/ProjectView';
 import { WorkspaceTabsBar } from './components/WorkspaceTabsBar';
-import { GithubStarBadge } from './components/GithubStarBadge';
-import { InlineModelSwitcher } from './components/InlineModelSwitcher';
-import { Icon } from './components/Icon';
 import {
   SettingsDialog,
   switchApiProtocolConfig,
@@ -161,6 +158,7 @@ export function resolveSettingsCloseConfig(
 
 export function App() {
   const { t } = useI18n();
+  const clientType = useMemo(() => detectClientType(), []);
   const [config, setConfig] = useState<AppConfig>(() => loadConfig());
   const configRef = useRef(config);
   configRef.current = config;
@@ -1027,11 +1025,6 @@ export function App() {
     navigate({ kind: 'home', view: 'integrations' });
   }, []);
 
-  const openUseEverywhere = useCallback(() => {
-    setIntegrationInitialTab('use-everywhere');
-    navigate({ kind: 'home', view: 'integrations' });
-  }, []);
-
   // Cmd+, (mac) / Ctrl+, (win/linux) opens Settings. Capture phase so we
   // beat the browser's default Preferences dialog. Platform-gated so
   // meta/ctrl don't conflict across OS.
@@ -1227,46 +1220,15 @@ export function App() {
       />
     );
   }
-  const workspaceChromeActions =
-    route.kind === 'project' ? null : (
-      <>
-        <GithubStarBadge />
-        <InlineModelSwitcher
-          config={config}
-          agents={agents}
-          daemonLive={daemonLive}
-          onModeChange={handleModeChange}
-          onAgentChange={handleAgentChange}
-          onAgentModelChange={handleAgentModelChange}
-          onApiProtocolChange={handleApiProtocolChange}
-          onApiModelChange={handleApiModelChange}
-          onOpenSettings={openSettings}
-        />
-        <button
-          type="button"
-          className="use-everywhere-chip"
-          onClick={openUseEverywhere}
-          title={t('entry.useEverywhereTitle')}
-          aria-label={t('entry.useEverywhereAria')}
-          data-testid="workspace-use-everywhere-button"
-        >
-          <span className="use-everywhere-chip__icon" aria-hidden>
-            <Icon name="hammer" size={13} />
-          </span>
-          <span className="use-everywhere-chip__label">
-            {t('entry.useEverywhereTitle')}
-          </span>
-        </button>
-      </>
-    );
-
   return (
     <>
-      <div className="workspace-shell">
+      <div
+        className={`workspace-shell workspace-shell--${clientType}`}
+        data-client-type={clientType}
+      >
         <WorkspaceTabsBar
           route={route}
           projects={projects}
-          actions={workspaceChromeActions}
         />
         <div className="workspace-shell__body">{appMain}</div>
       </div>

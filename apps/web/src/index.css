@@ -325,7 +325,7 @@ code {
   height: 100vh;
   min-height: 0;
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: 40px minmax(0, 1fr);
   background: var(--bg-app);
 }
 .workspace-shell__body {
@@ -339,26 +339,24 @@ code {
 }
 
 .workspace-tabs-chrome.app-chrome-header {
-  min-height: 48px;
-  height: 48px;
-  padding: 0 10px;
-  gap: 8px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 96%, var(--bg-subtle)) 0%, var(--bg) 100%);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 10px 0 0;
+  gap: 0;
+  background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-subtle));
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--bg-panel) 80%, transparent) inset;
   user-select: none;
   -webkit-app-region: drag;
 }
 .workspace-tabs-chrome .workspace-tabs-traffic {
-  margin-right: 2px;
+  margin-right: var(--app-chrome-traffic-margin);
 }
-.workspace-tabs-identity,
 .workspace-tabs-icon-btn {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   border-color: transparent;
   background: transparent;
   color: var(--text-muted);
@@ -367,68 +365,6 @@ code {
   justify-content: center;
   flex: 0 0 auto;
   -webkit-app-region: no-drag;
-}
-.workspace-tabs-identity {
-  width: auto;
-  max-width: 210px;
-  height: 34px;
-  padding: 0 9px 0 5px;
-  gap: 8px;
-  justify-content: flex-start;
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--border) 66%, transparent);
-  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
-  box-shadow: var(--shadow-xs);
-}
-.workspace-tabs-identity:hover:not(:disabled) {
-  color: var(--text-strong);
-  background: var(--bg-panel);
-  border-color: var(--border-strong);
-}
-.workspace-tabs-identity__mark {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  overflow: hidden;
-  flex: 0 0 auto;
-}
-.workspace-tabs-identity__mark img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: contain;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-.workspace-tabs-identity__text {
-  min-width: 0;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-}
-.workspace-tabs-identity__name,
-.workspace-tabs-identity__meta {
-  max-width: 142px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: 0;
-}
-.workspace-tabs-identity__name {
-  color: var(--text-strong);
-  font-size: 12.5px;
-  line-height: 14px;
-  font-weight: 680;
-}
-.workspace-tabs-identity__meta {
-  color: var(--text-muted);
-  font-size: 10.5px;
-  line-height: 12px;
-  font-weight: 520;
 }
 .workspace-tabs-icon-btn:hover:not(:disabled),
 .workspace-tabs-icon-btn.is-active {
@@ -439,46 +375,63 @@ code {
 .workspace-tabs-strip {
   align-self: stretch;
   min-width: 0;
-  flex: 1 1 320px;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0;
+  padding-left: 0;
   overflow: hidden;
   contain: layout style paint;
   -webkit-app-region: no-drag;
 }
 .workspace-tab {
-  height: 34px;
-  min-width: 92px;
-  max-width: 208px;
-  flex: 0 1 178px;
+  position: relative;
+  height: 30px;
+  min-width: 74px;
+  max-width: 158px;
+  flex: 0 1 136px;
   padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) 20px;
   align-items: center;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
   overflow: hidden;
   contain: layout style;
   transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
 }
+.workspace-tab + .workspace-tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 18px;
+  background: color-mix(in srgb, var(--border) 78%, transparent);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 .workspace-tab:hover {
-  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
-  border-color: color-mix(in srgb, var(--border) 74%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 64%, transparent);
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
   color: var(--text);
 }
 .workspace-tab.is-active {
-  background: var(--bg-panel);
-  border-color: color-mix(in srgb, var(--border-strong) 62%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-subtle));
+  border-color: color-mix(in srgb, var(--border-strong) 52%, transparent);
   color: var(--text-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--text) 6%, transparent);
+}
+.workspace-tab:hover::before,
+.workspace-tab.is-active::before {
+  opacity: 0;
 }
 .workspace-tab__main {
   min-width: 0;
   height: 100%;
-  padding: 0 2px 0 8px;
+  padding: 0 2px 0 7px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -486,7 +439,7 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 7px;
+  gap: 6px;
   text-align: left;
 }
 .workspace-tab__main:hover:not(:disabled) {
@@ -494,31 +447,38 @@ code {
   border-color: transparent;
 }
 .workspace-tab__icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: currentColor;
-  opacity: 0.78;
+  opacity: 0.74;
   flex: 0 0 auto;
+  line-height: 0;
+}
+.workspace-tab__icon svg,
+.workspace-tab__close svg,
+.workspace-tabs-icon-btn svg {
+  display: block;
+  flex: none;
 }
 .workspace-tab__label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
-  font-weight: 560;
+  font-size: 12px;
+  font-weight: 540;
   letter-spacing: 0;
 }
 .workspace-tab__close {
-  width: 18px;
-  height: 18px;
-  margin-right: 5px;
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-faint);
   display: inline-flex;
@@ -542,31 +502,13 @@ code {
   flex: 0 0 auto;
   min-width: auto;
   max-width: none;
-  padding: 0 10px;
+  padding: 0 9px;
   color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 540;
 }
 .workspace-tabs-spacer {
   display: none;
-}
-.workspace-tabs-extra-actions {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex: 0 1 auto;
-  -webkit-app-region: no-drag;
-}
-.workspace-tabs-extra-actions .entry-star-badge,
-.workspace-tabs-extra-actions .inline-switcher__chip,
-.workspace-tabs-extra-actions .use-everywhere-chip {
-  height: 32px;
-  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
-  box-shadow: var(--shadow-xs);
-}
-.workspace-tabs-extra-actions .inline-switcher__popover,
-.workspace-tabs-extra-actions .avatar-popover,
-.workspace-tabs-extra-actions .use-everywhere-modal {
-  -webkit-app-region: no-drag;
 }
 .workspace-tabs-actions {
   position: relative;
@@ -673,10 +615,19 @@ code {
 }
 .workspace-tabs-list__icon {
   width: 17px;
+  height: 17px;
   color: var(--text-muted);
   display: inline-flex;
+  align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  line-height: 0;
+}
+.workspace-tabs-list__icon svg,
+.workspace-tabs-list__close svg,
+.workspace-tabs-search svg {
+  display: block;
+  flex: none;
 }
 .workspace-tabs-list__text {
   min-width: 0;
@@ -726,13 +677,6 @@ code {
   .workspace-tabs-chrome.app-chrome-header {
     padding-right: 6px;
   }
-  .workspace-tabs-identity {
-    max-width: 36px;
-    padding: 0 5px;
-  }
-  .workspace-tabs-identity__text {
-    display: none;
-  }
   .workspace-tab {
     min-width: 40px;
     max-width: 44px;
@@ -747,17 +691,6 @@ code {
   .workspace-tab__label,
   .workspace-tab__close,
   .workspace-tab--overflow {
-    display: none;
-  }
-}
-@media (max-width: 1180px) {
-  .workspace-tabs-extra-actions .entry-star-badge,
-  .workspace-tabs-extra-actions .use-everywhere-chip {
-    display: none;
-  }
-}
-@media (max-width: 980px) {
-  .workspace-tabs-extra-actions {
     display: none;
   }
 }
@@ -777,45 +710,9 @@ code {
 .app-chrome-traffic-space {
   width: var(--app-chrome-traffic-space);
   flex: 0 0 var(--app-chrome-traffic-space);
-  /* Add extra spacing after the traffic light controls on macOS to prevent
-     the window controls from crowding the brand logo. The daemon sets both
-     --app-chrome-traffic-space (80px) and --app-chrome-traffic-margin (8px)
-     on macOS, while other platforms keep both at 0px. */
+  /* Add extra spacing after the traffic light controls on macOS so project
+     navigation starts after the native window controls. */
   margin-right: var(--app-chrome-traffic-margin);
-}
-.app-chrome-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex-shrink: 0;
-}
-.app-chrome-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  overflow: visible;
-  flex-shrink: 0;
-}
-.app-chrome-mark .brand-mark-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  padding: 0;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-.app-chrome-name {
-  color: var(--text-strong);
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
 }
 .app-chrome-back,
 .settings-icon-btn {
@@ -8571,7 +8468,17 @@ button.connector-action.is-loading {
   font-size: 13px;
   color: var(--text-muted);
   width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
   text-align: center;
+}
+.ws-tab .tab-icon svg,
+.ws-tab-close svg {
+  display: block;
+  flex: none;
 }
 .ws-tab.active .tab-icon { color: var(--text); }
 .ws-tab-label {
@@ -16164,8 +16071,20 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
   box-shadow: var(--shadow-xs);
 }
 .composer-tools-tab-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   font-size: 13px;
   line-height: 1;
+  flex: 0 0 auto;
+}
+.composer-tools-tab > svg,
+[role='tab'] > svg {
+  display: block;
+  flex: none;
+  align-self: center;
 }
 .composer-tools-content {
   display: flex;
