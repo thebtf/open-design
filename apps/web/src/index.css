@@ -914,26 +914,26 @@ a.avatar-item:visited {
   color: transparent;
 }
 .composer-inline-mention {
-  display: inline-flex;
-  align-items: center;
-  max-width: min(100%, 34ch);
-  margin: 0 1px;
-  padding: 0 3px 1px;
+  display: inline;
+  max-width: none;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   color: color-mix(in srgb, var(--accent) 62%, var(--text));
   font: inherit;
-  font-size: 0.92em;
+  font-size: inherit;
   font-weight: inherit;
-  line-height: 1.22;
+  line-height: inherit;
   letter-spacing: inherit;
   vertical-align: baseline;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: inherit;
 }
 .composer-row {
   display: flex;
@@ -9465,6 +9465,146 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
 .produced-file-actions .ghost-link {
   font-size: 11px;
   padding: 3px 9px;
+}
+
+.plugin-action-panel {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel));
+  box-shadow: var(--shadow-xs);
+}
+.plugin-action-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.plugin-action-panel__icon {
+  width: 25px;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.plugin-action-panel__title {
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--text);
+}
+.plugin-action-panel__subtitle {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.plugin-action-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plugin-action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.plugin-action-panel__list .plugin-action-card:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.plugin-action-card__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.plugin-action-card__folder-icon {
+  width: 23px;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.plugin-action-card__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 8px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.plugin-action-card__path {
+  max-width: 220px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-action-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plugin-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.plugin-action-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.plugin-action-button:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+.plugin-action-button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.plugin-action-button--primary:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(0.98);
+}
+.plugin-action-card__notice {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 
 /* "Files this turn" summary — derived from Read/Write/Edit tool_use events

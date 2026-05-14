@@ -30,6 +30,7 @@ Add `examples/`, `assets/`, or other supporting files only when they help the pl
   - Files created.
   - Whether the folder is ready to add to My plugins.
   - Any validation or follow-up needed before install.
+  - A direct next-action prompt that offers: Add to My plugins, Publish repo, or Open Design PR.
 
 ## Suggested folder shape
 

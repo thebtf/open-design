@@ -83,6 +83,27 @@ describe('listPlugins', () => {
 
     expect(rows.map((row) => row.id)).toEqual(['od-new-generation']);
   });
+
+  it('can include hidden plugins for installed-entry matching', async () => {
+    const visible = {
+      id: 'od-new-generation',
+      title: 'New generation',
+      manifest: { od: { kind: 'scenario' } },
+    };
+    const hidden = {
+      id: 'od-default',
+      title: 'Default design router',
+      manifest: { od: { kind: 'scenario', hidden: true } },
+    };
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(
+      JSON.stringify({ plugins: [hidden, visible] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )));
+
+    const rows = await listPlugins({ includeHidden: true });
+
+    expect(rows.map((row) => row.id)).toEqual(['od-default', 'od-new-generation']);
+  });
 });
 
 describe('installGeneratedPluginFolder', () => {

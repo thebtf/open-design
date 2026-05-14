@@ -85,9 +85,9 @@ export function AssistantMessage({
   const pluginActionFolders = useMemo(
     () =>
       !streaming && isLast && projectId
-        ? pluginFoldersTouchedThisTurn(projectFiles, fileOps, produced)
+        ? pluginFoldersTouchedThisTurn(projectFiles, fileOps, produced, message.content)
         : [],
-    [fileOps, isLast, produced, projectFiles, projectId, streaming],
+    [fileOps, isLast, message.content, produced, projectFiles, projectId, streaming],
   );
   const usage = events.find((e) => e.kind === "usage") as
     | Extract<AgentEvent, { kind: "usage" }>
@@ -558,12 +558,14 @@ function pluginFoldersTouchedThisTurn(
   projectFiles: ProjectFile[],
   fileOps: FileOpEntry[],
   produced: ProjectFile[],
+  messageContent: string,
 ): PluginFolderCandidate[] {
   const candidates = getPluginFolderCandidates(projectFiles);
   if (candidates.length === 0) return [];
   const touchedPaths = [
     ...fileOps.flatMap((entry) => [entry.path, entry.fullPath]),
     ...produced.flatMap((file) => [file.name, file.path]),
+    messageContent,
   ].filter((path): path is string => typeof path === "string" && path.length > 0);
   if (touchedPaths.length === 0) return [];
   return candidates.filter((folder) =>
@@ -576,7 +578,7 @@ function pathTouchesFolder(path: string, folderPath: string): boolean {
   if (normalized === folderPath || normalized.startsWith(`${folderPath}/`)) {
     return true;
   }
-  return normalized.includes(`/${folderPath}/`);
+  return normalized.includes(`/${folderPath}/`) || normalized.includes(`${folderPath}/`);
 }
 
 /**

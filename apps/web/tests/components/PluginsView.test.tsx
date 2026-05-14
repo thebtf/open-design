@@ -297,6 +297,28 @@ describe('PluginsView', () => {
     expect(screen.getByTestId('plugins-tab-installed').getAttribute('aria-selected')).toBe('true');
   });
 
+  it('opens details for available marketplace entries', async () => {
+    render(<PluginsView />);
+
+    fireEvent.click(await screen.findByTestId('plugins-tab-available'));
+    fireEvent.click(await screen.findByTestId('plugins-available-details-remote-plugin'));
+
+    const dialog = await screen.findByTestId('plugins-available-details-modal');
+    expect(within(dialog).getByText('Remote Plugin')).toBeTruthy();
+    expect(dialog.textContent).toContain('Remote catalog plugin.');
+    expect(dialog.textContent).toContain('github:owner/repo');
+
+    fireEvent.click(within(dialog).getByTestId('plugins-available-details-install-remote-plugin'));
+
+    await waitFor(() =>
+      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin'),
+    );
+    expect(await screen.findByText('Installed New Plugin.')).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByTestId('plugins-available-details-modal')).toBeNull(),
+    );
+  });
+
   it('filters available marketplace entries by source and search', async () => {
     mockedListMarketplaces.mockResolvedValue([
       {
@@ -366,7 +388,10 @@ describe('PluginsView', () => {
     official.sourceMarketplaceEntryName = 'open-design/official-plugin';
     official.sourceMarketplaceEntryVersion = '1.0.0';
     official.marketplaceTrust = 'official';
-    mockedListPlugins.mockResolvedValue([official]);
+    official.manifest.od = { ...official.manifest.od, hidden: true };
+    mockedListPlugins.mockImplementation(async (options?: { includeHidden?: boolean }) =>
+      options?.includeHidden ? [official] : [],
+    );
     mockedListMarketplaces.mockResolvedValue([
       {
         id: 'official',
@@ -390,9 +415,10 @@ describe('PluginsView', () => {
     render(<PluginsView />);
 
     fireEvent.click(await screen.findByTestId('plugins-tab-available'));
-    expect(await screen.findByText(/Installed catalog entries live in Installed/i)).toBeTruthy();
+    expect(await screen.findByText(/Installed catalog entries are removed from Available/i)).toBeTruthy();
     expect(screen.queryByText('Official Plugin')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Installed' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
+    expect(mockedListPlugins).toHaveBeenCalledWith({ includeHidden: true });
     expect(mockedApplyPlugin).not.toHaveBeenCalled();
   });
 

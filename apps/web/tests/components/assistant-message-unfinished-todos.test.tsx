@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssistantMessage } from '../../src/components/AssistantMessage';
-import type { AgentEvent, ChatMessage } from '../../src/types';
+import type { AgentEvent, ChatMessage, ProjectFile } from '../../src/types';
 
 function messageWithEvents(events: AgentEvent[]): ChatMessage {
   return {
@@ -13,6 +13,18 @@ function messageWithEvents(events: AgentEvent[]): ChatMessage {
     events,
     startedAt: 1_000,
     endedAt: 3_000,
+  };
+}
+
+function workspaceFile(name: string): ProjectFile {
+  return {
+    name,
+    path: name,
+    type: 'file',
+    size: 100,
+    mtime: 1700000000,
+    kind: name.endsWith('.json') ? 'code' : 'text',
+    mime: name.endsWith('.json') ? 'application/json' : 'text/plain',
   };
 }
 
@@ -110,5 +122,47 @@ describe('AssistantMessage unfinished todo state', () => {
     expect(screen.getByText('Stopped with unfinished work')).toBeTruthy();
     expect(screen.getByText('1 task(s) remain')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Continue remaining tasks' })).toBeNull();
+  });
+
+  it('surfaces generated plugin next actions in the latest assistant turn', () => {
+    const onOpen = vi.fn();
+    render(
+      <AssistantMessage
+        message={{
+          ...messageWithEvents([
+            {
+              kind: 'tool_use',
+              id: 'write-manifest',
+              name: 'Write',
+              input: { path: 'generated-plugin/open-design.json' },
+            },
+            {
+              kind: 'tool_result',
+              toolUseId: 'write-manifest',
+              content: 'ok',
+              isError: false,
+            },
+          ]),
+          content: 'Generated `generated-plugin/` and it is ready.',
+        }}
+        streaming={false}
+        projectId="project-1"
+        projectFiles={[
+          workspaceFile('generated-plugin/open-design.json'),
+          workspaceFile('generated-plugin/SKILL.md'),
+          workspaceFile('generated-plugin/examples/demo.md'),
+        ]}
+        onRequestOpenFile={onOpen}
+        isLast
+      />,
+    );
+
+    expect(screen.getByText('Plugin ready')).toBeTruthy();
+    expect(screen.getByTestId('assistant-plugin-install-generated-plugin')).toBeTruthy();
+    expect(screen.getByTestId('assistant-plugin-publish-generated-plugin')).toBeTruthy();
+    expect(screen.getByTestId('assistant-plugin-contribute-generated-plugin')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('assistant-plugin-open-manifest-generated-plugin'));
+    expect(onOpen).toHaveBeenCalledWith('generated-plugin/open-design.json');
   });
 });

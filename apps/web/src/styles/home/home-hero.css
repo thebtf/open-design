@@ -204,26 +204,26 @@
   transform: translateY(calc(-1 * var(--home-hero-prompt-scroll, 0px)));
 }
 .home-hero__prompt-slot {
-  display: inline-flex;
-  align-items: center;
+  display: inline;
   max-width: min(100%, 52ch);
-  margin: 0 1px;
-  padding: 0 4px 1px;
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   color: var(--accent);
   font: inherit;
-  font-size: 0.94em;
-  font-weight: 660;
-  line-height: 1.16;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
   vertical-align: baseline;
 }
 .home-hero__prompt-slot[data-filled='false'] {
-  border-style: dashed;
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
   color: color-mix(in srgb, var(--accent) 74%, var(--text-muted));
 }
 .home-hero__prompt-slot-control {
@@ -233,9 +233,12 @@
   appearance: none;
   min-width: 8ch;
   min-height: 0;
-  height: calc(1.16em + 3px);
+  height: auto;
   box-sizing: border-box;
   cursor: text;
+}
+.home-hero__prompt-slot-text {
+  pointer-events: none;
 }
 .home-hero__prompt-slot-control:focus,
 .home-hero__prompt-slot-control:focus-visible {
@@ -275,29 +278,32 @@
   position: relative;
   z-index: 3;
   pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  max-width: min(100%, 34ch);
-  margin: 0 1px;
-  padding: 0 3px 1px;
+  display: inline;
+  max-width: none;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   color: color-mix(in srgb, var(--accent) 62%, var(--text));
   font: inherit;
-  font-size: 0.92em;
+  font-size: inherit;
   font-weight: inherit;
-  line-height: 1.22;
+  line-height: inherit;
   letter-spacing: inherit;
   vertical-align: baseline;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: inherit;
 }
 .home-hero__prompt-mention:hover,
 .home-hero__prompt-mention:focus-visible {
   background: color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
   color: color-mix(in srgb, var(--accent) 70%, var(--text));
   outline: none;
 }

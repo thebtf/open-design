@@ -362,12 +362,19 @@ export async function saveTabs(
 //   - appliedPlugin (snapshot id; sent back on POST /api/runs to pin
 //     the prompt block to the frozen view)
 
-export async function listPlugins(): Promise<InstalledPluginRecord[]> {
+export interface ListPluginsOptions {
+  includeHidden?: boolean;
+}
+
+export async function listPlugins(
+  options: ListPluginsOptions = {},
+): Promise<InstalledPluginRecord[]> {
   try {
     const resp = await fetch('/api/plugins');
     if (!resp.ok) return [];
     const json = (await resp.json()) as { plugins?: InstalledPluginRecord[] };
-    return (json.plugins ?? []).filter(isVisiblePlugin);
+    const plugins = json.plugins ?? [];
+    return options.includeHidden ? plugins : plugins.filter(isVisiblePlugin);
   } catch {
     return [];
   }

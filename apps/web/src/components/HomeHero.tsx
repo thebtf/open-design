@@ -1001,6 +1001,17 @@ function InlinePromptInput({
     title: label,
   };
 
+  if (shouldRenderSlotAsText(displayValue)) {
+    return (
+      <span
+        {...commonProps}
+        className={`${commonProps.className} home-hero__prompt-slot-text`}
+      >
+        {displayValue}
+      </span>
+    );
+  }
+
   if (field && type === 'select' && Array.isArray(field.options)) {
     return (
       <select
@@ -1094,6 +1105,10 @@ function inlineFieldType(field: InputFieldSpec): string {
   const rawType = (field as { type?: unknown }).type;
   const raw = typeof rawType === 'string' ? rawType : 'string';
   return raw === 'upload' ? 'file' : raw;
+}
+
+function shouldRenderSlotAsText(value: string): boolean {
+  return value.length > 18 || /\s/.test(value);
 }
 
 function fileMetadata(file: File) {

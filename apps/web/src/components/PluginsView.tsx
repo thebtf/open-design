@@ -105,6 +105,7 @@ export function PluginsView({
 }: PluginsViewProps) {
   const { locale } = useI18n();
   const [plugins, setPlugins] = useState<InstalledPluginRecord[]>([]);
+  const [allInstalledPlugins, setAllInstalledPlugins] = useState<InstalledPluginRecord[]>([]);
   const [marketplaces, setMarketplaces] = useState<PluginMarketplace[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<PluginsTab>('installed');
@@ -121,6 +122,7 @@ export function PluginsView({
     result: ApplyResult;
   } | null>(null);
   const [detailsRecord, setDetailsRecord] = useState<InstalledPluginRecord | null>(null);
+  const [availableDetails, setAvailableDetails] = useState<AvailableMarketplacePlugin | null>(null);
   const [shareConfirm, setShareConfirm] = useState<{
     sourceRecord: InstalledPluginRecord;
     action: PluginShareAction;
@@ -130,8 +132,13 @@ export function PluginsView({
 
   async function refresh() {
     setLoading(true);
-    const [rows, catalogs] = await Promise.all([listPlugins(), listPluginMarketplaces()]);
+    const [rows, allRows, catalogs] = await Promise.all([
+      listPlugins(),
+      listPlugins({ includeHidden: true }),
+      listPluginMarketplaces(),
+    ]);
     setPlugins(rows);
+    setAllInstalledPlugins(allRows);
     setMarketplaces(catalogs);
     setLoading(false);
   }
@@ -147,8 +154,8 @@ export function PluginsView({
     [plugins],
   );
   const availablePlugins = useMemo(
-    () => buildAvailablePlugins(marketplaces, plugins),
-    [marketplaces, plugins],
+    () => buildAvailablePlugins(marketplaces, allInstalledPlugins),
+    [marketplaces, allInstalledPlugins],
   );
 
   async function finishImport(
@@ -231,10 +238,11 @@ export function PluginsView({
   async function handleInstallAvailable(plugin: AvailableMarketplacePlugin) {
     setPendingInstallEntry(plugin.key);
     try {
-      await finishImport(
+      const outcome = await finishImport(
         () => installPluginSource(plugin.entry.name),
         'installed',
       );
+      if (outcome.ok) setAvailableDetails(null);
     } finally {
       setPendingInstallEntry(null);
     }
@@ -352,6 +360,7 @@ export function PluginsView({
           <AvailablePluginsPanel
             plugins={availablePlugins}
             pendingKey={pendingInstallEntry}
+            onOpenDetails={setAvailableDetails}
             onInstall={(plugin) => void handleInstallAvailable(plugin)}
           />
         ) : null}
@@ -390,6 +399,16 @@ export function PluginsView({
           onClose={() => setDetailsRecord(null)}
           onUse={(record) => void handleUsePlugin(record, 'use')}
           isApplying={pendingApplyId === detailsRecord.id}
+        />
+      ) : null}
+      {availableDetails ? (
+        <AvailablePluginDetailsModal
+          plugin={availableDetails}
+          pending={pendingInstallEntry === availableDetails.key}
+          onClose={() => {
+            if (pendingInstallEntry !== availableDetails.key) setAvailableDetails(null);
+          }}
+          onInstall={(plugin) => void handleInstallAvailable(plugin)}
         />
       ) : null}
       {shareConfirm ? (
@@ -633,10 +652,12 @@ interface AvailableMarketplacePlugin {
 function AvailablePluginsPanel({
   plugins,
   pendingKey,
+  onOpenDetails,
   onInstall,
 }: {
   plugins: AvailableMarketplacePlugin[];
   pendingKey: string | null;
+  onOpenDetails: (plugin: AvailableMarketplacePlugin) => void;
   onInstall: (plugin: AvailableMarketplacePlugin) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -704,7 +725,7 @@ function AvailablePluginsPanel({
       ) : null}
       {plugins.length === 0 ? (
         <div className="plugins-view__empty">
-          No available entries yet. Installed catalog entries live in Installed;
+          No available entries yet. Installed catalog entries are removed from Available;
           uninstall one to make it available again.
         </div>
       ) : filteredPlugins.length === 0 ? (
@@ -739,6 +760,14 @@ function AvailablePluginsPanel({
                 <div className="plugins-view__row-actions">
                   <button
                     type="button"
+                    className="plugins-view__secondary"
+                    onClick={() => onOpenDetails(plugin)}
+                    data-testid={`plugins-available-details-${plugin.entry.name}`}
+                  >
+                    Details
+                  </button>
+                  <button
+                    type="button"
                     className="plugins-view__primary"
                     onClick={() => onInstall(plugin)}
                     disabled={pendingKey === plugin.key}
@@ -753,6 +782,199 @@ function AvailablePluginsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function AvailablePluginDetailsModal({
+  plugin,
+  pending,
+  onClose,
+  onInstall,
+}: {
+  plugin: AvailableMarketplacePlugin;
+  pending: boolean;
+  onClose: () => void;
+  onInstall: (plugin: AvailableMarketplacePlugin) => void;
+}) {
+  const title = plugin.entry.title ?? plugin.entry.name;
+  const sourceName = plugin.marketplace.manifest.name ?? plugin.marketplace.url;
+  const trustClass =
+    plugin.marketplace.trust === 'official' ? 'bundled' : plugin.marketplace.trust;
+  const publisher = plugin.entry.publisher;
+  const publisherLabel =
+    publisher?.id ?? publisher?.github ?? publisher?.url ?? null;
+  const tags = plugin.entry.tags ?? [];
+  const capabilitySummary = plugin.entry.capabilitiesSummary ?? [];
+
+  return (
+    <div
+      className="plugin-details-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="plugins-available-details-title"
+      onClick={(event) => {
+        if (!pending && event.target === event.currentTarget) onClose();
+      }}
+      data-testid="plugins-available-details-modal"
+    >
+      <div className="plugin-details-modal">
+        <header className="plugin-details-modal__head">
+          <div className="plugin-details-modal__head-titles">
+            <div className="plugin-details-modal__head-row">
+              <h2
+                id="plugins-available-details-title"
+                className="plugin-details-modal__title"
+              >
+                {title}
+              </h2>
+              <span className={`plugin-details-modal__trust trust-${trustClass}`}>
+                {plugin.marketplace.trust}
+              </span>
+            </div>
+            <div className="plugin-details-modal__meta">
+              <span>{plugin.entry.name}</span>
+              {plugin.entry.version ? <span>· v{plugin.entry.version}</span> : null}
+              <span>· {sourceName}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="plugin-details-modal__close"
+            onClick={onClose}
+            disabled={pending}
+            aria-label="Close available plugin details"
+            title="Close"
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </header>
+
+        <div className="plugin-details-modal__body">
+          <section className="plugin-details-modal__section">
+            <div className="plugin-details-modal__section-head">
+              <h3 className="plugin-details-modal__section-title">About</h3>
+            </div>
+            <p className="plugin-details-modal__description">
+              {plugin.entry.description ?? 'No description provided.'}
+            </p>
+          </section>
+
+          <section className="plugin-details-modal__section">
+            <div className="plugin-details-modal__section-head">
+              <h3 className="plugin-details-modal__section-title">Catalog</h3>
+            </div>
+            <dl className="plugin-details-modal__source">
+              <div>
+                <dt>Source</dt>
+                <dd>
+                  <code>{plugin.entry.source}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Catalog</dt>
+                <dd>{sourceName}</dd>
+              </div>
+              <div>
+                <dt>Catalog URL</dt>
+                <dd>
+                  <a href={plugin.marketplace.url} target="_blank" rel="noreferrer">
+                    {plugin.marketplace.url}
+                  </a>
+                </dd>
+              </div>
+              {plugin.entry.license ? (
+                <div>
+                  <dt>License</dt>
+                  <dd>{plugin.entry.license}</dd>
+                </div>
+              ) : null}
+              {publisherLabel ? (
+                <div>
+                  <dt>Publisher</dt>
+                  <dd>
+                    {publisher?.url ? (
+                      <a href={publisher.url} target="_blank" rel="noreferrer">
+                        {publisherLabel}
+                      </a>
+                    ) : (
+                      publisherLabel
+                    )}
+                  </dd>
+                </div>
+              ) : null}
+              {plugin.entry.homepage ? (
+                <div>
+                  <dt>Homepage</dt>
+                  <dd>
+                    <a href={plugin.entry.homepage} target="_blank" rel="noreferrer">
+                      {plugin.entry.homepage}
+                    </a>
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </section>
+
+          {tags.length > 0 || capabilitySummary.length > 0 ? (
+            <section className="plugin-details-modal__section">
+              <div className="plugin-details-modal__section-head">
+                <h3 className="plugin-details-modal__section-title">Metadata</h3>
+              </div>
+              <div className="plugin-details-modal__context">
+                {tags.length > 0 ? (
+                  <div className="plugin-details-modal__ctx-group">
+                    <div className="plugin-details-modal__ctx-label">Tags</div>
+                    <div className="plugin-details-modal__chips">
+                      {tags.map((tag) => (
+                        <span key={tag} className="plugin-details-modal__chip">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {capabilitySummary.length > 0 ? (
+                  <div className="plugin-details-modal__ctx-group">
+                    <div className="plugin-details-modal__ctx-label">Capabilities</div>
+                    <div className="plugin-details-modal__chips">
+                      {capabilitySummary.map((capability) => (
+                        <span
+                          key={capability}
+                          className="plugin-details-modal__chip plugin-details-modal__chip--mono"
+                        >
+                          {capability}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <footer className="plugin-details-modal__foot">
+          <button
+            type="button"
+            className="plugin-details-modal__secondary"
+            onClick={onClose}
+            disabled={pending}
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            className="plugin-details-modal__primary"
+            onClick={() => onInstall(plugin)}
+            disabled={pending}
+            aria-busy={pending ? 'true' : undefined}
+            data-testid={`plugins-available-details-install-${plugin.entry.name}`}
+          >
+            {pending ? 'Installing...' : 'Install'}
+          </button>
+        </footer>
+      </div>
+    </div>
   );
 }
 
