@@ -5,6 +5,8 @@
 >
 > 오픈소스이자 agent-native한 Figma 대안 — 2주 만에 40k stars로 여기까지 왔습니다. **남은 길은 당신과 함께 가야 합니다.**
 >
+> **빠르게 진행 중** — Open Design의 다음 단계입니다. 안정화되는 대로 `main`에 머지됩니다. 일찍 합류해서 최종 결과물에 영향을 주세요.
+>
 > → [**공지 읽기 · 인스톨러 다운로드 · 무브먼트에 합류**](https://github.com/nexu-io/open-design/discussions/1727) · 현재 사용 중인 0.7과 나란히 설치됩니다.
 
 > **[Claude Design][cd]의 오픈소스 대안.** 로컬 우선, 웹 배포 가능, 모든 레이어에서 BYOK — `PATH`에서 자동 감지되는 **16개의 코딩 에이전트 CLI**(Claude Code, Codex, Devin for Terminal, Cursor Agent, Gemini CLI, OpenCode, Qwen, Qoder CLI, GitHub Copilot CLI, Hermes, Kimi, Pi, Kiro, Kilo, Mistral Vibe, DeepSeek TUI)가 **31가지 조합 가능한 Skill**과 **72가지 브랜드급 디자인 시스템**으로 구동되는 디자인 엔진이 됩니다. CLI가 하나도 없다? OpenAI 호환 BYOK 프록시가 spawn만 빠진 동일한 루프를 돌립니다.

@@ -7,6 +7,8 @@
 >
 > بديل مفتوح المصدر و agent-native لـ Figma — 40k نجمة في أسبوعين أوصلتنا إلى هنا. **نحتاجك لدفعنا بقية الطريق.**
 >
+> **قيد التطوير المتسارع** — هذه هي المرحلة التالية من Open Design، وستُدمج في `main` بمجرد استقرارها. انضمّ مبكراً لتؤثّر في ما يصل إلى الإصدار النهائي.
+>
 > → [**اقرأ الإعلان · حمّل المثبّت · انضم إلى الحركة**](https://github.com/nexu-io/open-design/discussions/1727) · يعمل جنبًا إلى جنب مع نسخة 0.7 الحالية لديك.
 
 > **البديل مفتوح المصدر لـ [Claude Design][cd].** يعمل محلياً أولاً، قابل للنشر على Vercel، ويدعم BYOK في كل طبقة — **16 أداة CLI لوكلاء البرمجة** يكتشفها تلقائياً من `PATH` (Claude Code, Codex, Devin for Terminal, Cursor Agent, Gemini CLI, OpenCode, Qwen, Qoder CLI, GitHub Copilot CLI, Hermes, Kimi, Pi, Kiro, Kilo, Mistral Vibe, DeepSeek TUI) لتصبح هي محرّك التصميم، مدفوعةً بـ **31 Skill قابلة للتركيب** و**72 نظام تصميم بمستوى الهوية البصرية**. لا توجد لديك CLI؟ بروكسي BYOK متوافق مع OpenAI يقدّم نفس الحلقة بدون عملية الـ spawn.

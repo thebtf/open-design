@@ -5,6 +5,8 @@
 >
 > 開源、agent-native 的 Figma 替代品 —— 上線兩週，40k stars 在身，且仍在加速。**剩下的路，需要你和我們一起推完。**
 >
+> **正在快速推進** —— 這是 Open Design 的下一階段，穩定後會合入 `main`。趁早進場，影響最終落地的內容。
+>
 > → [**讀公告 · 下載安裝包 · 加入這場運動**](https://github.com/nexu-io/open-design/discussions/1727) · 可與你現有的 0.7 並行安裝。
 
 > **[Claude Design][cd] 的開源替代品。** 本地優先、可部署到 Vercel、每一層都 BYOK —— **16 套 coding-agent CLI** 在 `PATH` 上自動檢測（Claude Code, Codex, Devin for Terminal, Cursor Agent, Gemini CLI, OpenCode, Qwen, Qoder CLI, GitHub Copilot CLI, Hermes, Kimi, Pi, Kiro, Kilo, Mistral Vibe, DeepSeek TUI）就是設計引擎，由 **31 個可組合 Skills** 和 **72 套品牌級 Design System** 驅動。一個都沒裝？還有 OpenAI 相容的 BYOK 代理 `/api/proxy/stream` 備援，同一條 loop，少一次 spawn 而已。
