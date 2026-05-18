@@ -251,7 +251,14 @@
   color: var(--text);
   font: inherit;
   font-size: 15px;
-  line-height: 1.55;
+  /* Generous line-height so adjacent slot/mention pills do not
+     collide vertically when the prompt wraps. Each pill paints a
+     2px ring via `box-shadow`; with a tight line-height the rings
+     from line N and line N+1 visually merge into a single bar.
+     Bumping the line-height leaves ~8px of clear space between
+     pill rows. The textarea below mirrors this value so the
+     overlay and the editable text stay pixel-aligned. */
+  line-height: 1.85;
   pointer-events: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -414,7 +421,9 @@
   overflow: hidden;
   font: inherit;
   font-size: 15px;
-  line-height: 1.55;
+  /* Must match `.home-hero__prompt-highlight` so the editable
+     textarea and the highlight overlay wrap identically. */
+  line-height: 1.85;
   padding: 6px 6px;
   border: none;
   outline: none;
