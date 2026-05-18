@@ -1,10 +1,11 @@
 {
-  "generatedAt": "2026-05-18T04:56:48.768Z",
+  "generatedAt": "2026-05-18T04:59:37.377Z",
   "contributors": {
     "huyhoangnhh98": {
       "lastAnnouncedTier": "spark",
-      "lastKnownScore": 1,
-      "lastCheckedAt": "2026-05-12T06:18:59.356Z",
+      "lastKnownScore": 39,
+      "lastCheckedAt": "2026-05-18T04:59:37.377Z",
+      "scoreVersion": "weighted-v1",
       "lastAnnouncedAt": "2026-05-12T06:18:59.356Z"
     },
     "shangxinyu1": {
