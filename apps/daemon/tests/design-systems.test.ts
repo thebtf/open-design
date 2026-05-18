@@ -87,8 +87,35 @@ describe('design systems registry', () => {
         'preview/typography-specimens.html',
         'assets/logo.svg',
         'ui_kits/app/index.html',
+        'ui_kits/app/README.md',
+        'ui_kits/app/components/App.jsx',
+        'ui_kits/app/components/Sidebar.jsx',
+        'ui_kits/app/components/AssistantsList.jsx',
+        'ui_kits/app/components/ChatArea.jsx',
+        'ui_kits/app/components/InputBar.jsx',
+        'ui_kits/app/components/MessageBubble.jsx',
       ]),
     );
+    await expect(readUserDesignSystemFile(root, created.id, 'ui_kits/app/index.html'))
+      .resolves
+      .toMatchObject({
+        content: expect.stringContaining('ReactDOM.createRoot'),
+      });
+    await expect(readUserDesignSystemFile(root, created.id, 'ui_kits/app/index.html'))
+      .resolves
+      .toMatchObject({
+        content: expect.stringContaining('components/App.jsx'),
+      });
+    await expect(readUserDesignSystemFile(root, created.id, 'ui_kits/app/components/App.jsx'))
+      .resolves
+      .toMatchObject({
+        content: expect.stringContaining('<Sidebar'),
+      });
+    await expect(readUserDesignSystemFile(root, created.id, 'ui_kits/app/components/App.jsx'))
+      .resolves
+      .toMatchObject({
+        content: expect.stringContaining('window.App = App'),
+      });
     await expect(readUserDesignSystemFile(root, created.id, 'README.md'))
       .resolves
       .toMatchObject({
@@ -277,7 +304,12 @@ describe('design systems registry', () => {
     await expect(readUserDesignSystemFile(root, 'user:legacy', 'ui_kits/app/components/App.jsx'))
       .resolves
       .toMatchObject({
-        content: expect.stringContaining('Design system workspace'),
+        content: expect.stringContaining('<Sidebar'),
+      });
+    await expect(readUserDesignSystemFile(root, 'user:legacy', 'ui_kits/app/components/App.jsx'))
+      .resolves
+      .toMatchObject({
+        content: expect.stringContaining('window.App = App'),
       });
   });
 

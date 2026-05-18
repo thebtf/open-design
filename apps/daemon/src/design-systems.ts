@@ -973,7 +973,7 @@ async function writeGeneratedDesignSystemFiles(
     ),
     writeFile(
       path.join(dir, 'ui_kits', 'app', 'README.md'),
-      `# ${input.title} UI Kit\n\nUse \`index.html\` as the applied interface example. Reuse \`components/\` as modular app shell, sidebar, assistant list, chat area, input bar, and message bubble building blocks. Replace this scaffold with source-backed modular components when repository evidence is available.\n`,
+      renderUiKitReadme(input.title),
       'utf8',
     ),
     ...defaultUiKitComponentSpecs().map(({ fileName, componentName, purpose }) =>
@@ -1006,7 +1006,7 @@ function renderUiKitComponent(name: string, title: string, purpose: string): str
   if (name === 'MessageBubble') return renderMessageBubbleUiKitComponent(title);
   if (name === 'PreviewCard') return renderPreviewCardUiKitComponent(title);
   if (name === 'Composer') return renderComposerUiKitComponent(title);
-  return `export function ${name}({ children, title = '${escapeJsString(title)}' }) {
+  return `function ${name}({ children, title = '${escapeJsString(title)}' }) {
   return (
     <section className="od-ui-kit-${name.toLowerCase()}">
       <small>${escapeTsxText(purpose)}</small>
@@ -1015,6 +1015,8 @@ function renderUiKitComponent(name: string, title: string, purpose: string): str
     </section>
   );
 }
+
+window.${name} = ${name};
 `;
 }
 
@@ -1030,36 +1032,39 @@ function renderAppUiKitComponent(title: string): string {
 ];
 
 const appStyles = {
-  shell: { display: 'grid', gridTemplateColumns: '72px minmax(220px, 280px) 1fr', minHeight: '720px', background: 'var(--color-background, #f7f8fa)', color: 'var(--color-text, #202124)' },
-  rail: { borderRight: '1px solid var(--color-border, #dfe3e8)', background: 'var(--color-background-soft, #fff)' },
-  list: { borderRight: '1px solid var(--color-border, #dfe3e8)', padding: '18px', display: 'grid', alignContent: 'start', gap: '12px' },
+  shell: { display: 'grid', gridTemplateColumns: '280px minmax(240px, 300px) 1fr', minHeight: '720px', background: 'var(--color-background, #f7f8fa)', color: 'var(--color-text, #202124)' },
   workspace: { padding: '24px', display: 'grid', gap: '16px', alignContent: 'start' },
   card: { border: '1px solid var(--color-border, #dfe3e8)', borderRadius: 12, background: 'var(--color-surface, #fff)', padding: '16px' },
   eyebrow: { color: 'var(--color-text-secondary, #73777f)', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0 },
 };
 
-export function App({ title = '${escapeJsString(title)}', modules = reviewModules }) {
+function App({ title = '${escapeJsString(title)}', modules = reviewModules, summary = 'Source-backed design-system workspace' }) {
+  const Sidebar = window.Sidebar;
+  const AssistantsList = window.AssistantsList;
+  const ChatArea = window.ChatArea;
   return (
     <main style={appStyles.shell}>
-      <aside style={appStyles.rail} aria-label="Product navigation" />
-      <section style={appStyles.list}>
-        <span style={appStyles.eyebrow}>Design system workspace</span>
-        <h1>{title}</h1>
-        {modules.map((module) => (
-          <article key={module.id} style={appStyles.card}>
-            <strong>{module.label}</strong>
-            <p>{module.summary}</p>
-          </article>
-        ))}
-      </section>
+      <Sidebar title={title} />
+      <AssistantsList />
       <section style={appStyles.workspace}>
         <span style={appStyles.eyebrow}>Review surface</span>
-        <h2>Focused cards, reusable kit, preserved evidence</h2>
-        <p>Use this shell to compose preview cards next to the source-backed UI kit without turning the system into a marketing page.</p>
+        <h1>{title}</h1>
+        <p>{summary}</p>
+        <ChatArea title={title + ' workspace'} />
+        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+          {modules.map((module) => (
+            <article key={module.id} style={appStyles.card}>
+              <strong>{module.label}</strong>
+              <p>{module.summary}</p>
+            </article>
+          ))}
+        </section>
       </section>
     </main>
   );
 }
+
+window.App = App;
 `;
 }
 
@@ -1079,7 +1084,7 @@ const sidebarStyles = {
   badge: { fontSize: 11, color: 'var(--color-text-secondary, #73777f)' },
 };
 
-export function Sidebar({ title = '${escapeJsString(title)}', activeId = 'design-system', items = sidebarItems }) {
+function Sidebar({ title = '${escapeJsString(title)}', activeId = 'design-system', items = sidebarItems }) {
   return (
     <nav style={sidebarStyles.wrap} aria-label={title}>
       <div style={sidebarStyles.header}>
@@ -1095,6 +1100,8 @@ export function Sidebar({ title = '${escapeJsString(title)}', activeId = 'design
     </nav>
   );
 }
+
+window.Sidebar = Sidebar;
 `;
 }
 
@@ -1114,7 +1121,7 @@ const assistantsListStyles = {
   meta: { color: 'var(--color-text-secondary, #73777f)', fontSize: 12 },
 };
 
-export function AssistantsList({ items = assistantItems }) {
+function AssistantsList({ items = assistantItems }) {
   return (
     <aside style={assistantsListStyles.panel} aria-label="Assistants">
       <header style={assistantsListStyles.header}>
@@ -1133,6 +1140,8 @@ export function AssistantsList({ items = assistantItems }) {
     </aside>
   );
 }
+
+window.AssistantsList = AssistantsList;
 `;
 }
 
@@ -1150,7 +1159,9 @@ const chatAreaStyles = {
   composerSlot: { borderTop: '1px solid var(--color-border, #dfe3e8)', background: 'var(--color-surface, #fff)', padding: 16 },
 };
 
-export function ChatArea({ title = '${escapeJsString(title)} review', messages = chatMessages }) {
+function ChatArea({ title = '${escapeJsString(title)} review', messages = chatMessages }) {
+  const InputBar = window.InputBar;
+  const MessageBubble = window.MessageBubble;
   return (
     <section style={chatAreaStyles.wrap} aria-label={title}>
       <header style={chatAreaStyles.header}>
@@ -1159,16 +1170,15 @@ export function ChatArea({ title = '${escapeJsString(title)} review', messages =
       </header>
       <div style={chatAreaStyles.stream}>
         {messages.map((message) => (
-          <article key={message.id} style={chatAreaStyles.note}>
-            <small>{message.role}</small>
-            <p>{message.text}</p>
-          </article>
+          <MessageBubble key={message.id} role={message.role} text={message.text} fromUser={message.id === 'user'} />
         ))}
       </div>
-      <div style={chatAreaStyles.composerSlot}>Use InputBar.jsx for the full composer surface.</div>
+      <div style={chatAreaStyles.composerSlot}><InputBar title={title + ' prompt'} /></div>
     </section>
   );
 }
+
+window.ChatArea = ChatArea;
 `;
 }
 
@@ -1184,7 +1194,7 @@ const inputBarStyles = {
   send: { border: 0, borderRadius: 10, padding: '9px 14px', background: 'var(--color-primary, #00b96b)', color: '#fff', fontWeight: 700 },
 };
 
-export function InputBar({ title = '${escapeJsString(title)} prompt', actions = inputActions }) {
+function InputBar({ title = '${escapeJsString(title)} prompt', actions = inputActions }) {
   return (
     <form style={inputBarStyles.wrap} aria-label={title}>
       <textarea style={inputBarStyles.field} placeholder="Describe the design revision, evidence to inspect, or preview card to improve." />
@@ -1197,6 +1207,8 @@ export function InputBar({ title = '${escapeJsString(title)} prompt', actions = 
     </form>
   );
 }
+
+window.InputBar = InputBar;
 `;
 }
 
@@ -1209,7 +1221,7 @@ function renderMessageBubbleUiKitComponent(title: string): string {
   status: { justifySelf: 'start', borderRadius: 999, padding: '4px 8px', background: 'var(--color-background-soft, #f7f8fa)', fontSize: 12 },
 };
 
-export function MessageBubble({ role = '${escapeJsString(title)}', text = 'Source-backed design-system guidance belongs in compact, reviewable message surfaces.', status = 'grounded', fromUser = false }) {
+function MessageBubble({ role = '${escapeJsString(title)}', text = 'Source-backed design-system guidance belongs in compact, reviewable message surfaces.', status = 'grounded', fromUser = false }) {
   return (
     <article style={{ ...messageBubbleStyles.bubble, ...(fromUser ? messageBubbleStyles.user : {}) }}>
       <div style={messageBubbleStyles.meta}>
@@ -1221,6 +1233,8 @@ export function MessageBubble({ role = '${escapeJsString(title)}', text = 'Sourc
     </article>
   );
 }
+
+window.MessageBubble = MessageBubble;
 `;
 }
 
@@ -1240,7 +1254,7 @@ const previewCardStyles = {
   check: { display: 'flex', gap: 8, color: 'var(--color-text-secondary, #73777f)' },
 };
 
-export function PreviewCard({ title = '${escapeJsString(title)} module', summary = 'Captures source-backed review states for one design-system module.', checks = defaultChecks }) {
+function PreviewCard({ title = '${escapeJsString(title)} module', summary = 'Captures source-backed review states for one design-system module.', checks = defaultChecks }) {
   return (
     <article style={previewCardStyles.card}>
       <header style={previewCardStyles.header}>
@@ -1261,6 +1275,8 @@ export function PreviewCard({ title = '${escapeJsString(title)} module', summary
     </article>
   );
 }
+
+window.PreviewCard = PreviewCard;
 `;
 }
 
@@ -1276,7 +1292,7 @@ const composerStyles = {
   send: { border: 0, borderRadius: 10, padding: '10px 14px', background: 'var(--color-primary, #00b96b)', color: '#fff', fontWeight: 700 },
 };
 
-export function Composer({ title = '${escapeJsString(title)} feedback', actions = composerActions }) {
+function Composer({ title = '${escapeJsString(title)} feedback', actions = composerActions }) {
   return (
     <form style={composerStyles.wrap} aria-label={title}>
       <textarea style={composerStyles.field} placeholder="Describe what needs revision while keeping the source evidence intact." />
@@ -1289,6 +1305,8 @@ export function Composer({ title = '${escapeJsString(title)} feedback', actions 
     </form>
   );
 }
+
+window.Composer = Composer;
 `;
 }
 
@@ -1663,9 +1681,13 @@ function renderReadme(input: {
     .join('\n');
   return `# ${input.title}
 
-${input.summary}
+A reusable Open Design package for ${input.title}.
 
-## Overview
+## Product Overview
+
+${input.summary} This design-system package is designed for product, app, workspace, and platform surfaces that need a reusable visual direction rather than a one-off mockup. It provides a concrete token layer, focused preview cards, and an applied UI kit so future agents can build interfaces with the same hierarchy, density, component roles, and interaction rules captured in DESIGN.md.
+
+## Package Overview
 
 - Category: ${input.category}
 - Surface: ${input.surface}
@@ -1722,32 +1744,72 @@ function renderSkill(input: {
   summary: string;
   palette: GeneratedPalette;
 }): string {
-  return `# ${input.title}
+  const skillName = slugify(input.title);
+  return `---
+name: ${skillName}
+description: Use this skill when generating Open Design artifacts that should follow ${input.title}.
+user-invocable: true
+---
 
-Use this skill when generating Open Design artifacts that should follow ${input.title}.
+Read README.md, DESIGN.md, colors_and_type.css, preview/, preserved assets, context evidence, and ui_kits/app/ before generating any new interface.
 
-## Style Contract
+**What's inside:**
+- DESIGN.md as the canonical source-backed rules document.
+- colors_and_type.css as the reusable token stylesheet.
+- preview/ focused review cards for color, typography, spacing, components, and brand assets.
+- ui_kits/app/ as a browser-reviewable applied interface kit with modular role components.
+- context/ provenance and evidence notes for future refreshes.
 
-- Start from DESIGN.md as the source of truth.
-- Use colors_and_type.css for color, type, spacing, border, and state tokens.
-- Use context/provenance.md to understand which source materials shaped the system.
-- Prefer focused preview cards such as colors-primary, typography-specimens, component previews, and brand-assets before inventing new styles.
-- Prefer ui_kits/app/ for applied interface structure.
-- Keep output aligned with this summary: ${input.summary}
+**Source context:**
+${input.summary}
 
-## Core Tokens
+**When to use this skill:**
+- Creating product-like prototypes that should follow ${input.title}.
+- Revising focused design-system preview cards or app UI kit components.
+- Building interfaces that need this package's captured density, hierarchy, tokens, and anti-patterns.
+
+**How to use:**
+1. Read DESIGN.md for product context, foundations, components, motion, voice, and anti-patterns.
+2. Load colors_and_type.css instead of hardcoding palette, typography, radius, or spacing values.
+3. Inspect preview/ cards for focused modules before inventing new styling.
+4. Reuse ui_kits/app/index.html and ui_kits/app/components/ as the applied component composition.
+5. Preserve the product context, hierarchy, density, and anti-patterns documented in DESIGN.md.
+
+**Design system highlights:**
 
 - Background: ${input.palette.background}
 - Foreground: ${input.palette.foreground}
 - Accent: ${input.palette.accent}
 - Border: ${input.palette.border}
+`;
+}
 
-## Workflow
+function renderUiKitReadme(title: string): string {
+  return `# ${title} UI Kit
 
-1. Read DESIGN.md.
-2. Inspect context/, preview/, and assets/ for concrete references.
-3. Generate the requested interface or artifact.
-4. Preserve the product context, hierarchy, density, and anti-patterns documented in DESIGN.md.
+This UI kit is the applied interface reference for the design system. Open \`index.html\` to review the composed app surface, then reuse the modular role components under \`components/\` when building new product-like artifacts.
+
+## Structure
+
+- \`index.html\` - Browser-reviewable entry that loads \`../../colors_and_type.css\`, React, ReactDOM, Babel, and the component files.
+- \`components/App.jsx\` - App shell that composes the role components.
+- \`components/Sidebar.jsx\` - Navigation rail or sidebar pattern.
+- \`components/AssistantsList.jsx\` - Object, assistant, or thread list pattern.
+- \`components/ChatArea.jsx\` - Primary workspace with message/content stream.
+- \`components/InputBar.jsx\` - Composer or command-entry surface.
+- \`components/MessageBubble.jsx\` - Message, note, or review-comment unit.
+
+## Usage
+
+Copy component files into a React prototype or open \`index.html\` directly for visual review. Keep \`colors_and_type.css\` loaded before the components so color, type, spacing, radius, and state variables resolve through the extracted token contract.
+
+## Design Notes
+
+Prefer source-backed component roles over static duplicate HTML. When repository evidence is available, replace this scaffold with components modeled from captured app shell, navigation, composer, message, and content surfaces.
+
+## Source
+
+Use parent \`DESIGN.md\`, \`README.md\`, \`preview/\`, and \`context/\` as the evidence trail for any future refinement.
 `;
 }
 
@@ -1774,6 +1836,23 @@ function renderCssTokens(input: { title: string; palette: GeneratedPalette }): s
   --${slug}-space-4: 16px;
   --${slug}-space-6: 24px;
   --${slug}-space-8: 32px;
+
+  --color-background: var(--${slug}-background);
+  --color-surface: var(--${slug}-surface);
+  --color-background-soft: var(--${slug}-surface-muted);
+  --color-text: var(--${slug}-foreground);
+  --color-text-1: var(--${slug}-foreground);
+  --color-text-secondary: var(--${slug}-muted);
+  --color-border: var(--${slug}-border);
+  --color-primary: var(--${slug}-accent);
+  --color-primary-soft: color-mix(in srgb, var(--${slug}-accent) 14%, transparent);
+  --font-family: var(--${slug}-font-sans);
+  --code-font-family: var(--${slug}-font-mono);
+  --radius-control: var(--${slug}-radius-sm);
+  --radius-card: var(--${slug}-radius-md);
+  --space-2: var(--${slug}-space-2);
+  --space-3: var(--${slug}-space-3);
+  --space-4: var(--${slug}-space-4);
 }
 
 .od-design-system-preview {
@@ -1934,25 +2013,57 @@ function renderComponentPreviewHtml(
   summary: string,
   palette: GeneratedPalette,
 ): string {
-  return renderHtmlDocument(
-    `${title} Interface`,
-    `<main class="component-preview">
-      <aside>
-        <strong>${escapeHtml(title)}</strong>
-        <button>Overview</button>
-        <button>Components</button>
-        <button>Brand</button>
-      </aside>
-      <section>
-        <p class="eyebrow">Generated UI kit</p>
-        <h1>${escapeHtml(title)}</h1>
-        <p>${escapeHtml(summary)}</p>
-        <div class="component-row"><button class="primary">Primary action</button><button>Secondary action</button></div>
-        <article><strong>Reference card</strong><span>Use this card to review density, borders, type, and action placement.</span></article>
-      </section>
-    </main>`,
-    palette,
-  );
+  const componentScripts = [
+    ...defaultUiKitComponentSpecs().filter((spec) => spec.componentName !== 'App'),
+    ...defaultUiKitComponentSpecs().filter((spec) => spec.componentName === 'App'),
+  ].map((spec) => `  <script type="text/babel" src="components/${spec.fileName}"></script>`).join('\n');
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)} Interface</title>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+  <link rel="stylesheet" href="../../colors_and_type.css" />
+  <style>
+    :root {
+      color-scheme: light;
+      --ui-kit-bg: ${palette.background};
+      --ui-kit-surface: #fff;
+      --ui-kit-fg: ${palette.foreground};
+      --ui-kit-muted: ${palette.muted};
+      --ui-kit-border: ${palette.border};
+      --ui-kit-accent: ${palette.accent};
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--color-background, var(--ui-kit-bg));
+      color: var(--color-text-1, var(--ui-kit-fg));
+      font: 14px/1.5 var(--font-family, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    }
+    #root { min-height: 100vh; }
+    .ui-kit-loading {
+      display: grid;
+      min-height: 100vh;
+      place-items: center;
+      color: var(--color-text-secondary, var(--ui-kit-muted));
+    }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="ui-kit-loading">Loading ${escapeHtml(title)} UI kit...</div></div>
+${componentScripts}
+  <script type="text/babel">
+    const App = window.App;
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App title={${scriptJson(title)}} summary={${scriptJson(summary)}} />);
+  </script>
+</body>
+</html>
+`;
 }
 
 function renderHtmlDocument(title: string, body: string, palette: GeneratedPalette): string {
@@ -2026,6 +2137,13 @@ function escapeHtml(raw: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function scriptJson(raw: string): string {
+  return JSON.stringify(raw)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
 }
 
 function escapeTsxText(raw: string): string {

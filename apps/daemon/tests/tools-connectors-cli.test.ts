@@ -558,6 +558,9 @@ describe('connectors tool CLI', () => {
     expect(evidenceNote).toContain('Source Evidence Inventory');
     expect(evidenceNote).toContain('Theme, tokens, and styling');
     expect(evidenceNote).toContain('Reusable components');
+    expect(evidenceNote).toContain('ui_kits/app/index.html` must be a browser-reviewable component entry');
+    expect(evidenceNote).toContain('ui_kits/app/components/App.jsx` (or equivalent app shell) must compose source-backed role components');
+    expect(evidenceNote).toContain('source_examples/');
     await expect(readFile(path.join(tmpDir, 'context/github/acme-ui/files/src/components/Button.tsx'), 'utf8')).resolves.toContain('rounded-md');
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:7456/api/tools/connectors/execute',
@@ -615,6 +618,9 @@ describe('connectors tool CLI', () => {
     expect(evidenceNote).toContain('root `build/` with their original filenames');
     expect(evidenceNote).toContain('Fonts');
     expect(evidenceNote).toContain('Claude Design-style package');
+    expect(evidenceNote).toContain('ui_kits/app/index.html` must be a browser-reviewable component entry');
+    expect(evidenceNote).toContain('ui_kits/app/components/App.jsx` (or equivalent app shell) must compose source-backed role components');
+    expect(evidenceNote).toContain('source_examples/');
     expect(evidenceNote).toContain('context/.../files/build/icon.png` -> `build/icon.png`');
     await expect(readFile(path.join(tmpDir, 'context/local-code/cherry-studio/files/src/styles.css'), 'utf8')).resolves.toContain('--color-primary');
     const fontBytes = await readFile(path.join(tmpDir, 'context/local-code/cherry-studio/files/src/assets/fonts/ubuntu/Ubuntu-Regular.ttf'));
