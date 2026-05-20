@@ -114,10 +114,9 @@ test('real daemon run supports a follow-up turn in the same project', async ({ p
   await expectProjectFileToContain(page, projectId, FOLLOW_UP_FILE, 'Generated after an earlier daemon turn.');
 });
 
-test('real daemon run survives a mid-flight reload and persists only one delayed artifact', async ({ page }) => {
-  test.fixme(true, 'Reload during a running daemon turn currently loses artifact persistence after reattach.');
+test('real daemon run survives a mid-flight reload and restores the delayed artifact turn', async ({ page }) => {
   await page.goto('/');
-  await createProject(page, 'Delayed daemon reload smoke');
+  await createProject(page, 'Delayed daemon reload smoke', 'claude');
   await expectWorkspaceReady(page);
 
   await sendPrompt(page, 'Create a delayed deterministic smoke artifact');
@@ -126,6 +125,7 @@ test('real daemon run survives a mid-flight reload and persists only one delayed
 
   const { projectId, conversationId } = await currentProjectContext(page);
   await expectProjectFilesToContain(page, projectId, [DELAYED_FILE], 20_000);
+  await expect(page.getByText('I recovered the delayed reasoning path and will persist the artifact now.')).toBeVisible();
   const frame = page.frameLocator('[data-testid="artifact-preview-frame"]');
   await expect(frame.getByRole('heading', { name: DELAYED_HEADING })).toBeVisible();
 
@@ -136,7 +136,34 @@ test('real daemon run survives a mid-flight reload and persists only one delayed
   const messages = await listConversationMessages(page, projectId, conversationId);
   expect(messages.filter((message) => message.role === 'user')).toHaveLength(1);
   expect(messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
-  expect(messages.find((message) => message.role === 'assistant')?.runStatus).toBe('succeeded');
+  const assistant = messages.find((message) => message.role === 'assistant');
+  expect(assistant?.runStatus).toBe('succeeded');
+  expect(assistant?.producedFiles?.map((file) => file.name)).toEqual([DELAYED_FILE]);
+  expect(assistant?.events?.some((event) => event.kind === 'thinking')).toBe(true);
+});
+
+test('real daemon run survives reload before the create response reaches the browser', async ({ page }) => {
+  await page.goto('/');
+  await createProject(page, 'Delayed daemon create-response reload smoke', 'claude');
+  await expectWorkspaceReady(page);
+
+  await sendPromptAndReloadBeforeCreateResponse(
+    page,
+    'Create a delayed deterministic smoke artifact',
+  );
+  await expectWorkspaceReady(page);
+
+  const { projectId, conversationId } = await currentProjectContext(page);
+  await expectProjectFilesToContain(page, projectId, [DELAYED_FILE], 20_000);
+  await expect(page.getByText('I recovered the delayed reasoning path and will persist the artifact now.')).toBeVisible();
+
+  const messages = await listConversationMessages(page, projectId, conversationId);
+  expect(messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+  const assistant = messages.find((message) => message.role === 'assistant');
+  expect(assistant?.runId).toBeTruthy();
+  expect(assistant?.runStatus).toBe('succeeded');
+  expect(assistant?.producedFiles?.map((file) => file.name)).toEqual([DELAYED_FILE]);
+  expect(assistant?.events?.some((event) => event.kind === 'thinking')).toBe(true);
 });
 
 test('empty daemon output fails cleanly, persists after reload, and does not leave ghost files', async ({ page }) => {
@@ -189,14 +216,14 @@ test('separate projects keep daemon artifacts isolated across recent-project nav
 
   await recentStrip.locator(`[data-project-id="${alpha.projectId}"]`).click();
   await expectWorkspaceReady(page);
-  await expect(page.getByText(GENERATED_FILE, { exact: true })).toBeVisible();
+  await expect(page.getByTestId('file-workspace').getByText(GENERATED_FILE, { exact: true })).toBeVisible();
   await expect(page.getByText(FOLLOW_UP_FILE, { exact: true })).toHaveCount(0);
   expect((await listProjectFiles(page, alpha.projectId)).map((file) => file.name)).toEqual([GENERATED_FILE]);
 
   await page.getByRole('button', { name: /back to projects/i }).click();
   await recentStrip.locator(`[data-project-id="${beta.projectId}"]`).click();
   await expectWorkspaceReady(page);
-  await expect(page.getByText(FOLLOW_UP_FILE, { exact: true })).toBeVisible();
+  await expect(page.getByTestId('file-workspace').getByText(FOLLOW_UP_FILE, { exact: true })).toBeVisible();
   await expect(page.getByText(GENERATED_FILE, { exact: true })).toHaveCount(0);
   expect((await listProjectFiles(page, beta.projectId)).map((file) => file.name)).toEqual([FOLLOW_UP_FILE]);
 });
@@ -209,7 +236,7 @@ test('real daemon run previews an artifact from a fake OpenCode runtime', async 
 
   const fileName = 'fake-agent-runtime-opencode.html';
   const heading = 'Fake Agent Runtime opencode';
-  await expect(page.getByText(fileName, { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('file-workspace').getByText(fileName, { exact: true })).toBeVisible({ timeout: 15_000 });
   const frame = page.frameLocator('[data-testid="artifact-preview-frame"]');
   await expect(frame.getByRole('heading', { name: heading })).toBeVisible();
 
@@ -240,12 +267,18 @@ test('real daemon run supports fake non-Codex runtime protocols', async ({ page 
 });
 
 async function createProject(page: Page, name: string, agentId: FakeAgentId = 'codex') {
-  await gotoEntryHome(page);
   await configureFakeAgent(page, agentId);
+  await installBrowserAgentConfig(page, agentId);
+  await gotoEntryHome(page);
   await setBrowserAgentConfig(page, agentId);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  await openNewProjectModal(page);
+  await setBrowserAgentConfig(page, agentId);
+  await configureFakeAgent(page, agentId);
+  await expectBrowserAgentConfig(page, agentId);
+  await dismissPrivacyDialog(page);
+  await page.getByTestId('entry-nav-new-project').click();
+  await expect(page.getByTestId('new-project-modal')).toBeVisible();
   await expect(page.getByTestId('new-project-panel')).toBeVisible();
   await page.getByTestId('new-project-tab-prototype').click();
   await page.getByTestId('new-project-name').fill(name);
@@ -305,17 +338,55 @@ async function sendPrompt(page: Page, prompt: string) {
   expect(response.ok()).toBeTruthy();
 }
 
+async function sendPromptAndReloadBeforeCreateResponse(page: Page, prompt: string) {
+  const input = page.getByTestId('chat-composer-input');
+  const sendButton = page.getByTestId('chat-send');
+  let releaseResponse!: () => void;
+  const releaseResponsePromise = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  let createResponseReady = false;
+  const runRoute = '**/api/runs';
+
+  await page.route(runRoute, async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    createResponseReady = true;
+    await releaseResponsePromise;
+    await route.fulfill({ response }).catch(() => {});
+  });
+
+  await expect(input).toBeVisible({ timeout: 5_000 });
+  await input.click();
+  await input.fill(prompt);
+  await expect(input).toHaveValue(prompt);
+  await expect(sendButton).toBeEnabled();
+  await sendButton.click();
+  await expect.poll(() => createResponseReady, { timeout: 10_000 }).toBe(true);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  releaseResponse();
+  await page.unroute(runRoute).catch(() => {});
+}
+
 async function openNewProjectModal(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
+  await dismissPrivacyDialog(page);
+  await page.getByTestId('entry-nav-new-project').click();
+  await expect(page.getByTestId('new-project-modal')).toBeVisible();
+  await expect(page.getByTestId('new-project-panel')).toBeVisible();
+}
+
+async function dismissPrivacyDialog(page: Page) {
   const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve Open Design' });
   if (await privacyDialog.isVisible().catch(() => false)) {
     await privacyDialog.getByRole('button', { name: /not now/i }).click();
     await expect(privacyDialog).toHaveCount(0);
   }
-  await page.getByTestId('entry-nav-new-project').click();
-  await expect(page.getByTestId('new-project-modal')).toBeVisible();
-  await expect(page.getByTestId('new-project-panel')).toBeVisible();
 }
 
 async function waitForLoadingToClear(page: Page) {
@@ -339,23 +410,57 @@ async function configureFakeAgent(page: Page, agentId: FakeAgentId) {
 }
 
 async function setBrowserAgentConfig(page: Page, agentId: FakeAgentId) {
-  await page.evaluate(({ key, id, env }) => {
-    window.localStorage.setItem(
-      key,
-      JSON.stringify({
-        mode: 'daemon',
-        apiKey: '',
-        baseUrl: 'https://api.anthropic.com',
-        model: 'claude-sonnet-4-5',
-        agentId: id,
-        skillId: null,
-        designSystemId: null,
-        onboardingCompleted: true,
-        agentModels: { [id]: { model: 'default', reasoning: 'default' } },
-        agentCliEnv: { [id]: env },
-      }),
-    );
-  }, { key: STORAGE_KEY, id: agentId, env: fakeRuntimes[agentId].env });
+  const payload = { key: STORAGE_KEY, id: agentId, env: fakeRuntimes[agentId].env };
+  await installBrowserAgentConfig(page, agentId);
+  await page.evaluate(installConfig, payload);
+}
+
+async function installBrowserAgentConfig(page: Page, agentId: FakeAgentId) {
+  await page.addInitScript(installConfig, {
+    key: STORAGE_KEY,
+    id: agentId,
+    env: fakeRuntimes[agentId].env,
+  });
+}
+
+function installConfig({ key, id, env }: { key: string; id: FakeAgentId; env: Record<string, string> }) {
+  window.localStorage.setItem(
+    key,
+    JSON.stringify({
+      mode: 'daemon',
+      apiKey: '',
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      agentId: id,
+      skillId: null,
+      designSystemId: null,
+      onboardingCompleted: true,
+      agentModels: { [id]: { model: 'default', reasoning: 'default' } },
+      agentCliEnv: { [id]: env },
+    }),
+  );
+}
+
+async function expectBrowserAgentConfig(page: Page, agentId: FakeAgentId) {
+  await expect
+    .poll(async () => page.evaluate(({ key }) => {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw).agentId ?? null;
+      } catch {
+        return null;
+      }
+    }, { key: STORAGE_KEY }), { timeout: 10_000 })
+    .toBe(agentId);
+  await expect
+    .poll(async () => {
+      const response = await page.request.get('/api/app-config');
+      if (!response.ok()) return null;
+      const body = (await response.json()) as { config?: { agentId?: string } };
+      return body.config?.agentId ?? null;
+    }, { timeout: 10_000 })
+    .toBe(agentId);
 }
 
 async function resetDaemonAppConfig(page: Page) {
@@ -485,7 +590,14 @@ async function listConversationMessages(
   );
   expect(response.ok()).toBeTruthy();
   const body = (await response.json()) as {
-    messages: Array<{ id: string; role: string; runStatus?: string }>;
+    messages: Array<{
+      id: string;
+      role: string;
+      runId?: string;
+      runStatus?: string;
+      events?: Array<{ kind: string }>;
+      producedFiles?: Array<{ name: string }>;
+    }>;
   };
   return body.messages;
 }
