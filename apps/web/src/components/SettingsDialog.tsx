@@ -271,9 +271,11 @@ export function shouldShowCustomModelInput(
 
 export function canRunProviderConnectionTest(
   config: Pick<AppConfig, 'apiKey' | 'baseUrl' | 'model'>,
+  options: { requiresApiKey?: boolean } = {},
 ): boolean {
+  const requiresApiKey = options.requiresApiKey ?? true;
   return (
-    Boolean(config.apiKey.trim()) &&
+    (!requiresApiKey || Boolean(config.apiKey.trim())) &&
     Boolean(config.baseUrl.trim()) &&
     Boolean(config.model.trim())
   );
@@ -294,9 +296,11 @@ export function canFetchProviderModels(
 
 function missingByokConnectionFields(
   config: Pick<AppConfig, 'apiKey' | 'baseUrl' | 'model'>,
+  options: { requiresApiKey?: boolean } = {},
 ): ByokRequiredField[] {
+  const requiresApiKey = options.requiresApiKey ?? true;
   const missing: ByokRequiredField[] = [];
-  if (!config.apiKey.trim()) missing.push('api_key');
+  if (requiresApiKey && !config.apiKey.trim()) missing.push('api_key');
   if (!config.baseUrl.trim()) missing.push('base_url');
   if (!config.model.trim()) missing.push('model');
   return missing;
@@ -336,6 +340,26 @@ function providerConnectionTestKey(
     config.model.trim(),
     protocol === 'azure' ? config.apiVersion?.trim() ?? '' : '',
   ].join('\n');
+}
+
+function isLocalOllamaBaseUrl(baseUrl: string): boolean {
+  try {
+    const parsed = new URL(baseUrl);
+    const hostname = parsed.hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function byokProviderRequiresApiKey(
+  protocol: ApiProtocol,
+  provider: KnownProvider | undefined,
+  baseUrl: string,
+): boolean {
+  if (provider?.requiresApiKey === false) return false;
+  if (protocol === 'ollama' && isLocalOllamaBaseUrl(baseUrl)) return false;
+  return true;
 }
 
 const API_KEY_CONSOLE_LINKS: Record<ApiProtocol, { host: string; url: string }> = {
@@ -825,6 +849,25 @@ export function SettingsDialog({
   } | null>(null);
   const [providerModelsState, setProviderModelsState] =
     useState<ProviderModelsState>({ status: 'idle' });
+  const [providerModelsCommittedKey, setProviderModelsCommittedKey] =
+    useState<string | null>(() => {
+      const protocol = initial.apiProtocol ?? 'anthropic';
+      if (
+        initial.mode !== 'api' ||
+        protocol === 'azure' ||
+        protocol === 'ollama' ||
+        missingByokModelFetchFields(initial).length > 0 ||
+        !isValidApiBaseUrl(initial.baseUrl)
+      ) {
+        return null;
+      }
+      return providerModelsCacheKey(
+        protocol,
+        initial.baseUrl,
+        initial.apiKey,
+        initial.apiVersion ?? '',
+      );
+    });
   const [providerModelsCache, setProviderModelsCache] = useState<
     Record<string, ProviderModelOption[]>
   >({});
@@ -835,6 +878,7 @@ export function SettingsDialog({
   const agentTestRevisionRef = useRef(0);
   const providerTestRevisionRef = useRef(0);
   const providerModelsRevisionRef = useRef(0);
+  const providerModelsFirstResetRef = useRef(true);
   const providerAutoTestKeyRef = useRef<string | null>(null);
   const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
   const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
@@ -950,11 +994,16 @@ export function SettingsDialog({
     cfg.apiVersion,
   ]);
   useEffect(() => {
+    if (providerModelsFirstResetRef.current) {
+      providerModelsFirstResetRef.current = false;
+      return;
+    }
     providerModelsRevisionRef.current += 1;
+    providerModelsAbortRef.current?.abort();
+    providerModelsAbortRef.current = null;
+    setProviderModelsCommittedKey(null);
     setByokPreconditionNotice(null);
-    setProviderModelsState((state) =>
-      state.status === 'running' ? state : { status: 'idle' },
-    );
+    setProviderModelsState({ status: 'idle' });
   }, [
     cfg.apiProtocol,
     cfg.apiKey,
@@ -1119,7 +1168,9 @@ export function SettingsDialog({
     if (providerTestState.status === 'running') {
       return;
     }
-    const missing = missingByokConnectionFields(cfg);
+    const missing = missingByokConnectionFields(cfg, {
+      requiresApiKey: byokRequiresApiKey,
+    });
     if (missing.length > 0) {
       if (options.silentPreconditions) {
         return;
@@ -1216,7 +1267,12 @@ export function SettingsDialog({
     if (providerTestState.status === 'running') {
       return;
     }
-    if (missingByokConnectionFields(cfg).length > 0 || !baseUrlValid) {
+    if (
+      missingByokConnectionFields(cfg, {
+        requiresApiKey: byokRequiresApiKey,
+      }).length > 0 ||
+      !baseUrlValid
+    ) {
       return;
     }
     const key = providerConnectionTestKey(apiProtocol, cfg);
@@ -1650,7 +1706,6 @@ export function SettingsDialog({
     [apiProtocol],
   );
   const showQuickFillProvider =
-    (apiProtocol === 'openai' || apiProtocol === 'ollama') &&
     protocolProviders.length > 1;
   const selectedProviderIndex =
     cfg.apiProviderBaseUrl == null
@@ -1659,6 +1714,11 @@ export function SettingsDialog({
           (p) => p.baseUrl === cfg.apiProviderBaseUrl && p.baseUrl === cfg.baseUrl,
         );
   const selectedProvider = selectedProviderIndex >= 0 ? protocolProviders[selectedProviderIndex] : undefined;
+  const byokRequiresApiKey = byokProviderRequiresApiKey(
+    apiProtocol,
+    selectedProvider,
+    cfg.baseUrl,
+  );
   const providerModelsKey = useMemo(
     () => providerModelsCacheKey(
       apiProtocol,
@@ -1669,11 +1729,19 @@ export function SettingsDialog({
     [apiProtocol, cfg.baseUrl, cfg.apiKey, cfg.apiVersion],
   );
   const fetchedApiModelOptions = providerModelsCache[providerModelsKey] ?? [];
+  const commitProviderModelsInputs = () => {
+    if (missingByokModelFetchFields(cfg).length > 0 || !baseUrlValid) {
+      setProviderModelsCommittedKey(null);
+      return;
+    }
+    setProviderModelsCommittedKey(providerModelsKey);
+  };
   useEffect(() => {
     if (cfg.mode !== 'api') return;
     if (apiProtocol === 'azure' || apiProtocol === 'ollama') return;
     if (missingByokModelFetchFields(cfg).length > 0) return;
     if (!baseUrlValid) return;
+    if (providerModelsCommittedKey !== providerModelsKey) return;
     const timer = window.setTimeout(() => {
       void handleFetchProviderModels({ silent: true });
     }, 300);
@@ -1685,6 +1753,7 @@ export function SettingsDialog({
     cfg.baseUrl,
     cfg.mode,
     cfg.apiVersion,
+    providerModelsCommittedKey,
     providerModelsKey,
   ]);
   const currentProviderModelsResult =
@@ -1699,6 +1768,14 @@ export function SettingsDialog({
   const apiKeyAuthFailed =
     currentProviderModelsResult?.ok === false &&
     currentProviderModelsResult.kind === 'auth_failed';
+  const providerModelsFailureMessage =
+    currentProviderModelsResult?.ok === false && !apiKeyAuthFailed
+      ? t('settings.fetchModelsFailed', {
+          detail:
+            currentProviderModelsResult.detail ||
+            currentProviderModelsResult.kind,
+        })
+      : null;
   const suggestedApiModelIds = useMemo(
     () => Array.from(new Set(
       selectedProvider?.models?.length
@@ -1771,6 +1848,7 @@ export function SettingsDialog({
               });
             }
           }}
+          onBlur={commitProviderModelsInputs}
           onChange={(e) => updateApiConfig({ baseUrl: e.target.value, apiProviderBaseUrl: null })}
         />
         {baseUrlReadOnly ? (
@@ -1810,8 +1888,12 @@ export function SettingsDialog({
   useEffect(() => {
     if (!focusByokRequiredFieldAfterProtocolSwitchRef.current) return;
     focusByokRequiredFieldAfterProtocolSwitchRef.current = false;
-    focusByokRequiredField(missingByokConnectionFields(cfg)[0]);
-  }, [apiModelCustomActive, cfg, apiProtocol]);
+    focusByokRequiredField(
+      missingByokConnectionFields(cfg, {
+        requiresApiKey: byokRequiresApiKey,
+      })[0],
+    );
+  }, [apiModelCustomActive, cfg, apiProtocol, byokRequiresApiKey]);
 
   // Header title/subtitle follow the active sidebar section so the dialog
   // header always reflects what the user is looking at, instead of being
@@ -2876,20 +2958,24 @@ export function SettingsDialog({
                 <span className="field-label-row">
                   <span className="field-label">
                     {t('settings.apiKey')}
-                    <span className="field-required" aria-label={t('settings.required')}>
-                      *
-                    </span>
+                    {byokRequiresApiKey ? (
+                      <span className="field-required" aria-label={t('settings.required')}>
+                        *
+                      </span>
+                    ) : null}
                   </span>
-                  <a
-                    className="field-label-link"
-                    href={apiKeyConsoleLink.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t('settings.apiKeyGetLink', {
-                      host: apiKeyConsoleLink.host,
-                    })}
-                  </a>
+                  {byokRequiresApiKey ? (
+                    <a
+                      className="field-label-link"
+                      href={apiKeyConsoleLink.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t('settings.apiKeyGetLink', {
+                        host: apiKeyConsoleLink.host,
+                      })}
+                    </a>
+                  ) : null}
                 </span>
                 <div className="field-row">
                   <input
@@ -2899,7 +2985,10 @@ export function SettingsDialog({
                     placeholder={API_KEY_PLACEHOLDERS[apiProtocol]}
                     value={cfg.apiKey}
                     onChange={(e) => updateApiConfig({ apiKey: e.target.value })}
-                    onBlur={handleAutoTestProvider}
+                    onBlur={() => {
+                      commitProviderModelsInputs();
+                      handleAutoTestProvider();
+                    }}
                     onFocus={() => {
                       const byokProviderId = byokProtocolToTracking(apiProtocol);
                       if (byokProviderId) {
@@ -2953,6 +3042,39 @@ export function SettingsDialog({
                 <span className="field-inline-status">
                   {t('settings.apiHint')}
                 </span>
+                {canRunProviderConnectionTest(cfg, {
+                  requiresApiKey: byokRequiresApiKey,
+                }) && baseUrlValid ? (
+                  <button
+                    type="button"
+                    className={
+                      'ghost icon-btn settings-test-btn' +
+                      (providerTestState.status === 'running' ? ' loading' : '')
+                    }
+                    onClick={() => void handleTestProvider()}
+                    disabled={providerTestState.status === 'running'}
+                    title={t('settings.testTitle')}
+                  >
+                    {providerTestState.status === 'running' ? (
+                      <>
+                        <Icon
+                          name="spinner"
+                          size={13}
+                          className="icon-spin"
+                        />
+                        <span>{t('settings.test')}</span>
+                      </>
+                    ) : providerTestState.status === 'done' &&
+                      !providerTestState.result.ok ? (
+                      <>
+                        <Icon name="reload" size={13} />
+                        <span>{t('settings.testRetry')}</span>
+                      </>
+                    ) : (
+                      t('settings.test')
+                    )}
+                  </button>
+                ) : null}
               </label>
               <label className="field">
                 <span className="field-label">
@@ -3003,6 +3125,11 @@ export function SettingsDialog({
                     {t('settings.modelsLoadedFromAccount', {
                       count: loadedAccountModelCount,
                     })}
+                  </span>
+                ) : null}
+                {providerModelsFailureMessage ? (
+                  <span className="field-error" role="alert">
+                    {providerModelsFailureMessage}
                   </span>
                 ) : null}
               </label>
@@ -3058,6 +3185,7 @@ export function SettingsDialog({
                     type="text"
                     value={cfg.apiVersion ?? ''}
                     placeholder="2024-10-21"
+                    onBlur={commitProviderModelsInputs}
                     onChange={(e) => updateApiConfig({ apiVersion: e.target.value.trim() })}
                   />
                 </label>

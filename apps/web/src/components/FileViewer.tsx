@@ -3556,7 +3556,7 @@ function HtmlViewer({
   const [presentMenuOpen, setPresentMenuOpen] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [exportReadyNudge, setExportReadyNudge] = useState(false);
-  const exportReadyNudgeSeenRef = useRef(false);
+  const exportReadyNudgeSeenRef = useRef<Set<string>>(new Set());
   // Template save UX. We surface a transient "Saved" pill in the share
   // menu so the user gets feedback without a noisy toast layer.
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -5367,8 +5367,9 @@ function HtmlViewer({
   const exportTitle = file.name.replace(/\.html?$/i, '') || file.name;
   const canPptx = canShare && Boolean(onExportAsPptx) && !streaming;
   useEffect(() => {
-    if (!canShare || exportReadyNudgeSeenRef.current) return;
-    exportReadyNudgeSeenRef.current = true;
+    const nudgeKey = `${projectId}\n${file.name}`;
+    if (!canShare || exportReadyNudgeSeenRef.current.has(nudgeKey)) return;
+    exportReadyNudgeSeenRef.current.add(nudgeKey);
     if (hasSeenExportReadyNudge(projectId, file.name)) return;
     markExportReadyNudgeSeen(projectId, file.name);
     setExportReadyNudge(true);

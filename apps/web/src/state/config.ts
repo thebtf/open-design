@@ -93,6 +93,8 @@ export interface KnownProvider {
   model: string;
   /** Optional provider-specific model choices shown in Settings. */
   models?: string[];
+  /** Some local/self-hosted endpoints do not require bearer credentials. */
+  requiresApiKey?: boolean;
 }
 
 // Some providers appear more than once because they expose both
@@ -248,6 +250,7 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     baseUrl: 'http://localhost:11434',
     model: 'gemma3:4b',
     models: ['gemma3:4b', 'gemma3:12b', 'gemma3:27b', 'gpt-oss:20b'],
+    requiresApiKey: false,
   },
   {
     label: 'MiMo (Xiaomi) — Anthropic',

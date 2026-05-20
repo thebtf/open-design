@@ -321,7 +321,7 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect(screen.getByRole('tab', { name: 'OpenAI' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Azure OpenAI' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Google Gemini' })).toBeTruthy();
-    expect(screen.queryByLabelText('Quick fill provider')).toBeNull();
+    expect(screen.getByLabelText('Quick fill provider')).toBeTruthy();
     expect(screen.getByLabelText('Model')).toBeTruthy();
     const baseUrlInput = screen.getByLabelText('Base URL') as HTMLInputElement;
     expect(baseUrlInput.value).toBe('https://api.anthropic.com');
@@ -386,6 +386,27 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect((screen.getByLabelText('Base URL') as HTMLInputElement).value).toBe('https://api.deepseek.com');
   });
 
+  it('keeps Anthropic-compatible presets selectable from quick fill', () => {
+    renderSettingsDialog();
+
+    const providerSelect = screen.getByLabelText('Quick fill provider') as HTMLSelectElement;
+    expect(Array.from(providerSelect.options).map((option) => option.textContent)).toEqual(
+      expect.arrayContaining([
+        'Anthropic (Claude)',
+        'DeepSeek — Anthropic',
+        'MiniMax — Anthropic',
+        'MiMo (Xiaomi) — Anthropic',
+      ]),
+    );
+
+    fireEvent.change(providerSelect, { target: { value: '1' } });
+
+    expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe('deepseek-chat');
+    expect((screen.getByLabelText('Base URL') as HTMLInputElement).value).toBe(
+      'https://api.deepseek.com/anthropic',
+    );
+  });
+
   it('treats a manually edited base URL as a custom provider', () => {
     renderSettingsDialog({ apiProtocol: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o', apiProviderBaseUrl: 'https://api.openai.com/v1' });
 
@@ -417,6 +438,67 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect((screen.getByLabelText('Base URL') as HTMLInputElement).value).toBe(
       'http://localhost:11434',
     );
+    expect(screen.queryByRole('link', { name: /Get your key/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Test' })).toBeTruthy();
+  });
+
+  it('saves and tests the self-hosted Ollama preset without an API key', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/memory') {
+        return new Response(
+          JSON.stringify({ enabled: true, memories: [], extraction: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      expect(url).toBe('/api/test/connection');
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        mode: 'provider',
+        protocol: 'ollama',
+        apiKey: '',
+        baseUrl: 'http://localhost:11434',
+        model: 'gemma3:4b',
+      });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          kind: 'ok',
+          latencyMs: 28,
+          model: 'gemma3:4b',
+          sample: 'pong',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { onPersist } = renderSettingsDialog();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Ollama Cloud' }));
+    fireEvent.change(screen.getByLabelText('Quick fill provider'), {
+      target: { value: '1' },
+    });
+
+    await waitForPersist(
+      onPersist,
+      expect.objectContaining({
+        apiProtocol: 'ollama',
+        apiKey: '',
+        baseUrl: 'http://localhost:11434',
+        model: 'gemma3:4b',
+        apiProviderBaseUrl: 'http://localhost:11434',
+      }),
+      {},
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Connected\. Replied in 28 ms/)).toBeTruthy();
+    });
+    const testConnectionCalls = fetchMock.mock.calls.filter(
+      ([input]) => input.toString() === '/api/test/connection',
+    );
+    expect(testConnectionCalls).toHaveLength(1);
   });
 
   it('keeps protocol drafts isolated without leaking API keys between tabs', () => {
@@ -571,7 +653,25 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     );
   });
 
-  it('loads provider models automatically only after required fields are ready', async () => {
+  it('does not fetch provider models while the API key edit is still uncommitted', async () => {
+    renderSettingsDialog({
+      apiProtocol: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+      apiProviderBaseUrl: 'https://api.openai.com/v1',
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'OpenAI' }));
+    fireEvent.change(screen.getByLabelText('API key'), {
+      target: { value: 'sk-partial' },
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+
+    expect(fetchProviderModelsMock).not.toHaveBeenCalled();
+  });
+
+  it('loads provider models automatically only after required fields are committed', async () => {
     fetchProviderModelsMock.mockResolvedValueOnce({
       ok: true,
       kind: 'success',
@@ -592,6 +692,7 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     fireEvent.change(screen.getByLabelText('API key'), {
       target: { value: 'sk-openai' },
     });
+    fireEvent.blur(screen.getByLabelText('API key'));
 
     expect(await screen.findByText('✓ Loaded 1 models from your account.')).toBeTruthy();
     expect(fetchProviderModelsMock).toHaveBeenCalledWith(
@@ -719,6 +820,27 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect(await screen.findByText('Invalid API key.')).toBeTruthy();
   });
 
+  it('renders non-auth provider model discovery failures explicitly', async () => {
+    fetchProviderModelsMock.mockResolvedValueOnce({
+      ok: false,
+      kind: 'upstream_unavailable',
+      latencyMs: 12,
+      status: 503,
+      detail: 'provider unavailable',
+    });
+    renderSettingsDialog({
+      apiProtocol: 'openai',
+      apiKey: 'sk-openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+      apiProviderBaseUrl: 'https://api.openai.com/v1',
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'OpenAI' }));
+
+    expect(await screen.findByText('Could not fetch models: provider unavailable')).toBeTruthy();
+  });
+
   it('supports custom model entry in BYOK mode', async () => {
     const { onPersist } = renderSettingsDialog({ apiProtocol: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o', apiProviderBaseUrl: 'https://api.openai.com/v1' });
 
@@ -784,7 +906,7 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
 
     renderSettingsDialog({ apiKey: 'sk-test-provider' });
 
-    expect(screen.queryByRole('button', { name: 'Test' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Test' })).toBeTruthy();
 
     fireEvent.blur(screen.getByLabelText('API key'));
 
@@ -798,6 +920,53 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
       ([input]) => input.toString() === '/api/test/connection',
     );
     expect(testConnectionCalls).toHaveLength(1);
+  });
+
+  it('lets users retry a failed BYOK connection test without editing the API key', async () => {
+    let attempt = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === '/api/memory') {
+        return new Response(
+          JSON.stringify({ enabled: true, memories: [], extraction: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      attempt += 1;
+      return new Response(
+        JSON.stringify(
+          attempt === 1
+            ? {
+                ok: false,
+                kind: 'timeout',
+                latencyMs: 30000,
+                model: 'claude-sonnet-4-5',
+              }
+            : {
+                ok: true,
+                kind: 'ok',
+                latencyMs: 18,
+                model: 'claude-sonnet-4-5',
+                sample: 'pong',
+              },
+        ),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderSettingsDialog({ apiKey: 'sk-test-provider' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }));
+    expect(await screen.findByRole('button', { name: 'Retry test' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry test' }));
+
+    expect(await screen.findByText(/Connected\. Replied in 18 ms/)).toBeTruthy();
+    const testConnectionCalls = fetchMock.mock.calls.filter(
+      ([input]) => input.toString() === '/api/test/connection',
+    );
+    expect(testConnectionCalls).toHaveLength(2);
   });
 });
 
