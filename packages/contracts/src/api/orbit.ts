@@ -20,3 +20,7 @@ export interface OrbitStatusResponse {
   lastRun?: OrbitRunSummary | null;
   lastRunsByTemplate?: Record<string, OrbitRunSummary>;
 }
+
+export interface OrbitRunRequest {
+  locale?: string;
+}

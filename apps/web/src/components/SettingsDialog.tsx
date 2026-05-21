@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import { validateBaseUrl } from '@open-design/contracts/api/connectionTest';
+import type { OrbitRunRequest } from '@open-design/contracts/api/orbit';
 import {
   agentIdToTracking,
   byokProtocolToTracking,
@@ -3943,6 +3944,7 @@ export async function persistConfigAndRunOrbit(
   config: AppConfig,
   options?: {
     daemonProviders?: AppConfig['mediaProviders'] | null;
+    locale?: Locale;
     syncMediaProviders?: boolean;
   },
 ): Promise<OrbitRunStartResponse> {
@@ -3952,7 +3954,12 @@ export async function persistConfigAndRunOrbit(
     });
   }
   await syncConfigToDaemon(config, { throwOnError: true });
-  const response = await fetch('/api/orbit/run', { method: 'POST' });
+  const body: OrbitRunRequest = options?.locale ? { locale: options.locale } : {};
+  const response = await fetch('/api/orbit/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!response.ok) throw new Error('Orbit run failed');
   return await response.json() as OrbitRunStartResponse;
 }
@@ -4016,7 +4023,7 @@ function OrbitSection({
    *  parent dialog can persist any unsaved Orbit edits and close itself. */
   onLeaveForOrbitProject: (runConfig: AppConfig) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const orbit = cfg.orbit ?? DEFAULT_ORBIT;
   const [status, setStatus] = useState<OrbitStatusResponse | null>(null);
   const [running, setRunning] = useState(false);
@@ -4170,6 +4177,7 @@ function OrbitSection({
         const runConfig = configForManualOrbitRun(cfg);
         const payload = await persistConfigAndRunOrbit(runConfig, {
           daemonProviders: daemonMediaProviders,
+          locale,
           syncMediaProviders: daemonMediaProvidersFetchState === 'ok',
         });
         if (!payload.projectId) throw new Error('Orbit run did not return a project');

@@ -50,6 +50,12 @@ describe('buildOrbitPrompt', () => {
     expect(prompt).not.toContain('Selected template example prompt:');
     expect(prompt).not.toContain('Render the editorial bento dashboard.');
   });
+
+  it('adds a concise locale hint for localized runs', () => {
+    const prompt = buildOrbitPrompt(new Date('2026-05-06T15:32:52.361Z'), null, { locale: 'zh-CN' });
+
+    expect(prompt).toContain('Write the artifact in Simplified Chinese.');
+  });
 });
 
 describe('buildOrbitSystemPrompt', () => {
@@ -103,6 +109,14 @@ describe('buildOrbitSystemPrompt', () => {
     expect(prompt).toContain('Open and mirror the shipped `example.html`');
     expect(prompt).toContain('Use exclusively the canvas tokens.');
   });
+
+  it('tells localized runs to translate visible template copy while preserving structure', () => {
+    const prompt = buildOrbitSystemPrompt(new Date('2026-05-06T15:32:52.361Z'), null, { locale: 'zh-CN' });
+
+    expect(prompt).toContain('selected product language is Simplified Chinese (zh-CN)');
+    expect(prompt).toContain('Write all user-facing artifact copy and the final summary in Simplified Chinese.');
+    expect(prompt).toContain('translate visible labels, headings, navigation text, recommendations, and footer copy');
+  });
 });
 
 describe('OrbitService', () => {
@@ -139,6 +153,32 @@ describe('OrbitService', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         status = await service.status();
       }
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the manual run locale into the prompt builder', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'orbit-test-'));
+    try {
+      const service = new OrbitService(dataDir);
+      const captured: { request?: Parameters<OrbitRunHandler>[0] } = {};
+      service.setRunHandler(async (request) => {
+        captured.request = request;
+        return {
+          projectId: 'project-1',
+          agentRunId: 'agent-1',
+          completion: Promise.resolve({
+            agentRunId: 'agent-1',
+            status: 'succeeded',
+          }),
+        };
+      });
+
+      await service.start('manual', { locale: 'zh-CN' });
+
+      expect(captured.request?.prompt).toContain('Write the artifact in Simplified Chinese.');
+      expect(captured.request?.systemPrompt).toContain('selected product language is Simplified Chinese (zh-CN)');
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }

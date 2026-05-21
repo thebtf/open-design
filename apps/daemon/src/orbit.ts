@@ -57,6 +57,10 @@ export interface OrbitTemplateSelection {
   designSystemRequired: boolean;
 }
 
+export interface OrbitRunOptions {
+  locale?: string | null;
+}
+
 export type OrbitRunHandler = (request: {
   runId: string;
   trigger: 'manual' | 'scheduled';
@@ -65,6 +69,28 @@ export type OrbitRunHandler = (request: {
   systemPrompt: string;
   template: OrbitTemplateSelection | null;
 }) => Promise<OrbitRunHandlerStart>;
+
+function normalizeOrbitLocale(locale: string | null | undefined): string | null {
+  if (typeof locale !== 'string') return null;
+  const normalized = locale.trim();
+  return normalized ? normalized : null;
+}
+
+function orbitLocaleLabel(locale: string): string {
+  if (/^zh(?:-cn|-hans)?$/i.test(locale)) return 'Simplified Chinese';
+  if (/^zh(?:-tw|-hk|-mo|-hant)?$/i.test(locale)) return 'Traditional Chinese';
+  return locale;
+}
+
+function buildOrbitLocaleInstructions(locale: string | null): string[] {
+  if (!locale) return [];
+  const language = orbitLocaleLabel(locale);
+  return [
+    `The user's selected product language is ${language} (${locale}).`,
+    `Write all user-facing artifact copy and the final summary in ${language}.`,
+    'If the selected template or staged example content is written in another language, preserve its structure, layout, class names, tokens, row counts, and source-specific identifiers, but translate visible labels, headings, navigation text, recommendations, and footer copy into the selected product language unless a quoted source item must stay original.',
+  ];
+}
 
 export function formatLocalProjectTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -275,7 +301,11 @@ function renderMarkdown(summary: Omit<OrbitActivitySummary, 'markdown'>): string
   return lines.join('\n').trimEnd();
 }
 
-export function buildOrbitPrompt(now = new Date(), template?: OrbitTemplateSelection | null): string {
+export function buildOrbitPrompt(
+  now = new Date(),
+  template?: OrbitTemplateSelection | null,
+  options?: OrbitRunOptions,
+): string {
   const end = formatLocalOrbitPromptTimestamp(now);
   const start = formatLocalOrbitPromptTimestamp(new Date(now.getTime() - 24 * 60 * 60_000));
   const lines = [
@@ -283,15 +313,24 @@ export function buildOrbitPrompt(now = new Date(), template?: OrbitTemplateSelec
     '',
     `Use my connected work data from ${start} through ${end}.`,
   ];
+  const locale = normalizeOrbitLocale(options?.locale);
+  if (locale) {
+    lines.push(`Write the artifact in ${orbitLocaleLabel(locale)}.`);
+  }
   if (template) {
     lines.push('', `Use the selected Orbit template: ${template.name}.`);
   }
   return lines.join('\n');
 }
 
-export function buildOrbitSystemPrompt(now = new Date(), template?: OrbitTemplateSelection | null): string {
+export function buildOrbitSystemPrompt(
+  now = new Date(),
+  template?: OrbitTemplateSelection | null,
+  options?: OrbitRunOptions,
+): string {
   const end = now.toISOString();
   const start = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
+  const locale = normalizeOrbitLocale(options?.locale);
   const lines = [
     'Create a Live Artifact: a polished daily digest that helps a normal person understand what changed in their connected work data during the past 24 hours and what they should do next.',
     '',
@@ -330,6 +369,10 @@ export function buildOrbitSystemPrompt(now = new Date(), template?: OrbitTemplat
     'Keep the artifact compact: a single responsive HTML view, no more than roughly 200 lines of template/CSS, and no lengthy design critique pass. If connector discovery succeeded but checked data is sparse, empty, or partially unavailable, still create the Live Artifact and clearly state the useful human-facing outcome. If connector discovery failed or no usable connected read-only data tools are available, fail fast instead of creating an empty-state artifact. Do not invent activity. Keep the visual design polished but lightweight.',
     'Important: the user-facing artifact must not mention internal product, data plumbing, tool-running, automation terms, raw failure details, or system mechanics. Write it as a normal daily briefing for a person, not as a technical run report.',
   ];
+  const localeInstructions = buildOrbitLocaleInstructions(locale);
+  if (localeInstructions.length > 0) {
+    lines.push('', ...localeInstructions);
+  }
   if (template) {
     lines.push(
       '',
@@ -402,20 +445,26 @@ export class OrbitService {
     };
   }
 
-  async start(trigger: 'manual' | 'scheduled'): Promise<{ projectId: string; agentRunId: string }> {
+  async start(
+    trigger: 'manual' | 'scheduled',
+    options?: OrbitRunOptions,
+  ): Promise<{ projectId: string; agentRunId: string }> {
     if (this.inflight && this.inflightProjectId && this.inflightAgentRunId) {
       return { projectId: this.inflightProjectId, agentRunId: this.inflightAgentRunId };
     }
     if (this.starting) return this.starting;
     if (!this.runHandler) throw new Error('Orbit agent runner is not configured');
 
-    this.starting = this.startRun(trigger).finally(() => {
+    this.starting = this.startRun(trigger, options).finally(() => {
       this.starting = null;
     });
     return this.starting;
   }
 
-  private async startRun(trigger: 'manual' | 'scheduled'): Promise<{ projectId: string; agentRunId: string }> {
+  private async startRun(
+    trigger: 'manual' | 'scheduled',
+    options?: OrbitRunOptions,
+  ): Promise<{ projectId: string; agentRunId: string }> {
     if (!this.runHandler) throw new Error('Orbit agent runner is not configured');
 
     const startedAt = new Date().toISOString();
@@ -425,8 +474,9 @@ export class OrbitService {
       ? await this.templateResolver(configuredTemplateSkillId).catch(() => null)
       : null;
     const now = new Date(startedAt);
-    const prompt = buildOrbitPrompt(now, template);
-    const systemPrompt = buildOrbitSystemPrompt(now, template);
+    const runOptions: OrbitRunOptions = { locale: normalizeOrbitLocale(options?.locale) };
+    const prompt = buildOrbitPrompt(now, template, runOptions);
+    const systemPrompt = buildOrbitSystemPrompt(now, template, runOptions);
     const handlerStart = await this.runHandler({
       runId,
       trigger,

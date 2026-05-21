@@ -46,6 +46,14 @@ job is to **reproduce it**, not reinterpret it.
 - Same diff-preview placement, same CI-fail block, same attention block
 - Same `<script>` block at the end (filter / hover / link injection)
 
+**Localization exception.** When Orbit specifies a non-English product
+language, keep that exact structure, order, DOM, class names, tokens,
+and counts, but translate the **visible user-facing copy** (headings,
+nav labels, filter labels, helper text, takeaways, recommendations,
+footer copy) into the requested language unless a quoted source item,
+repo name, branch name, code snippet, or identifier should stay in its
+original form.
+
 **Step 3.** You may refresh mock values (PR numbers, titles, times,
 CI commit messages) so they read as "today", but you must **not**
 invent extra UI: no extra rail entries, no extra notifications,
