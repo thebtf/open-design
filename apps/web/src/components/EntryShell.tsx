@@ -489,7 +489,6 @@ export function EntryShell({
     </button>
   );
 
-
   if (view === 'onboarding') {
     return (
       <div className="entry-shell entry-shell--no-header entry-shell--onboarding">

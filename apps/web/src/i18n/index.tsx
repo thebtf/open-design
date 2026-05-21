@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { detectOpenDesignHostLocale } from '@open-design/host';
 import { de } from './locales/de';
 import { en } from './locales/en';
 import { id } from './locales/id';
@@ -58,6 +59,8 @@ const DICTS: Record<Locale, Dict> = {
 };
 
 const LS_KEY = 'open-design:locale';
+const LS_SOURCE_KEY = 'open-design:locale-source';
+const MANUAL_LOCALE_SOURCE = 'manual';
 
 export function resolveSystemLocale(languages: readonly string[]): Locale | null {
   const supported = LOCALES as readonly string[];
@@ -82,23 +85,52 @@ export function resolveSystemLocale(languages: readonly string[]): Locale | null
   return null;
 }
 
+export function resolveInitialLocalePreference({
+  browserLanguages,
+  hostLocale,
+  storedLocaleSource,
+  storedLocale,
+}: {
+  browserLanguages: readonly string[];
+  hostLocale?: string | null;
+  storedLocaleSource?: string | null;
+  storedLocale?: string | null;
+}): Locale {
+  if (
+    storedLocaleSource === MANUAL_LOCALE_SOURCE &&
+    storedLocale &&
+    (LOCALES as readonly string[]).includes(storedLocale)
+  ) {
+    return storedLocale as Locale;
+  }
+
+  const hostDetected = hostLocale ? resolveSystemLocale([hostLocale]) : null;
+  if (hostDetected) return hostDetected;
+
+  return resolveSystemLocale(browserLanguages) ?? 'en';
+}
+
 // First-run defaults to the user's browser/system language when possible.
-// An explicit user pick saved to localStorage always wins; unsupported
-// languages fall back to English.
+// Desktop hosts inject the OS locale because packaged Chromium can report
+// its own locale through navigator.language instead of the user's system
+// language. Only a value tagged as a manual user pick wins; legacy cached
+// values must not pin the app to an old system language forever.
 function detectInitialLocale(): Locale {
   if (typeof window === 'undefined') return 'en';
+  let storedLocale: string | null = null;
+  let storedLocaleSource: string | null = null;
   try {
-    const stored = window.localStorage.getItem(LS_KEY);
-    if (stored && (LOCALES as string[]).includes(stored)) {
-      return stored as Locale;
-    }
+    storedLocale = window.localStorage.getItem(LS_KEY);
+    storedLocaleSource = window.localStorage.getItem(LS_SOURCE_KEY);
   } catch {
     /* ignore */
   }
-  const detected = resolveSystemLocale(
-    navigator.languages?.length ? navigator.languages : [navigator.language],
-  );
-  return detected ?? 'en';
+  return resolveInitialLocalePreference({
+    storedLocale,
+    storedLocaleSource,
+    hostLocale: detectOpenDesignHostLocale(),
+    browserLanguages: navigator.languages?.length ? navigator.languages : [navigator.language],
+  });
 }
 
 interface I18nContextValue {
@@ -134,6 +166,7 @@ export function I18nProvider({ initial, children }: ProviderProps) {
     setLocaleState(next);
     try {
       window.localStorage.setItem(LS_KEY, next);
+      window.localStorage.setItem(LS_SOURCE_KEY, MANUAL_LOCALE_SOURCE);
     } catch {
       /* ignore */
     }

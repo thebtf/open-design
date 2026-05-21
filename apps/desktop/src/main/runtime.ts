@@ -785,6 +785,11 @@ function desktopPetUrl(baseUrl: string): string {
   return url.toString();
 }
 
+function hostLocaleArgument(): string[] {
+  const locale = typeof app.getLocale === "function" ? app.getLocale() : "";
+  return locale ? [`--od-host-locale=${encodeURIComponent(locale)}`] : [];
+}
+
 function createDesktopPetWindow(preloadPath: string): BrowserWindow {
   const { workArea } = screen.getPrimaryDisplay();
   const petWindow = new BrowserWindow({
@@ -802,6 +807,7 @@ function createDesktopPetWindow(preloadPath: string): BrowserWindow {
     hasShadow: false,
     focusable: false,
     webPreferences: {
+      additionalArguments: hostLocaleArgument(),
       contextIsolation: true,
       nodeIntegration: false,
       preload: preloadPath,
@@ -1187,6 +1193,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     title: "Open Design",
     ...MAC_WINDOW_CHROME,
     webPreferences: {
+      additionalArguments: hostLocaleArgument(),
       contextIsolation: true,
       nodeIntegration: false,
       preload: preloadPath,

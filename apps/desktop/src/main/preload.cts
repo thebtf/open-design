@@ -14,6 +14,7 @@ import type {
 const OPEN_DESIGN_HOST_GLOBAL: typeof import('@open-design/host').OPEN_DESIGN_HOST_GLOBAL = '__od__';
 const OPEN_DESIGN_HOST_VERSION: typeof import('@open-design/host').OPEN_DESIGN_HOST_VERSION = 1;
 const UPDATER_STATUS_EVENT = 'od:update:status-changed';
+const HOST_LOCALE_ARG_PREFIX = '--od-host-locale=';
 
 type PrintPdfOptions = {
   deck?: boolean;
@@ -25,6 +26,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function reasonFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function readHostLocaleFromArgv(): string | undefined {
+  const raw = process.argv
+    .find((arg: string) => arg.startsWith(HOST_LOCALE_ARG_PREFIX))
+    ?.slice(HOST_LOCALE_ARG_PREFIX.length)
+    .trim();
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function failure(reason: string, details?: unknown): OpenDesignHostFailure {
@@ -197,11 +211,14 @@ const updater = {
   },
 };
 
+const hostLocale = readHostLocaleFromArgv();
+
 const hostBridge = {
   version: OPEN_DESIGN_HOST_VERSION,
   client: {
     type: 'desktop',
     platform: process.platform,
+    ...(hostLocale ? { locale: hostLocale } : {}),
   },
   shell,
   project,
