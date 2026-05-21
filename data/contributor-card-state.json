@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-21T12:38:34.823Z",
+  "generatedAt": "2026-05-21T12:39:24.630Z",
   "contributors": {
     "huyhoangnhh98": {
       "lastAnnouncedTier": "spark",
@@ -865,8 +865,8 @@
     },
     "ghx5t-sol": {
       "lastAnnouncedTier": "signal",
-      "lastKnownScore": 57,
-      "lastCheckedAt": "2026-05-21T11:20:06.848Z",
+      "lastKnownScore": 71,
+      "lastCheckedAt": "2026-05-21T12:39:24.630Z",
       "scoreVersion": "weighted-v1",
       "lastAnnouncedAt": "2026-05-17T15:25:42.999Z"
     },
