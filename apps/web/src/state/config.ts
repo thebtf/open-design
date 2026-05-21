@@ -458,6 +458,12 @@ function hasRecoverableLocalMediaProviderFields(
   );
 }
 
+function hasUnsavedLocalMediaProviderSecret(
+  entry: MediaProviderCredentials | null | undefined,
+): boolean {
+  return Boolean(entry?.apiKey?.trim());
+}
+
 function isMarkerOnlyMediaProviderEntry(
   entry: MediaProviderCredentials | null | undefined,
 ): boolean {
@@ -694,7 +700,7 @@ export function mergeDaemonMediaProviders(
     const localEntry = mediaProviders[providerId];
     const preserveLocalPendingEdit = Boolean(
       hasRecoverableLocalMediaProviderFields(localEntry)
-      && (localEntry?.apiKeyConfigured || localEntry?.apiKeyTail?.trim()),
+      && hasUnsavedLocalMediaProviderSecret(localEntry),
     );
     mediaProviders[providerId] = preserveLocalPendingEdit
       ? { ...daemonEntry, ...localEntry }

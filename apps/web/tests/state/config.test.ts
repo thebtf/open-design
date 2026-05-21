@@ -353,6 +353,42 @@ describe('mergeDaemonMediaProviders', () => {
     });
   });
 
+  it('refreshes ordinary saved-marker rows from daemon state when there is no unsaved local secret', () => {
+    const merged = mergeDaemonMediaProviders(
+      {
+        ...DEFAULT_CONFIG,
+        mediaProviders: {
+          openai: {
+            apiKey: '',
+            apiKeyConfigured: true,
+            apiKeyTail: '1234',
+            baseUrl: 'https://local-saved.example/v1',
+            model: 'gpt-image-1',
+          },
+        },
+      },
+      {
+        openai: {
+          apiKey: '',
+          apiKeyConfigured: true,
+          apiKeyTail: '9876',
+          baseUrl: 'https://daemon.example/v1',
+          model: 'gpt-image-1-mini',
+        },
+      },
+    );
+
+    expect(merged.mediaProviders).toEqual({
+      openai: {
+        apiKey: '',
+        apiKeyConfigured: true,
+        apiKeyTail: '9876',
+        baseUrl: 'https://daemon.example/v1',
+        model: 'gpt-image-1-mini',
+      },
+    });
+  });
+
   it('drops stale marker-only local entries when daemon definitively has no stored state', () => {
     const merged = mergeDaemonMediaProviders(
       {
