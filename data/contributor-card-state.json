@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-21T14:51:21.830Z",
+  "generatedAt": "2026-05-21T15:41:23.388Z",
   "contributors": {
     "huyhoangnhh98": {
       "lastAnnouncedTier": "spark",
@@ -459,8 +459,8 @@
     },
     "pftom": {
       "lastAnnouncedTier": "node",
-      "lastKnownScore": 557,
-      "lastCheckedAt": "2026-05-19T08:36:01.896Z",
+      "lastKnownScore": 569,
+      "lastCheckedAt": "2026-05-21T15:41:23.388Z",
       "scoreVersion": "weighted-v1",
       "lastAnnouncedAt": "2026-05-14T13:13:24.571Z"
     },
