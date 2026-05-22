@@ -1190,30 +1190,20 @@ code {
 }
 .zoom-menu-item:hover { background: var(--bg-subtle); }
 .zoom-menu-item.active { color: var(--accent-strong); font-weight: 600; }
-.viewer-floating-zoom {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  z-index: 45;
-}
-.viewer-floating-zoom .zoom-trigger {
+.viewer-toolbar-zoom .zoom-trigger {
   min-width: 66px;
   justify-content: space-between;
   padding: 5px 8px 5px 10px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
   color: var(--text);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(10px);
 }
-.viewer-floating-zoom .zoom-trigger:hover:not(:disabled),
-.viewer-floating-zoom .zoom-trigger[aria-expanded='true'] {
+.viewer-toolbar-zoom .zoom-trigger:hover:not(:disabled),
+.viewer-toolbar-zoom .zoom-trigger[aria-expanded='true'] {
   border-color: var(--border-strong);
   background: var(--bg-panel);
 }
-.viewer-floating-zoom .zoom-menu-popover {
-  top: auto;
-  bottom: calc(100% + 6px);
+.viewer-toolbar-zoom .zoom-menu-popover {
   left: auto;
   right: 0;
   transform: none;

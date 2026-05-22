@@ -5884,6 +5884,44 @@ function HtmlViewer({
                   onClose={() => setPalettePopoverOpen(false)}
                 />
               </div>
+              {source !== null && mode === 'preview' ? (
+                <div className="zoom-menu viewer-toolbar-zoom" ref={zoomMenuRef}>
+                  <button
+                    type="button"
+                    className="viewer-action zoom-trigger"
+                    aria-haspopup="menu"
+                    aria-expanded={zoomMenuOpen}
+                    onClick={() => {
+                      fireArtifactToolbarClick('zoom_level_dropdown');
+                      setZoomMenuOpen((v) => !v);
+                    }}
+                  >
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{zoom}%</span>
+                    <RemixIcon name="arrow-down-s-line" size={14} />
+                  </button>
+                  {zoomMenuOpen ? (
+                    <div className="zoom-menu-popover" role="menu">
+                      {[50, 75, 100, 125, 150, 200].map((level) => (
+                        <button
+                          key={level}
+                          type="button"
+                          className={`zoom-menu-item${zoom === level ? ' active' : ''}`}
+                          role="menuitem"
+                          onClick={() => {
+                            setZoom(level);
+                            setZoomMenuOpen(false);
+                          }}
+                        >
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{level}%</span>
+                          {zoom === level ? (
+                            <Icon name="check" size={13} />
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           ) : null}
           {!showPreviewToolbarControls ? (
@@ -6497,44 +6535,6 @@ function HtmlViewer({
         ) : (
           <pre className="viewer-source">{source}</pre>
         )}
-        {source !== null && mode === 'preview' ? (
-          <div className="zoom-menu viewer-floating-zoom" ref={zoomMenuRef}>
-            <button
-              type="button"
-              className="viewer-action zoom-trigger"
-              aria-haspopup="menu"
-              aria-expanded={zoomMenuOpen}
-              onClick={() => {
-                fireArtifactToolbarClick('zoom_level_dropdown');
-                setZoomMenuOpen((v) => !v);
-              }}
-            >
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{zoom}%</span>
-              <RemixIcon name="arrow-down-s-line" size={14} />
-            </button>
-            {zoomMenuOpen ? (
-              <div className="zoom-menu-popover" role="menu">
-                {[50, 75, 100, 125, 150, 200].map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    className={`zoom-menu-item${zoom === level ? ' active' : ''}`}
-                    role="menuitem"
-                    onClick={() => {
-                      setZoom(level);
-                      setZoomMenuOpen(false);
-                    }}
-                  >
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{level}%</span>
-                    {zoom === level ? (
-                      <Icon name="check" size={13} />
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </div>
       {inTabPresent && source ? (
         <div
