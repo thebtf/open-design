@@ -34,8 +34,22 @@ const chatPaneMockState = vi.hoisted(() => ({
   commentAttachments: [] as ChatCommentAttachment[],
 }));
 
+const i18nMockText: Record<string, string> = {
+  'assistant.emptyResponseMessage':
+    'The provider ended the request without returning text or an artifact. Try another model or provider, check quota, or retry.',
+};
+
 vi.mock('../../src/router', () => ({
   navigate: vi.fn(),
+}));
+
+vi.mock('../../src/i18n', () => ({
+  useI18n: () => ({
+    locale: 'en',
+    setLocale: () => undefined,
+    t: (key: string) => i18nMockText[key] ?? key,
+  }),
+  useT: () => (key: string) => i18nMockText[key] ?? key,
 }));
 
 vi.mock('../../src/providers/anthropic', () => ({
