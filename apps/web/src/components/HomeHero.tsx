@@ -47,6 +47,10 @@ import {
 } from '../utils/inlineMentions';
 import { useI18n, useT } from '../i18n';
 import type { Locale } from '../i18n/types';
+import {
+  localizeSkillDescription,
+  localizeSkillName,
+} from '../i18n/content';
 import { PreviewSurface } from './plugins-home/cards/PreviewSurface';
 import { curatedPluginPriorityForChip } from './plugins-home/curatedPriority';
 import { inferPluginPreview } from './plugins-home/preview';
@@ -274,8 +278,8 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
           options: skillMatches.map((skill) => ({
             id: `skill-${skill.id}`,
             icon: skill.id === activeSkillId ? 'check' : 'file',
-            title: skill.name,
-            description: skill.description || skill.id,
+            title: localizeSkillName(locale, skill),
+            description: localizeSkillDescription(locale, skill) || skill.id,
             meta: skill.id === activeSkillId ? t('common.active') : skill.mode,
             onPick: () => pickSkill(skill),
           })),

@@ -3547,13 +3547,15 @@ export async function startServer({
     bundledMarketplaceEntries = result.registered.map((plugin) => ({
       name:        `open-design/${plugin.id}`,
       title:       plugin.title,
-      description: plugin.description,
+      title_i18n:  plugin.manifest.title_i18n,
+      description: plugin.manifest.description,
+      description_i18n: plugin.manifest.description_i18n,
       version:     plugin.version,
       source:      bundledPluginRegistrySource(plugin.source),
       publisher:   { id: 'open-design', url: 'https://open-design.ai' },
       homepage:    plugin.manifest.homepage,
       license:     plugin.manifest.license,
-      tags:        plugin.tags,
+      tags:        plugin.manifest.tags,
       capabilitiesSummary: Array.isArray(plugin.manifest.od?.capabilities)
         ? plugin.manifest.od.capabilities
         : undefined,

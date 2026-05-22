@@ -8,8 +8,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useT } from '../i18n';
+import { useI18n, useT } from '../i18n';
 import type { Dict } from '../i18n/types';
+import {
+  localizeSkillDescription,
+  localizeSkillName,
+} from '../i18n/content';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackChatPanelClick,
@@ -2136,6 +2140,7 @@ function ToolsSkillsPanel({
   currentSkillId: string | null;
   onPick: (skill: SkillSummary) => void | Promise<void>;
 }) {
+  const { locale } = useI18n();
   const [query, setQuery] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
   const visibleSkills = useMemo(
@@ -2176,11 +2181,11 @@ function ToolsSkillsPanel({
                   }
                 }}
                 disabled={pendingId !== null}
-                title={skill.description}
+                title={localizeSkillDescription(locale, skill)}
               >
                 <Icon name={active ? 'check' : 'file'} size={12} />
                 <span className="composer-tools-row-body">
-                  <strong>{skill.name}</strong>
+                  <strong>{localizeSkillName(locale, skill)}</strong>
                   <span className="composer-tools-row-meta">
                     {skill.mode}
                     {skill.surface ? ` · ${skill.surface}` : ''}
@@ -2419,6 +2424,7 @@ function MentionPopover({
   onPickMcp: (server: McpServerConfig) => void;
   onPickConnector: (connector: ConnectorDetail) => void;
 }) {
+  const { locale } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<MentionTab>('all');
   const tabs: Array<{ id: MentionTab; label: string }> = [
@@ -2506,13 +2512,13 @@ function MentionPopover({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onPickSkill(skill)}
-                  title={skill.description}
+                  title={localizeSkillDescription(locale, skill)}
                 >
                   <Icon name={active ? 'check' : 'file'} size={12} />
                   <span className="mention-item-body">
-                    <strong>{skill.name}</strong>
+                    <strong>{localizeSkillName(locale, skill)}</strong>
                     <span className="mention-meta mention-meta--desc">
-                      {skill.description || skill.id}
+                      {localizeSkillDescription(locale, skill) || skill.id}
                     </span>
                   </span>
                   <span className="mention-meta">{active ? 'Active' : skill.mode}</span>

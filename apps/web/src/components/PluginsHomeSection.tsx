@@ -16,11 +16,12 @@
 
 import { useState } from 'react';
 import type { InstalledPluginRecord } from '@open-design/contracts';
-import { useT } from '../i18n';
+import { useI18n, useT } from '../i18n';
 import type { PluginShareAction } from '../state/projects';
 import { Icon } from './Icon';
 import { PluginCard } from './plugins-home/PluginCard';
 import { isFeaturedPlugin, type FacetOption, type FacetSelection } from './plugins-home/facets';
+import { localizePluginTitle } from './plugins-home/localization';
 import { usePluginFacets } from './plugins-home/usePluginFacets';
 import { useSavedPluginIds } from './plugins-home/savedPlugins';
 import type { PluginUseAction } from './plugins-home/useActions';
@@ -67,7 +68,7 @@ export function PluginsHomeSection({
   subtitle,
   emptyMessage,
 }: Props) {
-  const t = useT();
+  const { locale, t } = useI18n();
   const { savedPluginIds, savePluginId } = useSavedPluginIds();
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const {
@@ -89,14 +90,16 @@ export function PluginsHomeSection({
     savedPluginIds,
     preferDefaultFacet,
     presetSelection,
+    locale,
   });
 
   function handleSavePlugin(record: InstalledPluginRecord): void {
     const result = savePluginId(record.id);
+    const title = localizePluginTitle(locale, record);
     if (result === 'saved') {
-      setSaveToast(`Saved ${record.title}.`);
+      setSaveToast(`Saved ${title}.`);
     } else if (result === 'already-saved') {
-      setSaveToast(`${record.title} is already saved.`);
+      setSaveToast(`${title} is already saved.`);
     } else {
       setSaveToast('Could not save this plugin in this browser.');
     }

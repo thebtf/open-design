@@ -36,6 +36,10 @@ import {
 } from '../state/projects';
 import { fetchMcpServers } from '../state/mcp';
 import { useI18n } from '../i18n';
+import {
+  localizeSkillName,
+  localizeSkillPrompt,
+} from '../i18n/content';
 import { fetchElevenLabsVoiceOptions } from '../providers/elevenlabs-voices';
 import { fetchProjectFiles, projectFileUrl } from '../providers/registry';
 import type {
@@ -991,7 +995,7 @@ export function HomeView({
     setFallbackProjectKind(null);
     setFallbackProjectMetadata(null);
     setError(null);
-    const replacement = nextPrompt ?? skill.examplePrompt ?? '';
+    const replacement = nextPrompt ?? localizeSkillPrompt(locale, skill) ?? '';
     if (replacement.trim().length > 0) {
       setPrompt(replacement);
       setPromptEditedByUser(false);
@@ -1269,7 +1273,7 @@ export function HomeView({
         activePluginTitle={activeBadgeTitle}
         activePluginRecord={active?.record ?? null}
         activeSkillId={activeSkill?.id ?? null}
-        activeSkillTitle={activeSkill?.name ?? null}
+        activeSkillTitle={activeSkill ? localizeSkillName(locale, activeSkill) : null}
         activeChipId={active?.chipId ?? null}
         showActivePluginChip={showActivePluginChip}
         onClearActivePlugin={clearActivePlugin}

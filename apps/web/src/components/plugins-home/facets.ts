@@ -18,8 +18,9 @@
 // clicks make the row visually noisy and obscure how the overall
 // catalog is shaped.
 
-import type { InstalledPluginRecord } from '@open-design/contracts';
+import { resolveLocalizedText, type InstalledPluginRecord } from '@open-design/contracts';
 import { CURATED_LIVE_ARTIFACT_PLUGIN_IDS } from './curatedPriority';
+import { localizedText } from './localization';
 
 export type FacetAxis = 'category' | 'subcategory';
 
@@ -614,6 +615,7 @@ export function isFeaturedPlugin(record: InstalledPluginRecord): boolean {
 export function filterByQuery(
   plugins: InstalledPluginRecord[],
   query: string,
+  locale?: string,
 ): InstalledPluginRecord[] {
   const q = query.trim().toLowerCase();
   if (!q) return plugins;
@@ -622,8 +624,10 @@ export function filterByQuery(
   return plugins.filter((p) => {
     const haystack = [
       p.title ?? '',
+      resolveLocalizedText(localizedText(p.manifest?.title_i18n), locale),
       p.id,
       p.manifest?.description ?? '',
+      resolveLocalizedText(localizedText(p.manifest?.description_i18n), locale),
       (p.manifest?.tags ?? []).join(' '),
     ]
       .join(' ')
