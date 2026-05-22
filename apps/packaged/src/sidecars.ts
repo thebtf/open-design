@@ -217,6 +217,7 @@ function createPackagedDaemonManagedPathEnv(
 
 export type PackagedDaemonSpawnEnvOptions = {
   appVersion: string | null;
+  amrProfile?: string | null;
   daemonCliEntry: string | null;
   /**
    * PR #974 round-5 (lefarcen P2): only pin the daemon's import-folder
@@ -260,6 +261,9 @@ export function buildPackagedDaemonSpawnEnv(
     // fallback, but packaged runtime must not rely on path inference from
     // Electron userData, bundle names, or ports.
     ...createPackagedDaemonManagedPathEnv(paths),
+    ...(options.amrProfile == null || options.amrProfile.length === 0
+      ? {}
+      : { OPEN_DESIGN_AMR_PROFILE: options.amrProfile }),
     ...(options.appVersion == null ? {} : { OD_APP_VERSION: options.appVersion }),
     ...(options.telemetryRelayUrl == null || options.telemetryRelayUrl.length === 0
       ? {}
@@ -359,6 +363,7 @@ export async function startPackagedSidecars(
   paths: PackagedNamespacePaths,
   options: {
     appVersion: string | null;
+    amrProfile: string | null;
     daemonCliEntry: string | null;
     daemonSidecarEntry: string | null;
     nodeCommand: string | null;
@@ -398,6 +403,7 @@ export async function startPackagedSidecars(
       entryPath: options.daemonSidecarEntry ?? resolveSidecarEntry("@open-design/daemon", "sidecar"),
       env: buildPackagedDaemonSpawnEnv(paths, {
         appVersion: options.appVersion,
+        amrProfile: options.amrProfile,
         daemonCliEntry: options.daemonCliEntry,
         legacyDataDir: process.env.OD_LEGACY_DATA_DIR ?? null,
         requireDesktopAuth: options.requireDesktopAuth,

@@ -60,9 +60,21 @@ _Avoid_: Vela, local CLI label
 The local command-line runtime adapter used to run AMR from an installed or packaged native CLI.
 _Avoid_: AMR Cloud, cloud account
 
+**AMR CLI Distribution Contract**:
+The separately owned release contract that provides the native AMR CLI builds Open Design can package.
+_Avoid_: Open Design release channel, package build step, source checkout
+
+**AMR CLI Distribution Slice**:
+The set of native AMR CLI platforms currently available through the distribution contract; platforms outside the slice do not bundle the AMR CLI.
+_Avoid_: Open Design supported platforms, release channel, future platform promise
+
 **AMR Account Status**:
 Whether the user has authenticated the account needed to use AMR Cloud.
 _Avoid_: profile badge, environment, CLI version
+
+**AMR Environment Profile**:
+The target AMR service environment a packaged runtime is configured to use.
+_Avoid_: release channel, account status, app identity
 
 **Onboarding Skip**:
 The explicit path that lets a user leave onboarding without completing the currently selected setup option.
@@ -79,7 +91,10 @@ _Avoid_: continue, finish setup, passive close
 - The **Chip Rail** is the visible Home entry point for choosing a **Home Composer Media Surface**.
 - **Essential Audio Generation** uses an **Audio Source Field** plus model options before creating an audio **Project**.
 - **AMR Cloud** is the user-facing product choice; **AMR CLI** is the local execution adapter behind that capability.
+- The **AMR CLI Distribution Contract** is owned separately from Open Design; Open Design release packaging consumes it instead of defining the native CLI release itself.
+- The first **AMR CLI Distribution Slice** is mac arm64 only.
 - **AMR Account Status** describes account readiness for **AMR Cloud**, not the environment profile or CLI installation state.
+- An **AMR Environment Profile** is independent from release channel identity; a beta, preview, nightly, or stable package can target different AMR service environments when explicitly configured.
 - **Onboarding Skip** bypasses setup completion requirements that belong to the normal onboarding continue path.
 
 ## Example dialogue

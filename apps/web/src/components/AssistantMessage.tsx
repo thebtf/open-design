@@ -121,7 +121,9 @@ export function AssistantMessage({
   // above the composer, so we strip any TodoWrite tool-groups out of the
   // per-message flow to avoid the same task list rendering twice.
   const blocks = stripTodoToolGroups(
-    suppressAskUserQuestionFallbackText(buildBlocks(events)),
+    suppressDuplicateQuestionForms(
+      suppressAskUserQuestionFallbackText(buildBlocks(events)),
+    ),
   );
   const fileOps = useMemo(() => deriveFileOps(events), [events]);
   const produced = message.producedFiles ?? [];
@@ -1662,6 +1664,31 @@ function stripTodoToolGroups(blocks: Block[]): Block[] {
     return !block.items.every(
       (it) => it.use.name === "TodoWrite" || it.use.name === "todowrite",
     );
+  });
+}
+
+// The prompt asks for one discovery form and then a stop, but LLMs can still
+// emit a tailored discovery form followed by the default Quick brief in the
+// same assistant turn. Keep the first form for each id and drop later repeats.
+function suppressDuplicateQuestionForms(blocks: Block[]): Block[] {
+  const seenFormIds = new Set<string>();
+  return blocks.map((block) => {
+    if (block.kind !== "text") return block;
+    const segments = splitOnQuestionForms(block.text);
+    let changed = false;
+    const nextText = segments
+      .map((segment) => {
+        if (segment.kind === "text") return segment.text;
+        const formKey = segment.form.id.trim().toLowerCase();
+        if (seenFormIds.has(formKey)) {
+          changed = true;
+          return "";
+        }
+        seenFormIds.add(formKey);
+        return segment.raw;
+      })
+      .join("");
+    return changed ? { ...block, text: nextText } : block;
   });
 }
 

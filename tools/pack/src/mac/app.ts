@@ -134,6 +134,7 @@ export async function copyResourceTree(config: ToolPackConfig, paths: MacPaths):
   await chmod(join(paths.resourceRoot, "bin", "node"), 0o755);
   await copyOptionalVelaCliBinary({
     platform: "mac",
+    requireBundled: config.requireVelaCli,
     resourceRoot: paths.resourceRoot,
   });
 }
@@ -238,6 +239,7 @@ export async function writeAssembledApp(
     paths.packagedConfigPath,
     `${JSON.stringify(
       {
+        ...(config.amrProfile == null ? {} : { amrProfile: config.amrProfile }),
         appVersion: packagedVersion,
         ...(usePrebundledStandaloneWeb ? { daemonCliEntryRelative: MAC_PREBUNDLED_DAEMON_CLI_RELATIVE_PATH } : {}),
         ...(usePrebundledStandaloneWeb ? { daemonSidecarEntryRelative: MAC_PREBUNDLED_DAEMON_SIDECAR_RELATIVE_PATH } : {}),

@@ -61,6 +61,7 @@ function makeConfig(): ToolPackConfig {
     removeLogs: false,
     removeProductUserData: false,
     removeSidecars: false,
+    requireVelaCli: false,
     roots: {
       output: {
         appBuilderRoot: "/work/.tmp/tools-pack/out/linux/namespaces/default/builder",
@@ -129,6 +130,17 @@ describe("buildDockerArgs", () => {
       { uid: 1000, gid: 1000 },
     );
     expect(args).toContain("OPEN_DESIGN_TELEMETRY_RELAY_URL=https://telemetry.open-design.ai/api/langfuse");
+  });
+
+  it("passes the AMR profile into containerized builds when configured", () => {
+    const args = buildDockerArgs(
+      {
+        ...makeConfig(),
+        amrProfile: "test",
+      },
+      { uid: 1000, gid: 1000 },
+    );
+    expect(args).toContain("OPEN_DESIGN_AMR_PROFILE=test");
   });
 
   it("runs the built tools-pack CLI through node inside the container without generated package-bin shims", () => {

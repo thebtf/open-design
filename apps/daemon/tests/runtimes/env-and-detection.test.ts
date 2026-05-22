@@ -83,6 +83,28 @@ test('spawnEnvForAgent injects the resolved AMR profile after configured env', (
   assert.equal(env.PATH, '/usr/bin');
 });
 
+fsTest('spawnEnvForAgent gives AMR a discovered OpenCode binary under a minimal child PATH', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'od-amr-opencode-home-'));
+  try {
+    return withEnvSnapshot(['PATH', 'OD_AGENT_HOME'], () => {
+      const opencodeBinDir = join(dir, '.opencode', 'bin');
+      const opencodeBin = join(opencodeBinDir, 'opencode');
+      mkdirSync(opencodeBinDir, { recursive: true });
+      writeFileSync(opencodeBin, '#!/bin/sh\nexit 0\n');
+      chmodSync(opencodeBin, 0o755);
+      process.env.PATH = '/usr/bin';
+      process.env.OD_AGENT_HOME = dir;
+
+      const env = spawnEnvForAgent('amr', { PATH: '/usr/bin' });
+
+      assert.equal(env.PATH, '/usr/bin');
+      assert.equal(env.VELA_OPENCODE_BIN, opencodeBin);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('resolveAgentExecutable prefers a configured CODEX_BIN override over PATH resolution', () => {
   const dir = mkdtempSync(join(tmpdir(), 'od-codex-bin-'));
   try {

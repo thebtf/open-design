@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm, writeFile, mkdir, stat } from "node:fs/promises";
+import { access, constants, mkdtemp, readFile, rm, writeFile, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { copyBundledResourceTrees, copyOptionalVelaCliBinary } from "../src/resources.js";
+import { copyBundledResourceTrees, copyOptionalVelaCliBinary, resolveOptionalVelaCliBinary } from "../src/resources.js";
 
 describe("copyBundledResourceTrees", () => {
   it("includes daemon resource trees", async () => {
@@ -131,11 +131,13 @@ describe("copyOptionalVelaCliBinary", () => {
       const copied = await copyOptionalVelaCliBinary({
         env: { OPEN_DESIGN_VELA_CLI_BIN: source },
         platform: "mac",
+        requireBundled: true,
         resourceRoot,
       });
 
       const target = join(resourceRoot, "bin", "vela");
       await expect(readFile(target, "utf8")).resolves.toBe("#!/bin/sh\nexit 0\n");
+      await expect(access(target, constants.X_OK)).resolves.toBeUndefined();
       expect(copied).toEqual({ source, target });
       expect((await stat(target)).mode & 0o111).not.toBe(0);
     } finally {
@@ -164,5 +166,91 @@ describe("copyOptionalVelaCliBinary", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  it("copies a Vela CLI binary resolved from the npm package", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-vela-npm-"));
+    const source = join(root, "source", "vela");
+    const resourceRoot = join(root, "resources", "open-design");
+
+    try {
+      await mkdir(join(root, "source"), { recursive: true });
+      await writeFile(source, "#!/bin/sh\nexit 0\n", "utf8");
+
+      const copied = await copyOptionalVelaCliBinary({
+        env: {},
+        importPackage: async () => ({
+          resolveVelaCliBin: () => source,
+        }),
+        platform: "mac",
+        requireBundled: true,
+        resourceRoot,
+      });
+
+      const target = join(resourceRoot, "bin", "vela");
+      await expect(readFile(target, "utf8")).resolves.toBe("#!/bin/sh\nexit 0\n");
+      await expect(access(target, constants.X_OK)).resolves.toBeUndefined();
+      expect(copied).toEqual({ source, target });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("skips copying when the npm resolver reports an unsupported non-strict platform", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-vela-skip-"));
+    const resourceRoot = join(root, "resources", "open-design");
+
+    try {
+      const copied = await copyOptionalVelaCliBinary({
+        env: {},
+        importPackage: async () => ({
+          resolveVelaCliBin: () => null,
+        }),
+        platform: "linux",
+        resourceRoot,
+      });
+
+      expect(copied).toBeNull();
+      await expect(access(join(resourceRoot, "bin", "vela"))).rejects.toThrow();
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("resolveOptionalVelaCliBinary", () => {
+  it("prefers OPEN_DESIGN_VELA_CLI_BIN over the npm resolver", async () => {
+    await expect(
+      resolveOptionalVelaCliBinary({
+        env: { OPEN_DESIGN_VELA_CLI_BIN: "/tmp/local-vela" },
+        importPackage: async () => ({
+          resolveVelaCliBin: () => "/tmp/npm-vela",
+        }),
+      }),
+    ).resolves.toBe("/tmp/local-vela");
+  });
+
+  it("fails strict mode when the resolver package is missing", async () => {
+    await expect(
+      resolveOptionalVelaCliBinary({
+        env: {},
+        importPackage: async () => {
+          throw new Error("not installed");
+        },
+        requireBundled: true,
+      }),
+    ).rejects.toThrow(/@powerformer\/vela-cli.*OPEN_DESIGN_VELA_CLI_BIN/);
+  });
+
+  it("fails strict mode when the resolver returns no binary", async () => {
+    await expect(
+      resolveOptionalVelaCliBinary({
+        env: {},
+        importPackage: async () => ({
+          resolveVelaCliBin: () => ({ supported: false }),
+        }),
+        requireBundled: true,
+      }),
+    ).rejects.toThrow(/@powerformer\/vela-cli.*OPEN_DESIGN_VELA_CLI_BIN/);
   });
 });

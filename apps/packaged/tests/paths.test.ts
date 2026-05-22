@@ -8,6 +8,7 @@ import type { PackagedConfig } from "../src/config.js";
 describe("resolvePackagedNamespacePaths", () => {
   it("models update downloads as a namespace-scoped root beside data", () => {
     const config: PackagedConfig = {
+      amrProfile: null,
       appVersion: "1.2.3",
       daemonCliEntry: null,
       daemonSidecarEntry: null,

@@ -209,6 +209,9 @@ export function buildDockerArgs(
   if (config.telemetryRelayUrl != null) {
     dockerArgs.push("-e", `OPEN_DESIGN_TELEMETRY_RELAY_URL=${config.telemetryRelayUrl}`);
   }
+  if (config.amrProfile != null) {
+    dockerArgs.push("-e", `OPEN_DESIGN_AMR_PROFILE=${config.amrProfile}`);
+  }
   dockerArgs.push(
     "-w",
     "/project",
@@ -473,6 +476,7 @@ async function writeAssembledApp(
     paths.packagedConfigPath,
     `${JSON.stringify(
       {
+        ...(config.amrProfile == null ? {} : { amrProfile: config.amrProfile }),
         appVersion: version,
         namespace: config.namespace,
         nodeCommandRelative: "open-design/bin/node",

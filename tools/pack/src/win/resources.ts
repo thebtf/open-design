@@ -3,13 +3,13 @@ import { dirname, join } from "node:path";
 
 import { hashJson, hashPath, ToolPackCache } from "../cache.js";
 import type { ToolPackConfig } from "../config.js";
-import { copyBundledResourceTrees, copyOptionalVelaCliBinary, VELA_CLI_BIN_ENV, winResources } from "../resources.js";
+import { copyBundledResourceTrees, copyOptionalVelaCliBinary, resolveOptionalVelaCliBinary, winResources } from "../resources.js";
 import type { WinPaths, ResourceTreeCacheMetadata } from "./types.js";
 
 const RESOURCE_TREE_CACHE_SCHEMA_VERSION = 3;
 
 async function createResourceTreeCacheKey(config: ToolPackConfig): Promise<string> {
-  const velaCliBin = process.env[VELA_CLI_BIN_ENV]?.trim();
+  const velaCliBin = await resolveOptionalVelaCliBinary();
   return hashJson({
     assetsCommunityPets: await hashPath(join(config.workspaceRoot, "assets", "community-pets")),
     assetsFrames: await hashPath(join(config.workspaceRoot, "assets", "frames")),

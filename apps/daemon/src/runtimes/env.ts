@@ -1,4 +1,5 @@
 import { expandConfiguredEnv } from './paths.js';
+import { resolveOnPath } from './executables.js';
 import { amrVelaProfileEnv } from '../integrations/vela-profile.js';
 
 type RuntimeEnvMap = NodeJS.ProcessEnv | Record<string, string>;
@@ -32,6 +33,10 @@ export function spawnEnvForAgent(
   };
   if (agentId === 'amr') {
     Object.assign(env, amrVelaProfileEnv(env));
+    if (!env.VELA_OPENCODE_BIN?.trim()) {
+      const opencodeBin = resolveOnPath('opencode-cli') ?? resolveOnPath('opencode');
+      if (opencodeBin) env.VELA_OPENCODE_BIN = opencodeBin;
+    }
   }
   if (agentId !== 'claude') return env;
   const hasCustomBaseUrl = Object.keys(env).some(
