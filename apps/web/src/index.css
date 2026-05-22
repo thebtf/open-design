@@ -26682,7 +26682,7 @@ body.desktop-pet-shell .pet-task-item {
   top: calc(100% + 6px);
   right: 0;
   z-index: 59;
-  min-width: 176px;
+  min-width: 216px;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -26704,6 +26704,7 @@ body.desktop-pet-shell .pet-task-item {
   color: var(--text);
   font-size: 12.5px;
   line-height: 1.2;
+  white-space: nowrap;
   text-align: left;
   cursor: pointer;
 }
