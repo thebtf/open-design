@@ -433,8 +433,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(srcDocFrame?.srcdoc).toContain('data-od-lazy-srcdoc-transport');
     expect(srcDocFrame?.srcdoc).not.toContain('__odArtifactBootCount');
 
-    const postMessageSpy = vi.spyOn(srcDocFrame!.contentWindow!, 'postMessage');
-    clickManualTool('inspect-mode-toggle');
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
 
     const urlFrameAfter = container.querySelector('iframe[data-od-render-mode="url-load"]') as HTMLIFrameElement | null;
     const srcDocFrameAfter = container.querySelector('iframe[data-od-render-mode="srcdoc"]') as HTMLIFrameElement | null;
@@ -444,15 +443,8 @@ describe('FileViewer SVG artifacts', () => {
     expect(urlFrameAfter?.getAttribute('data-od-active')).toBe('false');
     expect(urlFrameAfter?.getAttribute('src')).toBe('about:blank');
     expect(srcDocFrameAfter?.getAttribute('data-od-active')).toBe('true');
-    expect(srcDocFrameAfter?.srcdoc).toContain('data-od-lazy-srcdoc-transport');
-    expect(srcDocFrameAfter?.srcdoc).not.toContain('__odArtifactBootCount');
-
-    await waitFor(() => {
-      const activations = srcDocActivationMessages(postMessageSpy.mock.calls);
-      expect(activations.at(-1)?.html).toContain('__odArtifactBootCount');
-      expect(activations.at(-1)?.html).toContain('data-od-selection-bridge');
-      expect(activations.at(-1)?.html).toContain('data-od-preview-focus-guard');
-    });
+    expect(srcDocFrameAfter?.srcdoc).toContain('__odArtifactBootCount');
+    expect(srcDocFrameAfter?.srcdoc).toContain('data-od-edit-bridge');
   });
 
   it('reactivates the srcDoc transport after switching source back to preview', async () => {
@@ -481,7 +473,7 @@ describe('FileViewer SVG artifacts', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Manual' }));
-    fireEvent.click(screen.getByTestId('inspect-mode-toggle'));
+    fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
 
     await waitFor(() => {
       const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
@@ -493,17 +485,11 @@ describe('FileViewer SVG artifacts', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Preview' }));
 
-    const remountedFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    const postMessageSpy = vi.spyOn(remountedFrame.contentWindow!, 'postMessage');
-
     await waitFor(() => {
       const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
       expect(activeFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-    });
-    await waitFor(() => {
-      const activations = srcDocActivationMessages(postMessageSpy.mock.calls);
-      expect(activations.at(-1)?.html).toContain('data-od-selection-bridge');
-      expect(activations.at(-1)?.html).toContain('Hero');
+      expect(activeFrame.srcdoc).toContain('data-od-edit-bridge');
+      expect(activeFrame.srcdoc).toContain('Hero');
     });
   });
 
@@ -1436,7 +1422,7 @@ describe('FileViewer tweaks toolbar', () => {
     });
   }
 
-  it('renders Comment as the primary element picker and Sketch as a top-level annotation tool', () => {
+  it('renders Annotation, Edit, and Draw as the primary preview tools', () => {
     render(
       <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
         liveHtml='<html><body><main data-od-id="hero">Hero</main></body></html>'
@@ -1445,7 +1431,7 @@ describe('FileViewer tweaks toolbar', () => {
 
     openManualTools();
     expect(screen.getByTestId('palette-tweaks-toggle')).toBeTruthy();
-    expect(screen.getByTestId('inspect-mode-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('inspect-mode-toggle')).toBeNull();
     expect(screen.getByTestId('board-mode-toggle')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'More annotation tools' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Pick element' })).toBeNull();
@@ -1461,37 +1447,6 @@ describe('FileViewer tweaks toolbar', () => {
 
     clickAgentTool('draw-overlay-toggle');
     expect(screen.queryByPlaceholderText('Type anywhere to add a note')).toBeNull();
-  });
-
-  it('shows an inspect notice when a clicked child resolves to an annotated ancestor', async () => {
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
-        liveHtml='<html><body><main data-od-id="hero"><h1>Hero</h1></main></body></html>'
-      />,
-    );
-
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    clickManualTool('inspect-mode-toggle');
-
-    window.dispatchEvent(new MessageEvent('message', {
-      source: frame.contentWindow,
-      data: {
-        type: 'od:comment-target',
-        elementId: 'hero',
-        selector: '[data-od-id="hero"]',
-        label: 'main',
-        text: 'Hero',
-        style: {},
-        clickedDescendant: {
-          label: 'h1',
-          text: 'Hero',
-        },
-      },
-    }));
-
-    const notice = await screen.findByTestId('inspect-ancestor-notice');
-    expect(notice.textContent).toContain('You clicked h1');
-    expect(notice.textContent).toContain('Editing main instead');
   });
 
   it('keeps the Draw bar open after queueing an annotation', () => {
@@ -1625,21 +1580,20 @@ describe('FileViewer tweaks toolbar', () => {
     expect(screen.getByTestId('comment-side-panel')).toBeTruthy();
     expect(screen.getByTestId('comment-panel-toggle').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('board-mode-toggle').getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByTestId('inspect-empty-hint-container')).toBeTruthy();
 
     clickAgentTool('board-mode-toggle');
 
     expect(screen.queryByTestId('comment-side-panel')).toBeNull();
     expect(screen.getByTestId('comment-panel-toggle').getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByTestId('board-mode-toggle').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByTestId('inspect-empty-hint-container')).toBeTruthy();
+    expect(screen.queryByTestId('inspect-empty-hint-container')).toBeNull();
 
     fireEvent.click(screen.getByTestId('comment-panel-toggle'));
 
     expect(screen.getByTestId('comment-side-panel')).toBeTruthy();
     expect(screen.getByTestId('comment-panel-toggle').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('board-mode-toggle').getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByTestId('inspect-empty-hint-container')).toBeTruthy();
+    expect(screen.queryByTestId('inspect-empty-hint-container')).toBeNull();
   });
 
   it('keeps saved comment pins visible while adding another comment', async () => {
@@ -1821,7 +1775,7 @@ describe('FileViewer tweaks toolbar', () => {
     expect(screen.getByTestId('comment-panel-toggle').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('shows an inspect style panel while hovering before clicking', async () => {
+  it('shows element parameters on annotation hover without opening an editor', async () => {
     render(
       <FileViewer
         projectId="project-1"
@@ -1854,10 +1808,11 @@ describe('FileViewer tweaks toolbar', () => {
       data: { ...target, type: 'od:comment-hover' },
     }));
 
-    const panel = await screen.findByTestId('inspect-panel');
-    expect(panel.textContent).toContain('p');
-    expect((screen.getByTestId('inspect-color') as HTMLInputElement).value).toBe('#1a1916');
-    expect((screen.getByTestId('inspect-font-size') as HTMLInputElement).value).toBe('13.5');
+    const summary = await screen.findByTestId('annotation-hover-style-summary');
+    expect(summary.textContent).toContain('Color');
+    expect(summary.textContent).toContain('#1A1916');
+    expect(summary.textContent).toContain('13.5px');
+    expect(screen.queryByTestId('inspect-panel')).toBeNull();
     expect(screen.queryByTestId('comment-popover-input')).toBeNull();
 
     window.dispatchEvent(new MessageEvent('message', {
@@ -1865,13 +1820,9 @@ describe('FileViewer tweaks toolbar', () => {
       data: { ...target, type: 'od:comment-target' },
     }));
 
-    expect(await screen.findByTestId('comment-popover-input')).toBeTruthy();
-    expect(screen.getByTestId('comment-popover-save')).toBeTruthy();
-    expect(screen.getByTestId('comment-add-send')).toBeTruthy();
-    await waitFor(() => {
-      expect(screen.queryByTestId('annotation-hover-popover')).toBeNull();
-    });
-    expect(screen.getByTestId('inspect-panel')).toBeTruthy();
+    expect(screen.queryByTestId('comment-popover-input')).toBeNull();
+    expect(screen.queryByTestId('inspect-panel')).toBeNull();
+    expect(screen.getByTestId('annotation-hover-popover')).toBeTruthy();
   });
 
   it('closes an open saved-comment composer when that comment leaves the open state', async () => {

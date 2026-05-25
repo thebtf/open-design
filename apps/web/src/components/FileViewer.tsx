@@ -3246,16 +3246,6 @@ function normalizeAnnotationStyle(input: unknown): PreviewCommentSnapshot['style
   return Object.keys(style).length > 0 ? style : undefined;
 }
 
-function inspectTargetFromCommentSnapshot(snapshot: PreviewCommentSnapshot): InspectTarget {
-  return {
-    elementId: snapshot.elementId,
-    selector: snapshot.selector,
-    label: snapshot.label,
-    text: snapshot.text,
-    style: snapshot.style ?? {},
-  };
-}
-
 const ANNOTATION_STYLE_KEYS = [
   'color',
   'backgroundColor',
@@ -4811,9 +4801,6 @@ function HtmlViewer({
       }
       if (data.type === 'od:comment-leave') {
         setHoveredCommentTarget(null);
-        if (boardMode && boardTool === 'inspect' && !activeCommentTarget) {
-          setActiveInspectTarget(null);
-        }
         return;
       }
       if (data.type === 'od:comment-hover') {
@@ -4821,14 +4808,6 @@ function HtmlViewer({
         if (!snapshot.elementId) return;
         setHoveredCommentTarget(snapshot);
         setLiveCommentTargets((current) => new Map(current).set(snapshot.elementId, snapshot));
-        if (boardMode && boardTool === 'inspect') {
-          setActiveInspectTarget(inspectTargetFromCommentSnapshot(snapshot));
-          setInspectError(null);
-          setInspectSavedAt(null);
-        }
-        if (commentPortalHost && boardMode && boardTool === 'inspect') {
-          setActiveCommentTarget((current) => current ?? snapshot);
-        }
         return;
       }
       if (data.type === 'od:comment-target') {
@@ -4839,15 +4818,11 @@ function HtmlViewer({
           comment.status === 'open' &&
           comment.elementId === snapshot.elementId,
         );
-        setActiveCommentTarget(snapshot);
+        const shouldOpenComposer = drawClickSelectionMode || commentCreateMode || boardTool !== 'inspect';
+        setActiveCommentTarget((current) => (shouldOpenComposer ? snapshot : current));
         setHoveredCommentTarget(snapshot);
         setLiveCommentTargets((current) => new Map(current).set(snapshot.elementId, snapshot));
-        if (boardMode && boardTool === 'inspect') {
-          setActiveInspectTarget(inspectTargetFromCommentSnapshot(snapshot));
-          setInspectError(null);
-          setInspectSavedAt(null);
-        }
-        if (boardMode) {
+        if (boardMode && shouldOpenComposer) {
           setActivePreviewCommentId(existing?.id ?? null);
           setCommentDraft(existing?.note ?? '');
           setQueuedBoardNotes([]);
@@ -5806,25 +5781,6 @@ function HtmlViewer({
     activateCommentCreate();
   }
 
-  function activateInspectTool() {
-    fireArtifactToolbarClick('inspect');
-    setInspectMode((v) => {
-      const next = !v;
-      if (next) {
-        setCommentPanelOpen(false);
-        setCommentCreateMode(false);
-        setBoardMode(false);
-        clearBoardComposer();
-        setManualEditMode(false);
-        setDrawOverlayOpen(false);
-        setOpenHintBox(true);
-        setMode('preview');
-      }
-      return next;
-    });
-    closeArtifactToolMenus();
-  }
-
   function activateManualEditTool() {
     fireArtifactToolbarClick('edit');
     capturePreviewScrollPosition();
@@ -6323,7 +6279,7 @@ function HtmlViewer({
                 <button
                   type="button"
                   className={`viewer-action viewer-action-icon artifact-tool-menu-trigger${
-                    selectedPalette || palettePopoverOpen || inspectMode ? ' active' : ''
+                    selectedPalette || palettePopoverOpen ? ' active' : ''
                   }`}
                   aria-haspopup="menu"
                   aria-expanded={manualToolsOpen}
@@ -6380,18 +6336,6 @@ function HtmlViewer({
                           }}
                         />
                       ) : null}
-                    </button>
-                    <button
-                      className={`artifact-tool-menu-item${inspectMode ? ' active' : ''}`}
-                      type="button"
-                      data-testid="inspect-mode-toggle"
-                      title="Inspect style"
-                      role="menuitem"
-                      aria-pressed={inspectMode}
-                      onClick={activateInspectTool}
-                    >
-                      <Icon name="tweaks" size={13} />
-                      <span>Inspect style</span>
                     </button>
                   </div>
                 ) : null}
@@ -6892,13 +6836,13 @@ function HtmlViewer({
               </div>
             ) : null}
             {commentComposer}
-            {boardMode && boardTool !== 'inspect' && !commentCreateMode && hoveredCommentTarget && (!activeCommentTarget || commentPortalHost) ? (
+            {boardMode && !commentCreateMode && hoveredCommentTarget && (!activeCommentTarget || commentPortalHost) ? (
               <AnnotationHoverPopover target={hoveredCommentTarget} scale={overlayPreviewScale} />
             ) : null}
             {commentPortalHost && commentSidePanel
               ? createPortal(commentSidePanel, commentPortalHost)
               : commentSidePanel}
-            {(inspectMode || (boardMode && boardTool === 'inspect')) && activeInspectTarget ? (
+            {inspectMode && activeInspectTarget ? (
               <InspectPanel
                 target={activeInspectTarget}
                 onApply={(prop, value) => {
@@ -6955,7 +6899,7 @@ function HtmlViewer({
                 missing and how to fix it. Mirrored across Inspect and
                 element-pick annotation mode because the failure surface is identical.
             */}
-            {(inspectMode || (boardMode && boardTool === 'inspect'))
+            {inspectMode
               && openHintBox
               && !activeInspectTarget
               && !activeCommentTarget ? (
