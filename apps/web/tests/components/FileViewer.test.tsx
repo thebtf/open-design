@@ -78,15 +78,6 @@ function srcDocActivationMessages(calls: readonly (readonly unknown[])[]) {
     });
 }
 
-function openManualTools() {
-  fireEvent.click(screen.getByRole('button', { name: 'Manual' }));
-}
-
-function clickManualTool(testId: string) {
-  openManualTools();
-  fireEvent.click(screen.getByTestId(testId));
-}
-
 function clickAgentTool(testId: string) {
   fireEvent.click(screen.getByTestId(testId));
 }
@@ -472,7 +463,6 @@ describe('FileViewer SVG artifacts', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Manual' }));
     fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
 
     await waitFor(() => {
@@ -766,16 +756,14 @@ describe('FileViewer SVG artifacts', () => {
     );
 
     expect(container.querySelector('.deck-nav')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Manual' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Manual' })).toBeNull();
     expect(container.querySelector('.viewer-viewport-switcher')).toBeTruthy();
-    openManualTools();
-    expect(screen.getByTestId('palette-tweaks-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('palette-tweaks-toggle')).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
 
     await waitFor(() => {
       expect(container.querySelector('.deck-nav')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Manual' })).toBeNull();
       expect(container.querySelector('.viewer-viewport-switcher')).toBeNull();
       expect(screen.queryByTestId('manual-edit-mode-toggle')).toBeNull();
       expect(screen.queryByTestId('draw-overlay-toggle')).toBeNull();
@@ -1429,8 +1417,7 @@ describe('FileViewer tweaks toolbar', () => {
       />,
     );
 
-    openManualTools();
-    expect(screen.getByTestId('palette-tweaks-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('palette-tweaks-toggle')).toBeNull();
     expect(screen.queryByTestId('inspect-mode-toggle')).toBeNull();
     expect(screen.getByTestId('board-mode-toggle')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'More annotation tools' })).toBeNull();

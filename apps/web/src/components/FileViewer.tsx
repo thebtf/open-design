@@ -15,7 +15,6 @@ import {
   trackPageView,
   trackPresentPopoverClick,
   trackShareOptionPopoverClick,
-  trackTweaksPopoverClick,
 } from '../analytics/events';
 import { MarkdownRenderer, artifactRendererRegistry } from '../artifacts/renderer-registry';
 import { renderMarkdownToSafeHtml } from '../artifacts/markdown';
@@ -87,7 +86,6 @@ import type {
 import { Icon } from './Icon';
 import { RemixIcon } from './RemixIcon';
 import { Toast } from './Toast';
-import { PaletteTweaks, type PaletteId } from './PaletteTweaks';
 import { PreviewDrawOverlay, type PreviewDrawMode } from './PreviewDrawOverlay';
 import {
   buildBoardCommentAttachments,
@@ -3826,11 +3824,7 @@ function HtmlViewer({
   const [commentCreateMode, setCommentCreateMode] = useState(false);
   const [boardTool, setBoardTool] = useState<BoardTool>('inspect');
   const [inspectMode, setInspectMode] = useState(false);
-  const [palettePopoverOpen, setPalettePopoverOpen] = useState(false);
-  const [manualToolsOpen, setManualToolsOpen] = useState(false);
   const [agentToolsOpen, setAgentToolsOpen] = useState(false);
-  const [selectedPalette, setSelectedPalette] = useState<PaletteId | null>(null);
-  const [previewPalette, setPreviewPalette] = useState<PaletteId | null>(null);
   const [drawOverlayOpen, setDrawOverlayOpen] = useState(false);
   const [drawOverlayMode, setDrawOverlayMode] = useState<PreviewDrawMode>('click');
   const [drawOverlayIntent, setDrawOverlayIntent] = useState<'draw' | 'screenshot'>('draw');
@@ -4279,7 +4273,6 @@ function HtmlViewer({
     editMode: manualEditMode,
     urlModeBridge,
     inspectMode,
-    paletteActive: palettePopoverOpen || selectedPalette !== null,
     drawMode: drawOverlayOpen,
     forceInline: forceInline || needsSandboxShim,
     needsFocusGuard,
@@ -4335,11 +4328,10 @@ function HtmlViewer({
       initialSlideIndex: htmlPreviewSlideState.get(previewStateKey)?.active ?? 0,
       selectionBridge: true,
       editBridge: manualEditMode,
-      paletteBridge: true,
-      initialPalette: selectedPalette,
+      paletteBridge: false,
       previewFocusGuard: true,
     }) : ''),
-    [previewSource, effectiveDeck, projectId, file.name, previewStateKey, manualEditMode, selectedPalette],
+    [previewSource, effectiveDeck, projectId, file.name, previewStateKey, manualEditMode],
   );
   const lazySrcDocTransport = useMemo(() => buildLazySrcdocTransport(), []);
   const [hasLazySrcDocTransport, setHasLazySrcDocTransport] = useState(useUrlLoadPreview);
@@ -4570,8 +4562,6 @@ function HtmlViewer({
     win.postMessage({ type: 'od-edit-mode', enabled: manualEditMode }, '*');
     postSelectedManualEditTargetToIframe(manualEditMode ? selectedManualEditTarget?.id ?? null : null, target);
     win.postMessage({ type: 'od:inspect-mode', enabled: inspectMode }, '*');
-    const palette = previewPalette ?? selectedPalette;
-    win.postMessage({ type: 'od:palette', palette }, '*');
   }
 
   useEffect(() => {
@@ -4579,13 +4569,6 @@ function HtmlViewer({
     if (!win) return;
     win.postMessage({ type: 'od:inspect-mode', enabled: inspectMode }, '*');
   }, [inspectMode, srcDoc]);
-
-  useEffect(() => {
-    const win = iframeRef.current?.contentWindow;
-    if (!win) return;
-    const palette = previewPalette ?? selectedPalette;
-    win.postMessage({ type: 'od:palette', palette }, '*');
-  }, [previewPalette, selectedPalette, srcDoc]);
 
   // Mirror the bridge's `od:comment-targets` broadcast into
   // `liveCommentTargets` whenever EITHER Inspect or Comments mode is
@@ -5352,7 +5335,7 @@ function HtmlViewer({
   }, [zoomMenuOpen]);
 
   useEffect(() => {
-    if (!manualToolsOpen && !agentToolsOpen) return;
+    if (!agentToolsOpen) return;
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.closest('.artifact-tool-menu-anchor')) return;
@@ -5367,7 +5350,7 @@ function HtmlViewer({
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onKey);
     };
-  }, [manualToolsOpen, agentToolsOpen]);
+  }, [agentToolsOpen]);
 
   useEffect(() => {
     if (!shareMenuOpen) return;
@@ -5657,14 +5640,6 @@ function HtmlViewer({
   }
 
   function closeArtifactToolMenus() {
-    setManualToolsOpen(false);
-    setAgentToolsOpen(false);
-  }
-
-  function activatePaletteTool() {
-    fireArtifactToolbarClick('tweaks');
-    setPalettePopoverOpen((v) => !v);
-    setManualToolsOpen(false);
     setAgentToolsOpen(false);
   }
 
@@ -6306,100 +6281,6 @@ function HtmlViewer({
               >
                 <RemixIcon name="screenshot-2-line" size={15} />
               </button>
-              <div className="artifact-tool-menu-anchor">
-                <button
-                  type="button"
-                  className={`viewer-action viewer-action-icon artifact-tool-menu-trigger${
-                    selectedPalette || palettePopoverOpen ? ' active' : ''
-                  }`}
-                  aria-haspopup="menu"
-                  aria-expanded={manualToolsOpen}
-                  aria-label="Manual"
-                  data-tooltip="Manual"
-                  title="Manual"
-                  onClick={() => {
-                    setManualToolsOpen((v) => !v);
-                    setAgentToolsOpen(false);
-                    setPalettePopoverOpen(false);
-                  }}
-                >
-                  <RemixIcon name="pencil-ruler-line" size={15} />
-                  {selectedPalette ? (
-                    <span
-                      className="palette-tweaks-badge"
-                      aria-hidden
-                      style={{
-                        backgroundColor:
-                          selectedPalette === 'coral' ? '#ff5a3c' :
-                          selectedPalette === 'electric' ? '#7c3aed' :
-                          selectedPalette === 'acid-forest' ? '#16a34a' :
-                          selectedPalette === 'risograph' ? '#e11d48' :
-                          '#0a0a0a',
-                      }}
-                    />
-                  ) : null}
-                </button>
-                {manualToolsOpen ? (
-                  <div className="artifact-tool-menu" role="menu" aria-label="Manual tools">
-                    <button
-                      type="button"
-                      className={`artifact-tool-menu-item${selectedPalette || palettePopoverOpen ? ' active' : ''}`}
-                      data-testid="palette-tweaks-toggle"
-                      title="Palette"
-                      role="menuitem"
-                      aria-haspopup="dialog"
-                      aria-expanded={palettePopoverOpen}
-                      onClick={activatePaletteTool}
-                    >
-                      <Icon name="palette" size={13} />
-                      <span>Palette</span>
-                      {selectedPalette ? (
-                        <span
-                          className="palette-tweaks-badge"
-                          aria-hidden
-                          style={{
-                            backgroundColor:
-                              selectedPalette === 'coral' ? '#ff5a3c' :
-                              selectedPalette === 'electric' ? '#7c3aed' :
-                              selectedPalette === 'acid-forest' ? '#16a34a' :
-                              selectedPalette === 'risograph' ? '#e11d48' :
-                              '#0a0a0a',
-                          }}
-                        />
-                      ) : null}
-                    </button>
-                  </div>
-                ) : null}
-                <PaletteTweaks
-                  open={palettePopoverOpen}
-                  selected={selectedPalette}
-                  onChange={(nextPalette) => {
-                    // P0 ui_click area=tweaks_popover. status_before/after
-                    // reflect whether THIS variant was selected. Picking
-                    // "Original" (nextPalette === null) reads as turning
-                    // off the previously selected variant — record that
-                    // by passing the prior selection as variant_name.
-                    const targetVariant = nextPalette ?? selectedPalette;
-                    if (targetVariant) {
-                      const wasSelected = selectedPalette === targetVariant;
-                      const willBeSelected = nextPalette === targetVariant;
-                      trackTweaksPopoverClick(analytics.track, {
-                        page_name: 'artifact',
-                        area: 'tweaks_popover',
-                        element: 'variant_option',
-                        variant_name: targetVariant,
-                        artifact_id: anonymizeArtifactId({ projectId, fileName: file.name }),
-                        artifact_kind: artifactKindToTracking({ fileKind: file.kind ?? null }),
-                        status_before: wasSelected ? 'on' : 'off',
-                        status_after: willBeSelected ? 'on' : 'off',
-                      });
-                    }
-                    setSelectedPalette(nextPalette);
-                  }}
-                  onPreview={setPreviewPalette}
-                  onClose={() => setPalettePopoverOpen(false)}
-                />
-              </div>
               {source !== null && mode === 'preview' ? (
                 <div className="zoom-menu viewer-toolbar-zoom" ref={zoomMenuRef}>
                   <button
