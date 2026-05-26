@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Button, Input } from '@open-design/components';
+import { Button } from '@open-design/components';
 import { useAnalytics } from '../analytics/provider';
 import { trackIntegrationsMcpTabClick } from '../analytics/events';
 import {
@@ -753,7 +753,7 @@ function McpRow({ row, idx, total, template, onChange, onRemove, onMoveUp, onMov
           />
         </label>
         {expanded ? (
-          <Input
+          <input
             type="text"
             className="mcp-row-label"
             value={row.label ?? ''}
