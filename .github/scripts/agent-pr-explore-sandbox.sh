@@ -975,7 +975,16 @@ if [ "$(wc -c < "$context_file" | tr -d " ")" -gt "$context_max_bytes" ]; then
   } >> "$trimmed_context_file"
 fi
 
-docker pull "$image"
+# Use the locally cached image when present. The self-hosted runner's
+# network to docker.io is unreliable, and the base image is referenced by
+# a tag we treat as stable for the duration of a run, so don't pay for (or
+# fail on) a pull when the image is already available. Only pull when it is
+# missing; refreshing the cached image is a separate, explicit operation.
+if docker image inspect "$image" >/dev/null 2>&1; then
+  echo "Using locally cached image $image (skipping pull)."
+else
+  docker pull "$image"
+fi
 
 docker run -d \
   --name "$container_name" \
