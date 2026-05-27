@@ -146,7 +146,7 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     expect(amrCloud.textContent).toContain('Better pricing');
     const authorizeLink = screen.getByRole('link', { name: /Authorize AMR/i });
     expect(authorizeLink.getAttribute('href')).toBe(
-      'https://vela.powerformer.net/login?redirect=/wallet',
+      'https://open-design.ai/amr/wallet',
     );
     await screen.findByText('Not signed in');
     expect(screen.queryByRole('button', { name: /^Sign in$/i })).toBeNull();

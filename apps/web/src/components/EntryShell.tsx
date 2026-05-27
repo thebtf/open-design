@@ -115,7 +115,7 @@ import {
   amrLoginPollOutcome,
 } from './amrLoginPolling';
 
-const AMR_AUTH_URL = 'https://vela.powerformer.net/login?redirect=/wallet';
+const AMR_AUTH_URL = 'https://open-design.ai/amr/wallet';
 
 // The topbar chips (GitHub star, model switcher, Use everywhere)
 // collapse into the settings dropdown when the viewport gets
