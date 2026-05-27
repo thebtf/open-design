@@ -449,6 +449,12 @@ export function ChatPane({
   // / audio errors) then the persisted run error so a reload still shows it.
   const rawError = error ?? failedRunErrorEvent?.detail ?? null;
   const displayError = runFailureUi?.messageKey ? t(runFailureUi.messageKey) : rawError;
+  // The failed run whose error this top-level card represents. AssistantMessage
+  // suppresses only THIS message's per-message error pill (to avoid the
+  // duplicate); other failed turns — older history, or once a follow-up makes
+  // this no longer the last assistant — keep their pill so the error survives.
+  const errorCardOwnerId =
+    retryAssistant && failedRunErrorEvent ? retryAssistant.id : null;
   // AMR promotion card payload (only the non-AMR model/auth/quota case).
   const amrSwitchPayload =
     runFailureUi?.showSwitchCard && retryAssistant && failedRunErrorEvent?.code
@@ -1138,6 +1144,7 @@ export function ChatPane({
                         activePluginActionPaths={activePluginActionPaths}
                         hiddenPluginActionPaths={hiddenPluginActionPaths}
                         isLast={m.id === lastAssistantId}
+                        errorCardOwnerId={errorCardOwnerId}
                         nextUserContent={nextUserContentByAssistantId.get(m.id)}
                         suppressDirectionForms={hasActiveDesignSystem}
                         hasDesignSystemContext={hasActiveDesignSystem || !!activeDesignSystem}

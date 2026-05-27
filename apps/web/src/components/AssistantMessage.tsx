@@ -126,6 +126,10 @@ interface Props {
   // interactivity on this so older forms render as a locked "answered"
   // capsule instead of being re-submittable.
   isLast?: boolean;
+  // Assistant message id whose run-failure error is rendered as ChatPane's
+  // top-level error card; that message's per-message error pill is suppressed
+  // to avoid duplication. Other messages keep their error pill.
+  errorCardOwnerId?: string | null;
   // The user message that immediately follows this assistant turn (if
   // any). Used to detect that a form was already answered so we can
   // render its locked state with the user's picks visible.
@@ -161,6 +165,7 @@ export function AssistantMessage({
   activePluginActionPaths = new Set(),
   hiddenPluginActionPaths = new Set(),
   isLast,
+  errorCardOwnerId = null,
   nextUserContent,
   onSubmitForm,
   onContinueRemainingTasks,
@@ -379,10 +384,12 @@ export function AssistantMessage({
             );
           }
           if (b.kind === "status") {
-            // The run-failure error is shown once as the red error card in
-            // ChatPane (with retry + the hosted-AMR nudge below it). Suppress
-            // the duplicate gray per-message error pill.
-            if (b.label === "error") return null;
+            // Suppress this message's gray error pill ONLY when ChatPane is
+            // rendering the top-level error card for it (the last failed run).
+            // Other failed turns — older history, or once a follow-up makes
+            // this no longer the last assistant message — keep their pill so
+            // the error detail still survives reload / history review.
+            if (b.label === "error" && message.id === errorCardOwnerId) return null;
             return <StatusPill key={i} label={b.label} detail={b.detail} />;
           }
           return null;
