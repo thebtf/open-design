@@ -560,13 +560,27 @@ async function previewSnapshotBlobFromIframes(
       fallback ??= { ok: false, reason: 'loading' };
       continue;
     }
-    const result = await requestPreviewSnapshotResult(iframe);
+    const result = await requestPreviewSnapshotResultWithRetries(iframe);
     if (result.ok) {
       return { blob: await previewSnapshotDataUrlToBlob(result.snapshot.dataUrl), fallback };
     }
     fallback ??= result;
   }
   throw new Error(snapshotFailureMessage(fallback, t));
+}
+
+async function requestPreviewSnapshotResultWithRetries(
+  iframe: HTMLIFrameElement,
+): Promise<PreviewSnapshotResult> {
+  let last: PreviewSnapshotResult | null = null;
+  const timeouts = [750, 1500, 3000, 8000];
+  for (const timeout of timeouts) {
+    const result = await requestPreviewSnapshotResult(iframe, timeout);
+    if (result.ok) return result;
+    last = result;
+    if (result.reason === 'render-error' || result.reason === 'post-message-error') return result;
+  }
+  return last ?? { ok: false, reason: 'timeout' };
 }
 
 function snapshotFailureMessage(
@@ -4462,13 +4476,9 @@ function HtmlViewer({
     [previewSource, effectiveDeck, projectId, file.name, previewStateKey, manualEditMode],
   );
   const lazySrcDocTransport = useMemo(() => buildLazySrcdocTransport(), []);
-  const [hasLazySrcDocTransport, setHasLazySrcDocTransport] = useState(useUrlLoadPreview);
   const [srcDocTransportResetKey, setSrcDocTransportResetKey] = useState(0);
   const [srcDocShellReady, setSrcDocShellReady] = useState(false);
   const wasUrlLoadPreviewRef = useRef(useUrlLoadPreview);
-  useEffect(() => {
-    if (useUrlLoadPreview) setHasLazySrcDocTransport(true);
-  }, [useUrlLoadPreview]);
   // Reset the shell-ready latch whenever the srcDoc iframe re-mounts. The
   // next shell will post `od:srcdoc-transport-ready` (or fire onLoad) and
   // flip this back to true. See #2253.
@@ -4490,7 +4500,8 @@ function HtmlViewer({
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
-  const useLazySrcDocTransport = !manualEditMode && (useUrlLoadPreview || hasLazySrcDocTransport);
+  const captureModeActive = drawOverlayOpen || screenshotCaptureActive;
+  const useLazySrcDocTransport = !manualEditMode && !captureModeActive && useUrlLoadPreview;
   const srcDocTransportContent = useLazySrcDocTransport ? lazySrcDocTransport : srcDoc;
   const urlTransportSrc = useUrlLoadPreview ? activePreviewSrcUrl : 'about:blank';
   const activateSrcDocTransport = useCallback((target: HTMLIFrameElement | null = srcDocPreviewIframeRef.current) => {
@@ -5870,9 +5881,6 @@ function HtmlViewer({
       try {
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
         const srcDocIframe = srcDocPreviewIframeRef.current;
-        if (srcDocIframe) {
-          activateLoadedSrcDocTransport(srcDocIframe) || activateSrcDocTransport(srcDocIframe);
-        }
         if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
           setScreenshotToast(t('fileViewer.screenshotClipboardDenied'));
           return;
