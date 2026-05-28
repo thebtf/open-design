@@ -40,8 +40,9 @@ check_json_first_event() {
 echo "Smoke testing mock CLIs against trace $TRACE_ID"
 echo
 
-# opencode → step_start
+# opencode / opencode-cli (primary OD-facing bin) → step_start
 check_json_first_event opencode step_start
+check_json_first_event opencode-cli step_start
 
 # codex → thread.started
 check_json_first_event codex thread.started
@@ -78,7 +79,9 @@ done
 
 # ACP agents — JSON-RPC server. Send initialize+session/new+prompt and
 # verify the protocol responses come back in order.
-for agent in hermes kimi kilo kiro vibe devin; do
+# kiro-cli and vibe-acp are the primary OD-facing bin names; test them
+# alongside the fallback names (kiro, vibe).
+for agent in hermes kimi kilo kiro kiro-cli vibe vibe-acp devin; do
   out=$(cat <<EOF | "$agent" 2>/dev/null
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp"}}

@@ -192,12 +192,13 @@ export async function runAcpServer(events, opts = {}) {
     process.once('SIGTERM', onSigint);
 
     // Safety timeout — if OD never sends `initialize` within 30s,
-    // bail out so we don't hang in CI.
+    // bail out so we don't hang in CI. .unref() lets the process exit
+    // promptly once the prompt round-trip completes normally.
     setTimeout(() => {
       if (lastPromptId === null) {
         process.stderr.write('[mock-acp] no prompt received within 30s; exiting\n');
         resolve();
       }
-    }, 30_000);
+    }, 30_000).unref();
   });
 }
