@@ -1,5 +1,7 @@
 import type http from 'node:http';
+import path from 'node:path';
 import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { startServer } from '../src/server.js';
 
 type FetchInput = Parameters<typeof fetch>[0];
@@ -1081,6 +1083,65 @@ describe('API proxy routes', () => {
 
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects senseaudio chat requests for projects outside the current workspace membership', async () => {
+    const workspaceResp = await realFetch(`${baseUrl}/api/workspaces`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: `Proxy private workspace ${Date.now()}` }),
+    });
+    expect(workspaceResp.status).toBe(200);
+    const workspaceBody = (await workspaceResp.json()) as { workspace: { id: string } };
+    const privateProjectId = `private-proxy-${Date.now()}`;
+    const projectResp = await realFetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: privateProjectId,
+        name: 'Private proxy project',
+        skillId: null,
+        designSystemId: null,
+        workspaceId: workspaceBody.workspace.id,
+      }),
+    });
+    expect(projectResp.status).toBe(200);
+
+    const dataDir = process.env.OD_DATA_DIR;
+    if (!dataDir) throw new Error('OD_DATA_DIR is required for proxy route tests');
+    const db = new Database(path.join(dataDir, 'app.sqlite'));
+    const originalUser = db
+      .prepare(`SELECT value FROM local_identity WHERE key = 'localUserId'`)
+      .get() as { value?: string } | undefined;
+    try {
+      db.prepare(`INSERT OR REPLACE INTO local_identity (key, value) VALUES ('localUserId', ?)`)
+        .run(`proxy-outsider-${Date.now()}`);
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const res = await realFetch(`${baseUrl}/api/proxy/senseaudio/stream`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: 'sa-test',
+          model: 'senseaudio-s2',
+          projectId: privateProjectId,
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+
+      expect(res.status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+      const body = (await res.json()) as { error?: { code?: string; message?: string } };
+      expect(body.error?.code).toBe('FORBIDDEN');
+      expect(body.error?.message).toBe('workspace membership required');
+    } finally {
+      if (originalUser?.value) {
+        db.prepare(`INSERT OR REPLACE INTO local_identity (key, value) VALUES ('localUserId', ?)`)
+          .run(originalUser.value);
+      }
+      db.close();
+    }
   });
 
   // Plan §3.A4 / spec §11.8 (e2e-7): the API-fallback proxy paths must

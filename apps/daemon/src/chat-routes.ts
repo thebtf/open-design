@@ -1254,6 +1254,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
         'projectId is required and must be a safe identifier',
       );
     }
+    if (!projectIsAccessibleToLocalUser(projectId, res)) return;
 
     const effectiveBaseUrl = baseUrl || 'https://api.senseaudio.cn';
     const validated = await validateExternalApiBaseUrl(effectiveBaseUrl);
