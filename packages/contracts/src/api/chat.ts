@@ -184,6 +184,7 @@ export interface ChatRunStatusResponse {
   signal?: string | null;
   error?: string | null;
   errorCode?: string | null;
+  eventsLogPath?: string | null;
 }
 
 export interface ChatRunListResponse {
