@@ -163,6 +163,13 @@ function Get-CacheSummary {
       status = $_.status
       durationMs = $_.durationMs
       reason = $_.reason
+      materialized = @($_.materialized | ForEach-Object {
+        [ordered]@{
+          from = $_.from
+          to = $_.to
+          durationMs = $_.durationMs
+        }
+      })
     }
   })
 }
@@ -233,6 +240,10 @@ function Write-IndexAndSummary([string]$Status) {
     $summary += "### Tools-Pack Cache"
     foreach ($entry in $cacheSummary) {
       $summary += "- $($entry.nodeId): ``$($entry.status)`` ``$(Format-Duration $entry.durationMs)``"
+      $slowMaterialized = @($entry.materialized | Sort-Object durationMs -Descending | Select-Object -First 5)
+      foreach ($materialized in $slowMaterialized) {
+        $summary += "  - materialize $($materialized.from): ``$(Format-Duration $materialized.durationMs)``"
+      }
     }
   }
 
@@ -261,6 +272,7 @@ $summaryPath = Join-Path $platformRoot "summary.md"
 $metadataOutputPath = Join-Path $platformRoot "metadata.outputs"
 
 New-Item -ItemType Directory -Force -Path $platformRoot, $toolsPackDir, $cacheDir, $reportDir, $indexDir | Out-Null
+Remove-Item -LiteralPath $buildJsonPath -Force -ErrorAction SilentlyContinue
 
 try {
   Measure-Step "toolchain" {
@@ -277,6 +289,10 @@ try {
 
   Measure-Step "pnpm install" {
     Invoke-Node24 -Arguments @("pnpm.cmd", "install", "--frozen-lockfile", "--prefer-offline")
+  }
+
+  Measure-Step "tools-pack dist bundle" {
+    Invoke-Node24 -Arguments @("node", ".\esbuild.config.mjs") -WorkingDirectory (Join-Path $workspaceRoot "tools\pack")
   }
 
   Measure-Step "electron dist repair" {

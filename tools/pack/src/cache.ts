@@ -28,7 +28,7 @@ export type CacheAcquireReport = {
   entryPath: string;
   key: string;
   keyHash: string;
-  materialized: Array<{ from: string; to: string }>;
+  materialized: Array<{ durationMs: number; from: string; to: string }>;
   nodeId: string;
   outputs: string[];
   reason: string | null;
@@ -184,11 +184,16 @@ export class ToolPackCache {
       })();
 
       for (const target of materialize) {
+        const materializeStartedAt = Date.now();
         const sourcePath = join(entryPath, target.from);
         await rm(target.to, { force: true, recursive: true });
         await mkdir(dirname(target.to), { recursive: true });
         await cp(sourcePath, target.to, { recursive: true });
-        materialized.push({ from: normalizeRelativePath(target.from), to: target.to });
+        materialized.push({
+          durationMs: Date.now() - materializeStartedAt,
+          from: normalizeRelativePath(target.from),
+          to: target.to,
+        });
       }
 
       return nextManifest;
@@ -232,11 +237,16 @@ export class ToolPackCache {
       if ((await node.invalidate({ entryRoot: entryPath, manifest: existingManifest })) != null) return null;
 
       for (const target of materialize) {
+        const materializeStartedAt = Date.now();
         const sourcePath = join(entryPath, target.from);
         await rm(target.to, { force: true, recursive: true });
         await mkdir(dirname(target.to), { recursive: true });
         await cp(sourcePath, target.to, { recursive: true });
-        materialized.push({ from: normalizeRelativePath(target.from), to: target.to });
+        materialized.push({
+          durationMs: Date.now() - materializeStartedAt,
+          from: normalizeRelativePath(target.from),
+          to: target.to,
+        });
       }
 
       return existingManifest;
