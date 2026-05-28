@@ -1727,6 +1727,74 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     expect(screen.getByText('late@example.com')).toBeTruthy();
   });
 
+  it('does not resurrect Signing in from a stale loginInFlight echo after cancel', async () => {
+    let statusStage: 'pending' | 'stale-pending' | 'signed-out' = 'pending';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/memory') {
+        return new Response(
+          JSON.stringify({ enabled: true, memories: [], extraction: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url === '/api/integrations/vela/status') {
+        const body =
+          statusStage === 'signed-out'
+            ? {
+                loggedIn: false,
+                loginInFlight: false,
+                profile: 'local',
+                user: null,
+                configPath: '/Users/test/.amr/config.json',
+              }
+            : {
+                loggedIn: false,
+                loginInFlight: true,
+                profile: 'local',
+                user: null,
+                configPath: '/Users/test/.amr/config.json',
+              };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === '/api/integrations/vela/login/cancel' && init?.method === 'POST') {
+        statusStage = 'stale-pending';
+        return new Response(JSON.stringify({ canceled: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderSettingsDialog(
+      { mode: 'daemon', agentId: 'amr' },
+      { agents: [amrAgent] },
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Local CLI.*1 installed/i }));
+    const amrCard = screen.getByRole('button', { name: /^Open Design AMR\b/ }).closest('.agent-card') as HTMLElement;
+    expect(await screen.findByText('Signing in…')).toBeTruthy();
+
+    fireEvent.mouseEnter(amrCard);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByText('Canceled')).toBeTruthy();
+
+    window.dispatchEvent(
+      new CustomEvent('od:amr-login-status-change', {
+        detail: { reason: 'login-canceled' },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Signing in…')).toBeNull();
+    });
+    expect(screen.getByRole('button', { name: 'Authorize' })).toBeTruthy();
+  });
+
   it('renders the signed-in AMR account state inside Settings without leaking vela branding', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
