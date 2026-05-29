@@ -41,6 +41,7 @@ const useExternalUpdateFeed = externalUpdateMetadataUrl != null;
 const verifyViolentUpdater = !useExternalUpdateFeed && process.env.OD_PACKAGED_E2E_WIN_UPDATER_VIOLENT !== '0';
 const verifyRealUpdateInstaller =
   useExternalUpdateFeed || process.env.OD_PACKAGED_E2E_WIN_REAL_UPDATE_INSTALL === '1';
+const verifyReadyUpdaterPrompt = verifyViolentUpdater || (verifyRealUpdateInstaller && !useExternalUpdateFeed);
 const releaseChannel = process.env.OD_PACKAGED_E2E_RELEASE_CHANNEL;
 const releaseVersion = process.env.OD_PACKAGED_E2E_RELEASE_VERSION;
 const updateScenario: PackagedUpdateScenario = verifyCoreOnly
@@ -503,7 +504,7 @@ winDescribe('packaged windows runtime smoke', () => {
         });
       }
 
-      if (verifyViolentUpdater || verifyRealUpdateInstaller) {
+      if (verifyReadyUpdaterPrompt) {
         const fixtureInfo = updaterFixture?.info;
         if (fixtureInfo == null) throw new Error('updater fixture was not initialized');
         popup = await measureSmokeStep(timings, 'open ready updater prompt', async () =>
