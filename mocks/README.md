@@ -250,74 +250,70 @@ harvester repo (see "Adding more recordings" below) and re-run.
 
 ## Adding more recordings
 
-The flow is **staging in PR → auto-upload on merge**. No one — not even a
-core maintainer — has R2 write credentials on their laptop; only the
-GitHub Action does. This means a stray `mocks/scripts/...` invocation
-can't corrupt prod data, and every new recording lands in a PR diff for
-review first.
+Local maintainer flow — the .jsonl never enters the repo. Only the
+manifest delta (≈200 B per entry) gets committed.
 
 ### Step 1 — produce an anonymized .jsonl
 
 The harvester that produced the current 179-trace set lives in a
 separate repo, [nexu-io/agent-pr-explore][harvester]. See its README
 for how to authenticate against your trace store, filter by skill /
-agent / outcome, and anonymize the result.
-
-The output is one `<trace-id>.jsonl` file per recording; copy that
-into a scratch dir of your choice, then continue with step 2.
+agent / outcome, and anonymize the result. Output is one
+`<trace-id>.jsonl` file per recording.
 
 [harvester]: https://github.com/nexu-io/agent-pr-explore
 
-### Step 2 — stage in this repo, open a PR
+### Step 2 — one-shot upload + manifest update
 
 ```bash
-cd ~/Documents/open-design
-for f in /tmp/new-recordings/*.jsonl; do
-  bash mocks/scripts/add-recording.sh "$f"
-done
-
-git checkout -b mocks/add-data-report
-git add mocks/recordings-staging/
-git commit -m "mocks: stage 30 data-report recordings"
-gh pr create
+# prereq, once: wrangler login (OAuth, no token to manage)
+bash mocks/scripts/upload-recording.sh /path/to/<trace-id>.jsonl
 ```
 
-`add-recording.sh` validates each .jsonl (meta event present, UUID
-filename) and prints the **exact manifest entry** the CI workflow will
-commit post-merge. The reviewer eyeballs the diff (~30 KB per recording,
-mostly tool I/O) for anonymization gaps.
+The script validates the file, prints the manifest entry it will add,
+uploads the .jsonl to R2, rewrites `mocks/manifest.json` locally, then
+uploads the updated manifest to R2 too (so consumers see the new entry
+without waiting for the next git push).
 
-### Step 3 — merge → CI auto-syncs
+### Step 3 — commit the manifest delta
 
-On merge to main, `.github/workflows/sync-mocks-to-r2.yml` fires (paths
-filter `mocks/recordings-staging/**`), runs `mocks/scripts/upload-to-r2.mjs`,
-and:
+```bash
+git add mocks/manifest.json
+git commit -m "mocks: add recording <trace-id>"
+git push     # or open a PR — your call
+```
 
-1. Uploads each staged .jsonl to R2 (4-concurrent, sha256-verified)
-2. Rebuilds `mocks/manifest.json` (entry insert, histograms, multi_turn)
-3. Uploads the updated manifest to R2 too
-4. Deletes the staged files and commits `mocks: sync N recordings to R2 [skip ci]` back to main
+The only thing in the commit is a ~200-byte JSON edit listing the new
+entry's `trace_id`, `sha256`, `bytes`, `agent`, `outcome`, `skills`,
+etc. The .jsonl itself stays in R2.
 
-Concurrency group `r2-mocks-upload` serializes runs so two parallel PRs
-can't race on the manifest.
+### Trust model
 
-### Why this trust model
+- **R2 write is wrangler-OAuth gated.** Maintainers do `wrangler login`
+  once. The bucket is on the powerformer Cloudflare account (pinned in
+  the script). No long-lived tokens in repo secrets, no Action to
+  hijack — just account access.
+- **Repo stays small forever.** No .jsonl files ever land in git; the
+  manifest grows by ~200 B per recording.
+- **Read stays public.** Anyone can fetch via the r2.dev URL — see
+  [Recordings live on R2, not in this repo](#recordings-live-on-r2-not-in-this-repo).
 
-- **R2 write secret never leaves CI.** `CLOUDFLARE_R2_MOCKS_AK` +
-  `CLOUDFLARE_R2_MOCKS_SK` are repo secrets with scope limited to the
-  `open-design-mocks` bucket (deliberately separate from the shared
-  `CLOUDFLARE_API_TOKEN` used by landing-page Pages deploys and from
-  the `CLOUDFLARE_R2_RELEASES_*` pair, so the mocks write capability
-  stays narrow). Local scripts have no path to upload.
-- **No silent corruption.** Reviewer sees every byte of new data in the
-  PR diff before it reaches R2.
-- **Read stays public.** Anyone can fetch via the r2.dev URL; only
-  appending data requires merging to main.
+### Removing a recording
 
-If you absolutely need to push from your laptop (e.g. backfilling an old
-trace the Action somehow lost), set
-`OD_MOCKS_ALLOW_LOCAL_UPLOAD=1` and run `upload-to-r2.mjs` with
-your own wrangler login. Not recommended; consider opening a PR instead.
+```bash
+# 1. delete from R2
+export CLOUDFLARE_ACCOUNT_ID=64ad4569ffd912432d6b86d5656484c4
+wrangler r2 object delete open-design-mocks/recordings/v1/<trace-id>.jsonl --remote
+# 2. drop the entry from manifest.json (edit by hand, or use `jq`)
+# 3. re-upload manifest
+wrangler r2 object put open-design-mocks/recordings/v1/manifest.json \
+  --file mocks/manifest.json --remote
+# 4. git add mocks/manifest.json && git commit && git push
+```
+
+There's no automation for delete because (a) it's rare and (b) you
+want a human to think about whether removing a recording would
+invalidate any test fixtures that pin it via `OD_MOCKS_TRACE=<id>`.
 
 ---
 
@@ -386,12 +382,9 @@ mocks/
 ├── scripts/
 │   ├── smoke-test.sh             ← 21 checks; auto-fetches recordings if empty
 │   ├── fetch-recordings.sh       ← pull from R2 (parallel, sha256-verified, idempotent)
-│   ├── add-recording.sh          ← maintainer-local: validates + copies to staging dir (no R2 calls)
-│   ├── upload-to-r2.mjs          ← called only by .github/workflows/sync-mocks-to-r2.yml
+│   ├── upload-recording.sh      ← maintainer-local: validate + wrangler put + manifest update
 │   └── lib/
 │       └── manifest-utils.mjs    ← shared sha256 / meta-parse / manifest-rebuild logic
-├── recordings-staging/           ← drop new .jsonl here, PR, merge → Action uploads
-│   └── .gitkeep
 └── recordings/                   ← populated at runtime, gitignored .jsonl
     └── .gitignore                ← recordings come via fetch
 ```
@@ -423,6 +416,4 @@ telemetry when they installed the desktop client. The anonymizer
 removed user-identifying paths and project UUIDs before checking in.
 
 If you find a recording that includes content that should be redacted,
-open a PR removing it from `mocks/recordings-staging/` (or, if already
-synced, file an issue — manifest regeneration after a delete needs to
-run against R2 manually and is not automated yet).
+follow the [Removing a recording](#removing-a-recording) flow above.

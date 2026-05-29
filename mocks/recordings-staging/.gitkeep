@@ -1,3 +1,0 @@
-# Drop new recordings here via `bash mocks/scripts/add-recording.sh`.
-# After merge to main, `.github/workflows/sync-mocks-to-r2.yml` uploads
-# them to R2, updates ../manifest.json, and clears this directory.
