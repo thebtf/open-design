@@ -5,7 +5,7 @@ import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { projectFileUrl, projectRawUrl } from '../providers/registry';
 import { buildSrcdoc } from '../runtime/srcdoc';
-import type { LiveArtifactWorkspaceEntry, ProjectFile, ProjectFileKind } from '../types';
+import type { LiveArtifactWorkspaceEntry, ProjectFile, ProjectFileKind, ProjectFolder } from '../types';
 import {
   createFileSystemReadError,
   FILE_SYSTEM_READ_ERROR_MESSAGE,
@@ -22,6 +22,7 @@ type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => 
 interface Props {
   projectId: string;
   files: ProjectFile[];
+  folders?: ProjectFolder[];
   liveArtifacts: LiveArtifactWorkspaceEntry[];
   onRefreshFiles: () => Promise<void> | void;
   onOpenFile: (name: string) => void;
@@ -31,6 +32,7 @@ interface Props {
   onDeleteFiles: (names: string[]) => Promise<void> | void;
   onUpload: () => void;
   onUploadFiles: (files: File[]) => void;
+  onCreateFolder?: (name: string) => Promise<ProjectFolder | null> | ProjectFolder | null;
   onPaste: () => void;
   onNewSketch: () => void;
   uploadError?: string | null;
@@ -52,6 +54,11 @@ type DesignFilesGroupMode = 'kind' | 'modified';
 type ModifiedSection = 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older';
 type SortKey = 'name' | 'kind' | 'mtime';
 type SortDir = 'asc' | 'desc';
+
+interface DirectoryRow {
+  label: string;
+  path: string;
+}
 
 // Storage key for per-project view state. Bump the version suffix (v1 → v2) when
 // removing or renaming a persisted field — just adding an optional field is safe
@@ -182,6 +189,7 @@ function ActionNoticeView({ notice }: { notice: ActionNotice | null }) {
 export function DesignFilesPanel({
   projectId,
   files,
+  folders = [],
   liveArtifacts,
   onRefreshFiles,
   onOpenFile,
@@ -191,6 +199,7 @@ export function DesignFilesPanel({
   onDeleteFiles,
   onUpload,
   onUploadFiles,
+  onCreateFolder,
   onPaste,
   onNewSketch,
   uploadError = null,
@@ -205,6 +214,7 @@ export function DesignFilesPanel({
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [dropReadError, setDropReadError] = useState<string | null>(null);
   const dragDepthRef = useRef(0);
+  const internalDragNamesRef = useRef<string[]>([]);
   const [hover, setHover] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ name: string; top: number; left: number } | null>(null);
   const MENU_ESTIMATED_HEIGHT = 145;
@@ -253,14 +263,58 @@ export function DesignFilesPanel({
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const [currentDir, setCurrentDir] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+
+  const folderPaths = useMemo(() => {
+    const dirs = new Set<string>();
+    const addAncestors = (name: string) => {
+      const parts = name.split('/').filter(Boolean);
+      const max = name.endsWith('/') ? parts.length : parts.length - 1;
+      for (let i = 1; i <= max; i += 1) {
+        dirs.add(parts.slice(0, i).join('/'));
+      }
+    };
+    for (const f of files) addAncestors(f.name);
+    for (const folder of folders) {
+      const path = folder.path || folder.name;
+      const parts = path.split('/').filter(Boolean);
+      for (let i = 1; i <= parts.length; i += 1) {
+        dirs.add(parts.slice(0, i).join('/'));
+      }
+    }
+    return [...dirs].sort((a, b) => a.localeCompare(b));
+  }, [files, folders]);
+
+  const folderPathSet = useMemo(() => new Set(folderPaths), [folderPaths]);
+
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const searchActive = normalizedSearchQuery.length > 0;
 
   // Derive immediate subdirectories and files at the current directory level
-  // from the flat files list. Files with names like "a/b/c.html" contribute
-  // "a" as a directory when currentDir is '' and "b" when currentDir is "a".
+  // from the flat files list and persisted empty folders. With a search query,
+  // switch to a project-wide result set so nested files are discoverable.
   const { dirsAtCurrentDir, filesAtCurrentDir } = useMemo(() => {
+    if (normalizedSearchQuery) {
+      return {
+        dirsAtCurrentDir: folderPaths
+          .filter((folderPath) => folderPath.toLocaleLowerCase().includes(normalizedSearchQuery))
+          .map((folderPath) => ({ label: folderPath, path: folderPath })),
+        filesAtCurrentDir: files.filter((f) => f.name.toLocaleLowerCase().includes(normalizedSearchQuery)),
+      };
+    }
     const prefix = currentDir === '' ? '' : `${currentDir}/`;
-    const dirs = new Set<string>();
     const localFiles: ProjectFile[] = [];
+    const localDirs = new Map<string, DirectoryRow>();
+    for (const folderPath of folderPaths) {
+      if (!folderPath.startsWith(prefix)) continue;
+      const remainder = folderPath.slice(prefix.length);
+      if (!remainder) continue;
+      const slashIdx = remainder.indexOf('/');
+      const label = slashIdx === -1 ? remainder : remainder.slice(0, slashIdx);
+      const path = currentDir === '' ? label : `${currentDir}/${label}`;
+      localDirs.set(path, { label, path });
+    }
     for (const f of files) {
       if (!f.name.startsWith(prefix)) continue;
       const remainder = f.name.slice(prefix.length);
@@ -268,14 +322,16 @@ export function DesignFilesPanel({
       if (slashIdx === -1) {
         localFiles.push(f);
       } else {
-        dirs.add(remainder.slice(0, slashIdx));
+        const label = remainder.slice(0, slashIdx);
+        const path = currentDir === '' ? label : `${currentDir}/${label}`;
+        localDirs.set(path, { label, path });
       }
     }
     return {
-      dirsAtCurrentDir: [...dirs].sort((a, b) => a.localeCompare(b)),
+      dirsAtCurrentDir: [...localDirs.values()].sort((a, b) => a.label.localeCompare(b.label)),
       filesAtCurrentDir: localFiles,
     };
-  }, [files, currentDir]);
+  }, [currentDir, files, folderPaths, normalizedSearchQuery]);
 
   const kindCounts = useMemo(() => {
     const counts = new Map<ProjectFileKind, number>();
@@ -428,17 +484,17 @@ export function DesignFilesPanel({
   useEffect(() => {
     if (currentDir === '') return;
     const prefix = `${currentDir}/`;
-    if (files.some((f) => f.name.startsWith(prefix))) return;
+    if (folderPathSet.has(currentDir) || files.some((f) => f.name.startsWith(prefix))) return;
     const parts = currentDir.split('/');
     for (let i = parts.length - 1; i > 0; i--) {
       const ancestor = parts.slice(0, i).join('/');
-      if (files.some((f) => f.name.startsWith(`${ancestor}/`))) {
+      if (folderPathSet.has(ancestor) || files.some((f) => f.name.startsWith(`${ancestor}/`))) {
         setCurrentDir(ancestor);
         return;
       }
     }
     setCurrentDir('');
-  }, [files, currentDir]);
+  }, [files, folderPathSet, currentDir]);
 
   // Outside-click + escape to close the filter popover. Stops short of a
   // full focus trap because the popover hosts only checkboxes plus a
@@ -639,6 +695,61 @@ export function DesignFilesPanel({
       alert(err instanceof Error ? err.message : String(err));
       setRenaming({ name, draft, saving: false });
     }
+  }
+
+  async function handleCreateFolder() {
+    if (!onCreateFolder) return;
+    const rawName = window.prompt('New folder name');
+    const folderName = rawName?.trim();
+    if (!folderName) return;
+    const targetPath = currentDir === '' ? folderName : `${currentDir}/${folderName}`;
+    const folder = await onCreateFolder(targetPath);
+    if (folder?.path) {
+      setSearchQuery('');
+      setCurrentDir(folder.path);
+    }
+  }
+
+  function displayNameForFile(name: string): string {
+    if (searchActive || currentDir === '') return name;
+    return name.slice(currentDir.length + 1);
+  }
+
+  async function moveFilesToFolder(names: string[], folderPath: string) {
+    const uniqueNames = Array.from(new Set(names));
+    const failed: string[] = [];
+    for (const name of uniqueNames) {
+      const nextName = joinProjectPath(folderPath, basenameForProjectPath(name));
+      if (nextName === name) continue;
+      try {
+        const renamed = await onRenameFile(name, nextName);
+        if (!renamed) throw new Error('Move failed');
+        setPreview((curr) => (curr === name ? renamed.name : curr));
+        setSelected((prev) => {
+          if (!prev.has(name)) return prev;
+          const next = new Set(prev);
+          next.delete(name);
+          next.add(renamed.name);
+          return next;
+        });
+      } catch (err) {
+        failed.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (failed.length > 0) {
+      alert(`Could not move ${failed.length} file(s).\n${failed.slice(0, 4).join('\n')}`);
+    }
+  }
+
+  function startMove(name: string) {
+    setMenuPos(null);
+    const foldersText = folderPaths.length > 0 ? `\n\nFolders:\n${folderPaths.join('\n')}` : '';
+    const rawTarget = window.prompt(
+      `Move to folder path. Leave blank for project root.${foldersText}`,
+      currentDir,
+    );
+    if (rawTarget === null) return;
+    void moveFilesToFolder([name], rawTarget.trim().replace(/^\/+|\/+$/g, ''));
   }
 
   async function handleBatchDelete() {

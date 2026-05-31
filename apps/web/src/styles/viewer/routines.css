@@ -1695,7 +1695,7 @@
 }
 .app .handoff-target-rail {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   padding: 1px;
 }
@@ -1726,6 +1726,7 @@
   font-weight: 650;
 }
 .app .handoff-target-rail--unavailable .handoff-target-card {
+  border-style: dashed;
   background: color-mix(in srgb, var(--bg-panel) 88%, var(--text-muted) 5%);
 }
 .app .handoff-target-card {

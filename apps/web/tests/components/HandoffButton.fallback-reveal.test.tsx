@@ -118,9 +118,10 @@ describe('HandoffButton zero-editors fallback', () => {
     fireEvent.click(await screen.findByRole('tab', { name: '复制给 CLI' }));
     expect(screen.getByRole('link', { name: /打开 AMR 官网/ }).getAttribute('href'))
       .toBe('https://open-design.ai/amr');
+    expect(screen.getByTestId('handoff-cli-item-amr').textContent).toContain('未安装');
     expect(
       screen.getByTestId('handoff-cli-item-amr').compareDocumentPosition(
-        screen.getByTestId('handoff-cli-item-claude'),
+        screen.getByTestId('handoff-cli-item-codex'),
       ) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Vue.js' }));

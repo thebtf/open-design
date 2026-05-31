@@ -86,6 +86,13 @@ interface DesignBrowserPanelProps {
   projectId: string;
   onOpenFile: (name: string) => void;
   onRefreshFiles: () => Promise<void> | void;
+  onPageInfoChange?: (info: BrowserPageInfo) => void;
+}
+
+export interface BrowserPageInfo {
+  iconUrl?: string;
+  title: string;
+  url: string;
 }
 
 const EMPTY_URL = 'about:blank';
@@ -169,6 +176,7 @@ const PAGE_BRIEF_SCRIPT = `(() => {
 export function DesignBrowserPanel({
   projectId,
   onOpenFile,
+  onPageInfoChange,
   onRefreshFiles,
 }: DesignBrowserPanelProps) {
   const desktopHostAvailable = isOpenDesignHostAvailable();
@@ -523,6 +531,14 @@ export function DesignBrowserPanel({
   // URL, so a transient about:blank navigation event can't unmount the webview.
   const isBlank = loadUrl === EMPTY_URL;
 
+  useEffect(() => {
+    onPageInfoChange?.({
+      title: isBlank ? 'Browser' : pageTitle,
+      url: isBlank ? '' : currentUrl,
+      ...(!isBlank && pageIconUrl ? { iconUrl: pageIconUrl } : {}),
+    });
+  }, [currentUrl, isBlank, onPageInfoChange, pageIconUrl, pageTitle]);
+
   async function handleAddressSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     navigateTo(addressValue);
@@ -557,7 +573,12 @@ export function DesignBrowserPanel({
     setSavingAction('screenshot');
     try {
       const image = await webviewNode.capturePage();
-      const base64 = image.toDataURL().split(',', 2)[1] ?? '';
+      const dataUrl = image.toDataURL();
+      // Put the capture on the clipboard first so it is paste-ready (e.g. into
+      // the chat composer) the instant it is taken; the project file is the
+      // durable artifact, the clipboard is the fast path.
+      const copied = await copyImageToClipboard(dataUrl);
+      const base64 = dataUrl.split(',', 2)[1] ?? '';
       const file = await writeProjectBase64File(
         projectId,
         browserFileName('browser-capture', currentUrl, 'png'),
@@ -565,7 +586,10 @@ export function DesignBrowserPanel({
       );
       if (!file) throw new Error('screenshot save failed');
       await onRefreshFiles();
-      onOpenFile(file.name);
+      // Stay on the browser so the confirmation toast is visible and the page
+      // remains in view; the capture is reachable from Design Files. Show
+      // whether it reached the clipboard so the user knows it is paste-ready.
+      setStatusMessage(copied ? 'Screenshot copied to clipboard' : 'Screenshot saved to project');
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'Screenshot failed');
     } finally {
@@ -772,6 +796,15 @@ export function DesignBrowserPanel({
           ) : null}
         </form>
         <div className="db-actions">
+          {desktopHostAvailable ? (
+            <IconTooltipButton
+              label="Copy screenshot to clipboard"
+              disabled={isBlank || savingAction != null}
+              onClick={takeScreenshot}
+            >
+              <Icon name="image" size={15} />
+            </IconTooltipButton>
+          ) : null}
           <IconTooltipButton
             label="Save page brief"
             disabled={isBlank || savingAction != null}
@@ -789,7 +822,7 @@ export function DesignBrowserPanel({
             <div className="db-menu" role="menu">
               <button type="button" role="menuitem" onClick={takeScreenshot} disabled={isBlank || savingAction != null}>
                 <Icon name="image" size={14} />
-                Take Screenshot
+                Copy Screenshot
               </button>
               <button type="button" role="menuitem" onClick={() => reload(true)} disabled={isBlank}>
                 <Icon name="reload" size={14} />
@@ -890,9 +923,14 @@ function DesignBrowserStart({
   return (
     <div className="db-start">
       <div className="db-start-hero">
-        <div>
+        <div className="db-start-hero-copy">
           <div className="db-kicker">Open Design browser</div>
           <h2>Reference Board</h2>
+          <p className="db-start-sub">
+            A curated set of motion, asset, and design-system references. Open one to
+            browse it live, or hand it to the Browser Harness agent to extract its
+            design language.
+          </p>
         </div>
         <div className="db-agent-card">
           <div className="db-agent-card-title">
@@ -1197,6 +1235,29 @@ print(js("""(() => ({
 PY
 \`\`\`
 `;
+}
+
+// Writes a captured page image onto the system clipboard via the async
+// Clipboard API. Decodes the data URL locally (no fetch) so it works under a
+// strict connect-src CSP, and returns false instead of throwing when the
+// browser lacks ClipboardItem or the write is blocked, so the caller can still
+// fall back to the saved-to-project confirmation.
+async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
+  try {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false;
+    const [header = '', base64 = ''] = dataUrl.split(',', 2);
+    const mime = /^data:([^;,]+)/.exec(header)?.[1] || 'image/png';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const blob = new Blob([bytes], { type: mime });
+    await navigator.clipboard.write([new ClipboardItem({ [mime]: blob })]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function copyText(text: string): Promise<void> {

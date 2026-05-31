@@ -191,7 +191,7 @@ export function EntryHelpMenu() {
             <span className="entry-help-popover__icon" aria-hidden>
               <Icon name="external-link" size={14} />
             </span>
-            <span>Follow @nexudotio on X</span>
+            <span>{t('entry.followXLabel')}</span>
           </a>
           <a
             className="entry-help-popover__item"
@@ -203,7 +203,7 @@ export function EntryHelpMenu() {
             <span className="entry-help-popover__icon" aria-hidden>
               <Icon name="discord" size={14} />
             </span>
-            <span>Join Discord</span>
+            <span>{t('entry.discordLabel')}</span>
           </a>
         </div>
       ) : null}

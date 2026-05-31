@@ -1471,6 +1471,7 @@ function AppInner() {
         onAgentChange={handleAgentChange}
         onAgentModelChange={handleAgentModelChange}
         onRefreshAgents={refreshAgents}
+        onThemeChange={handleThemeChange}
         onOpenSettings={openSettings}
         onOpenAmrSettings={openAmrSettings}
         onOpenMcpSettings={openMcpSettings}

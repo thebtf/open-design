@@ -13,6 +13,7 @@ import os from 'node:os';
 import net from 'node:net';
 import {
   defaultScenarioPluginIdForProjectMetadata,
+  type OpenDesignDiscordPresenceResponse,
   type OpenDesignGithubLatestReleaseResponse,
   type OpenDesignGithubRepoResponse,
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
@@ -333,12 +334,14 @@ import { DIAGNOSTICS_EXPORT_PATH } from '@open-design/diagnostics';
 import {
   buildProjectArchive,
   buildBatchArchive,
+  createProjectFolder,
   decodeMultipartFilename,
   deleteProjectFile,
   detectEntryFile,
   ensureProject,
   isSafeId,
   listFiles,
+  listProjectFolders,
   mimeFor,
   parseByteRange,
   projectDir,
@@ -432,6 +435,7 @@ import { EmptyTranscriptError, synthesizeHandoffPrompt } from './handoff-design.
 import { TranscriptExportLockedError } from './transcript-export.js';
 import { registerChatRoutes } from './chat-routes.js';
 import { registerStaticResourceRoutes } from './static-resource-routes.js';
+import { registerSocialShareRoutes } from './social-share-routes.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routine-routes.js';
 import { assertServerContextSatisfiesRoutes } from './route-context-contract.js';
 import { configureConnectorCredentialStore, connectorService, ConnectorServiceError, FileConnectorCredentialStore } from './connectors/service.js';
@@ -2993,11 +2997,18 @@ const OPEN_DESIGN_GITHUB_REPO_API = 'https://api.github.com/repos/nexu-io/open-d
 const OPEN_DESIGN_GITHUB_RELEASE_LATEST_API = 'https://api.github.com/repos/nexu-io/open-design/releases/latest';
 const OPEN_DESIGN_GITHUB_CACHE_TTL_MS = 60 * 60 * 1000;
 const OPEN_DESIGN_GITHUB_TIMEOUT_MS = 4_000;
+const OPEN_DESIGN_DISCORD_INVITE_CODE = 'mHAjSMV6gz';
+const OPEN_DESIGN_DISCORD_INVITE_URL = `https://discord.gg/${OPEN_DESIGN_DISCORD_INVITE_CODE}`;
+const OPEN_DESIGN_DISCORD_INVITE_API = `https://discord.com/api/v10/invites/${OPEN_DESIGN_DISCORD_INVITE_CODE}?with_counts=true`;
+const OPEN_DESIGN_DISCORD_CACHE_TTL_MS = 5 * 60 * 1000;
+const OPEN_DESIGN_DISCORD_TIMEOUT_MS = 4_000;
 
 let openDesignGithubRepoCache = null;
 let openDesignGithubRepoInflight = null;
 let openDesignGithubLatestReleaseCache = null;
 let openDesignGithubLatestReleaseInflight = null;
+let openDesignDiscordPresenceCache = null;
+let openDesignDiscordPresenceInflight = null;
 
 async function readOpenDesignGithubRepoStats() {
   const now = Date.now();
@@ -3103,6 +3114,79 @@ async function readOpenDesignLatestReleaseInfo() {
   })();
 
   return openDesignGithubLatestReleaseInflight;
+}
+
+async function readOpenDesignDiscordPresence() {
+  const now = Date.now();
+  if (
+    openDesignDiscordPresenceCache &&
+    now - openDesignDiscordPresenceCache.fetchedAt < OPEN_DESIGN_DISCORD_CACHE_TTL_MS
+  ) {
+    return { ...openDesignDiscordPresenceCache, stale: false };
+  }
+
+  if (openDesignDiscordPresenceInflight) {
+    return openDesignDiscordPresenceInflight;
+  }
+
+  openDesignDiscordPresenceInflight = (async () => {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), OPEN_DESIGN_DISCORD_TIMEOUT_MS);
+    try {
+      const response = await fetch(OPEN_DESIGN_DISCORD_INVITE_API, {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'open-design-daemon',
+        },
+        signal: ctrl.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Discord invite metadata request failed with HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      const profile = payload && typeof payload.profile === 'object' ? payload.profile : null;
+      const onlineCount =
+        typeof payload?.approximate_presence_count === 'number'
+          ? payload.approximate_presence_count
+          : typeof profile?.online_count === 'number'
+            ? profile.online_count
+            : null;
+      const memberCount =
+        typeof payload?.approximate_member_count === 'number'
+          ? payload.approximate_member_count
+          : typeof profile?.member_count === 'number'
+            ? profile.member_count
+            : null;
+
+      if (
+        !Number.isFinite(onlineCount) ||
+        onlineCount == null ||
+        onlineCount < 0 ||
+        !Number.isFinite(memberCount) ||
+        memberCount == null ||
+        memberCount < 0
+      ) {
+        throw new Error('Discord invite metadata did not include numeric member counts');
+      }
+
+      openDesignDiscordPresenceCache = {
+        onlineCount,
+        memberCount,
+        fetchedAt: Date.now(),
+      };
+      return { ...openDesignDiscordPresenceCache, stale: false };
+    } catch (error) {
+      if (openDesignDiscordPresenceCache) {
+        return { ...openDesignDiscordPresenceCache, stale: true };
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      openDesignDiscordPresenceInflight = null;
+    }
+  })();
+
+  return openDesignDiscordPresenceInflight;
 }
 
 function bearerTokenFromRequest(req) {
@@ -4396,6 +4480,25 @@ export async function startServer({
     }
   });
 
+  app.get('/api/community/discord', async (_req, res) => {
+    try {
+      const presence = await readOpenDesignDiscordPresence();
+      const payload = /** @type {OpenDesignDiscordPresenceResponse} */ ({
+        inviteCode: OPEN_DESIGN_DISCORD_INVITE_CODE,
+        inviteUrl: OPEN_DESIGN_DISCORD_INVITE_URL,
+        onlineCount: presence.onlineCount,
+        memberCount: presence.memberCount,
+        fetchedAt: presence.fetchedAt,
+        stale: presence.stale,
+      });
+      res.json(payload);
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   // Plan §3.F2 / spec §11.7 — daemon lifecycle status. Returns the
   // host / port the server is bound to plus the data dir,
   // so `od daemon status --json` can render a one-shot health snapshot
@@ -5487,6 +5590,8 @@ export async function startServer({
   const projectFileDeps = {
     ensureProject,
     listFiles,
+    listProjectFolders,
+    createProjectFolder,
     searchProjectFiles,
     readProjectFile,
     resolveProjectDir,
@@ -5667,6 +5772,7 @@ export async function startServer({
     projectStore: projectStoreDeps,
     projectFiles: projectFileDeps,
   });
+  registerSocialShareRoutes(app, { http: httpDeps });
   registerProjectRoutes(app, {
     db,
     design,

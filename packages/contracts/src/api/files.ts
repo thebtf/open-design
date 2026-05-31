@@ -42,12 +42,28 @@ export interface ProjectFile {
   stubGuardWarning?: ProjectFileStubGuardWarning;
 }
 
+export interface ProjectFolder {
+  name: string;
+  path: string;
+  type: 'dir';
+  size: 0;
+  mtime: number;
+}
+
 export interface ProjectFilesResponse {
   files: ProjectFile[];
 }
 
+export interface ProjectFoldersResponse {
+  folders: ProjectFolder[];
+}
+
 export interface ProjectFileResponse {
   file: ProjectFile;
+}
+
+export interface ProjectFolderResponse {
+  folder: ProjectFolder;
 }
 
 export interface UploadProjectFilesResponse extends ProjectFilesResponse {}

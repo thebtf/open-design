@@ -919,7 +919,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
   const { upload } = ctx.uploads;
   const { fs } = ctx.node;
   const { getProject } = ctx.projectStore;
-  const { listFiles, searchProjectFiles, readProjectFile, resolveProjectDir, resolveProjectFilePath, parseByteRange, renameProjectFile, deleteProjectFile, writeProjectFile, sanitizeName, ensureProject } = ctx.projectFiles;
+  const { listFiles, listProjectFolders, createProjectFolder, searchProjectFiles, readProjectFile, resolveProjectDir, resolveProjectFilePath, parseByteRange, renameProjectFile, deleteProjectFile, writeProjectFile, sanitizeName, ensureProject } = ctx.projectFiles;
   const { buildDocumentPreview } = ctx.documents;
   const { validateArtifactManifestInput } = ctx.artifacts;
 
@@ -961,6 +961,41 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       res.json({ query, matches });
     } catch (err: any) {
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
+  app.get('/api/projects/:id/folders', async (req, res) => {
+    try {
+      const project = getProject(db, req.params.id);
+      const folders = await listProjectFolders(PROJECTS_DIR, req.params.id, {
+        metadata: project?.metadata,
+      });
+      /** @type {import('@open-design/contracts').ProjectFoldersResponse} */
+      const body = { folders };
+      res.json(body);
+    } catch (err: any) {
+      sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
+  app.post('/api/projects/:id/folders', async (req, res) => {
+    try {
+      const { name } = req.body || {};
+      if (typeof name !== 'string' || !name.trim()) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'name required');
+      }
+      const project = getProject(db, req.params.id);
+      const folder = await createProjectFolder(
+        PROJECTS_DIR,
+        req.params.id,
+        name,
+        project?.metadata,
+      );
+      /** @type {import('@open-design/contracts').ProjectFolderResponse} */
+      const body = { folder };
+      res.json(body);
+    } catch (err: any) {
+      sendApiError(res, 400, 'BAD_REQUEST', String(err?.message || err));
     }
   });
 

@@ -5,7 +5,6 @@ import { RemixIcon } from './RemixIcon';
 import { renderModelOptions } from './modelOptions';
 import type { AgentInfo, AppConfig, ExecMode } from '../types';
 import { apiProtocolLabel } from '../utils/apiProtocol';
-import { isMacPlatform } from '../utils/platform';
 
 interface Props {
   config: AppConfig;
@@ -19,7 +18,6 @@ interface Props {
   ) => void;
   onOpenSettings: () => void;
   onRefreshAgents: () => void;
-  onBack?: () => void;
 }
 
 function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
@@ -27,9 +25,9 @@ function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
 }
 
 /**
- * Compact settings control at the right of the project header. Click opens a dropdown
- * with current execution mode, the agent picker (when in daemon mode), and
- * a Settings entry — replaces the wide AgentPicker + env-pill row.
+ * Compact CLI control at the right of the project header. Click opens a dropdown
+ * with current execution mode and the agent picker. General settings live in the
+ * separate gear menu so this surface stays focused on runtime selection.
  */
 export function AvatarMenu({
   config,
@@ -40,7 +38,6 @@ export function AvatarMenu({
   onAgentModelChange,
   onOpenSettings,
   onRefreshAgents,
-  onBack,
 }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -297,37 +294,6 @@ export function AvatarMenu({
             </>
           ) : null}
 
-          <div style={{ height: 1, background: 'var(--border-soft)', margin: '4px 6px' }} />
-
-          <button
-            type="button"
-            className="avatar-item"
-            onClick={() => {
-              setOpen(false);
-              onOpenSettings();
-            }}
-          >
-            <span className="avatar-item-icon" aria-hidden>
-              <RemixIcon name="settings-line" size={15} />
-            </span>
-            <span>{t('avatar.settings')}</span>
-            <span className="avatar-item-meta">{isMacPlatform() ? '⌘,' : 'Ctrl+,'}</span>
-          </button>
-          {onBack ? (
-            <button
-              type="button"
-              className="avatar-item"
-              onClick={() => {
-                setOpen(false);
-                onBack();
-              }}
-            >
-              <span className="avatar-item-icon" aria-hidden>
-                <RemixIcon name="arrow-left-line" size={15} />
-              </span>
-              <span>{t('avatar.backToProjects')}</span>
-            </button>
-          ) : null}
         </div>
       ) : null}
     </div>

@@ -2,6 +2,12 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import { createPortal } from 'react-dom';
 import { APP_CHROME_FILE_ACTIONS_ID, APP_CHROME_FILE_ACTIONS_SELECTOR } from './AppChromeHeader';
 import {
+  buildSocialSharePayload,
+  OPEN_DESIGN_GITHUB_REPO_URL,
+  type SocialShareRequest,
+  type SocialShareResponse,
+} from '@open-design/contracts';
+import {
   anonymizeArtifactId,
   artifactKindToTracking,
   type TrackingProjectKind,
@@ -27,6 +33,7 @@ import {
   fetchLiveArtifactRefreshes,
   checkDeploymentLink,
   CLOUDFLARE_PAGES_PROVIDER_ID,
+  createSocialSharePayload,
   DEFAULT_DEPLOY_PROVIDER_ID,
   deployProjectFile,
   fetchCloudflarePagesZones,
@@ -89,6 +96,7 @@ import type {
 } from '../types';
 import { Icon } from './Icon';
 import { RemixIcon } from './RemixIcon';
+import { SocialShareGrid } from './SocialShareGrid';
 import { Toast } from './Toast';
 import { PreviewDrawOverlay } from './PreviewDrawOverlay';
 import {
@@ -3892,7 +3900,7 @@ function HtmlViewer({
   commentPortalId?: string;
   onCommentModeChange?: (active: boolean) => void;
 }) {
-  const t = useT();
+  const { locale, t } = useI18n();
   const analytics = useAnalytics();
   // Shared helper for the share menu: emit studio_click share_option on
   // entry and artifact_export_result on resolution. Sync exports report
@@ -4063,6 +4071,7 @@ function HtmlViewer({
   const [deployResult, setDeployResult] = useState<WebDeployProjectFileResponse | null>(null);
   const [copiedDeployLink, setCopiedDeployLink] = useState<string | null>(null);
   const [deployProviderId, setDeployProviderId] = useState<WebDeployProviderId>(DEFAULT_DEPLOY_PROVIDER_ID);
+  const [projectSocialShare, setProjectSocialShare] = useState<SocialShareResponse | null>(null);
   const [deployToken, setDeployToken] = useState('');
   const [teamId, setTeamId] = useState('');
   const [teamSlug, setTeamSlug] = useState('');
@@ -6455,6 +6464,51 @@ const [manualEditTargets, setManualEditTargets] = useState<ManualEditTarget[]>([
     providerLabel: t(option.labelKey),
     url: deploymentsByProvider[option.id]?.url?.trim() || '',
   })).filter((item) => item.url);
+  const shareableDeploymentUrl =
+    DEPLOY_PROVIDER_OPTIONS.map((option) => deploymentsByProvider[option.id])
+      .find((item) => item?.url?.trim() && deployResultState(item.status) === 'ready')
+      ?.url
+      ?.trim() ?? '';
+  const projectSocialShareRequest = useMemo<SocialShareRequest | null>(() => {
+    if (!shareableDeploymentUrl) return null;
+    const title = t('socialShare.projectTitle', { title: exportTitle });
+    const text = t('socialShare.projectText', {
+      title: exportTitle,
+      repo: OPEN_DESIGN_GITHUB_REPO_URL,
+    });
+    return {
+      kind: 'project-html',
+      locale,
+      url: shareableDeploymentUrl,
+      title,
+      text,
+      copyText: t('socialShare.projectCopyText', {
+        title: exportTitle,
+        url: shareableDeploymentUrl,
+        repo: OPEN_DESIGN_GITHUB_REPO_URL,
+      }),
+    };
+  }, [exportTitle, locale, shareableDeploymentUrl, t]);
+  const projectSocialShareFallback = useMemo(
+    () => (projectSocialShareRequest ? buildSocialSharePayload(projectSocialShareRequest) : null),
+    [projectSocialShareRequest],
+  );
+  useEffect(() => {
+    setProjectSocialShare(null);
+    if (!projectSocialShareRequest) return;
+    let cancelled = false;
+    void createSocialSharePayload(projectSocialShareRequest)
+      .then((payload) => {
+        if (!cancelled) setProjectSocialShare(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectSocialShare(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectSocialShareRequest]);
+  const activeProjectSocialShare = projectSocialShare ?? projectSocialShareFallback;
   const deployButtonLabel =
     deployPhase === 'deploying'
       ? t('fileViewer.deployingToProvider', { provider: deployProviderLabel })
@@ -6935,6 +6989,29 @@ const [manualEditTargets, setManualEditTargets] = useState<ManualEditTarget[]>([
                       <div className="share-menu-divider" />
                     </>
                   ) : null}
+                  <div className="share-menu-section-label" role="presentation">
+                    {t('socialShare.projectSection')}
+                  </div>
+                  {activeProjectSocialShare ? (
+                    <SocialShareGrid
+                      share={activeProjectSocialShare}
+                      className="share-menu-social-grid"
+                      onAfterShare={() => setShareMenuOpen(false)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="share-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        fireShareExport('vercel', () => openDeployModal());
+                      }}
+                    >
+                      <span className="share-menu-icon"><RemixIcon name="upload-cloud-line" size={15} /></span>
+                      <span>{t('socialShare.deployFirst')}</span>
+                    </button>
+                  )}
+                  <div className="share-menu-divider" />
                   <div className="share-menu-section-label" role="presentation">
                     {t('fileViewer.shareMenuPublishOnline')}
                   </div>
@@ -7794,6 +7871,14 @@ const [manualEditTargets, setManualEditTargets] = useState<ManualEditTarget[]>([
                       })}
                     </div>
                   </div>
+                </div>
+              ) : null}
+              {activeProjectSocialShare ? (
+                <div className="deploy-social-share">
+                  <div className="deploy-social-share__label">
+                    {t('socialShare.projectSection')}
+                  </div>
+                  <SocialShareGrid share={activeProjectSocialShare} />
                 </div>
               ) : null}
             </div>

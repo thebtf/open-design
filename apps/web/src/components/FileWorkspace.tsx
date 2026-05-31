@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -19,7 +20,9 @@ import { isMacPlatform } from '../utils/platform';
 import {
   deleteProjectFile,
   fetchProjectFileText,
+  fetchProjectFolders,
   projectFileUrl,
+  createProjectFolder,
   renameProjectFile,
   updateDesignSystemDraft,
   type UploadProjectFilesResult,
@@ -42,9 +45,10 @@ import {
   type DesignSystemSummary,
   type ProjectMetadata,
   type ProjectFile,
+  type ProjectFolder,
 } from '../types';
 import { DesignFilesPanel } from './DesignFilesPanel';
-import { DesignBrowserPanel } from './DesignBrowserPanel';
+import { DesignBrowserPanel, labelFromUrl, type BrowserPageInfo } from './DesignBrowserPanel';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { designSystemGithubEvidenceState, repoConnectCopy } from './design-system-github-evidence';
 import { FileViewer, LiveArtifactViewer } from './FileViewer';
@@ -125,8 +129,16 @@ interface SketchState {
 
 const DESIGN_FILES_TAB = '__design_files__';
 const DESIGN_SYSTEM_TAB = '__design_system__';
-const BROWSER_TAB = '__browser__';
+const BROWSER_TAB_PREFIX = '__browser__:';
+const ADD_MENU_WIDTH = 260;
 type TabDropEdge = 'before' | 'after';
+interface BrowserWorkspaceTab {
+  iconUrl?: string;
+  id: string;
+  label: string;
+  title?: string;
+  url?: string;
+}
 type DesignSystemReviewDecision =
   NonNullable<ProjectMetadata['designSystemReview']>[string]['decision'];
 type DesignSystemReviewEntry = NonNullable<ProjectMetadata['designSystemReview']>[string];
@@ -167,6 +179,19 @@ interface DesignSystemSectionActivity {
   touchedFiles: string[];
   todoText?: string;
   todoStatus?: TodoItem['status'];
+}
+
+function formatBrowserTabUrl(url: string): string {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    if (!path || path === '/') return host || url;
+    return `${host}${path}`;
+  } catch {
+    return url;
+  }
 }
 interface DesignSystemProjectSectionReview {
   section: DesignSystemProjectSection;
@@ -254,8 +279,10 @@ export function FileWorkspace({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [sketches, setSketches] = useState<Record<string, SketchState>>({});
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
-  const [browserTabOpen, setBrowserTabOpen] = useState(false);
+  const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
+  const [browserTabs, setBrowserTabs] = useState<BrowserWorkspaceTab[]>([]);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [tabsOverflowing, setTabsOverflowing] = useState(false);
   const [addMenuPos, setAddMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [draggedTabName, setDraggedTabName] = useState<string | null>(null);
   const [dragOverTab, setDragOverTab] = useState<{
@@ -267,6 +294,7 @@ export function FileWorkspace({
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const tabsBarRef = useRef<HTMLDivElement | null>(null);
   const draggedTabNameRef = useRef<string | null>(null);
+  const browserTabSequenceRef = useRef(0);
 
   const visibleFiles = useMemo(
     () => files.filter((file) => !isLiveArtifactImplementationPath(file.name)),
@@ -278,6 +306,22 @@ export function FileWorkspace({
     [liveArtifacts],
   );
 
+  const refreshProjectFolders = useCallback(async (): Promise<ProjectFolder[]> => {
+    const next = await fetchProjectFolders(projectId);
+    setProjectFolders(next);
+    return next;
+  }, [projectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProjectFolders(projectId).then((next) => {
+      if (!cancelled) setProjectFolders(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   // Pull the persisted active tab in when the parent's hydration completes
   // (or on project switch). Fall back to the Design Files browser so a
   // fresh project lands in a useful place.
@@ -286,16 +330,42 @@ export function FileWorkspace({
   }, [tabsState.active, defaultRootTab]);
 
   useEffect(() => {
-    setBrowserTabOpen(false);
+    setBrowserTabs([]);
+    browserTabSequenceRef.current = 0;
     setAddMenuOpen(false);
   }, [projectId]);
 
+  useEffect(() => {
+    const tabBar = tabsBarRef.current;
+    if (!tabBar) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      setTabsOverflowing(tabBar.scrollWidth > tabBar.clientWidth + 1);
+    };
+    const requestMeasure = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    requestMeasure();
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(requestMeasure);
+    if (resizeObserver) {
+      resizeObserver.observe(tabBar);
+      Array.from(tabBar.children).forEach((child) => resizeObserver.observe(child));
+    }
+    window.addEventListener('resize', requestMeasure);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', requestMeasure);
+    };
+  }, [browserTabs.length, designSystemProject, tabNames.length]);
+
   // The add-module menu is portaled to <body> so the tab strip's overflow
   // clipping (overflow-x: auto turns .ws-tabs-bar into a scroll container that
-  // also clips vertically) cannot hide it — without this the menu opened but
-  // was clipped out of view, making the + button look dead. Because the menu
-  // lives outside .ws-add-tab now, position it manually from the button and
-  // treat both the button and the portaled menu as "inside" for dismissal.
+  // also clips vertically) cannot hide it. Position it manually from the button
+  // and treat both the button and the portaled menu as "inside" for dismissal.
   useEffect(() => {
     if (!addMenuOpen) {
       setAddMenuPos(null);
@@ -305,7 +375,13 @@ export function FileWorkspace({
       const button = addButtonRef.current;
       if (!button) return;
       const rect = button.getBoundingClientRect();
-      setAddMenuPos({ top: rect.bottom + 8, left: rect.left });
+      const viewportWidth =
+        typeof window === 'undefined' ? ADD_MENU_WIDTH : window.innerWidth;
+      const left = Math.max(
+        8,
+        Math.min(rect.right - ADD_MENU_WIDTH, viewportWidth - ADD_MENU_WIDTH - 8),
+      );
+      setAddMenuPos({ top: rect.bottom + 8, left });
     };
     updatePosition();
     const onPointerDown = (event: PointerEvent) => {
@@ -332,15 +408,62 @@ export function FileWorkspace({
 
   function openBrowserTab() {
     setUploadError(null);
-    setBrowserTabOpen(true);
-    setActiveTab(BROWSER_TAB);
+    const nextIndex = browserTabSequenceRef.current + 1;
+    browserTabSequenceRef.current = nextIndex;
+    const nextTab: BrowserWorkspaceTab = {
+      id: `${BROWSER_TAB_PREFIX}${nextIndex}`,
+      label: nextIndex === 1 ? 'Browser' : `Browser ${nextIndex}`,
+    };
+    setBrowserTabs((current) => [...current, nextTab]);
+    setActiveTab(nextTab.id);
     setAddMenuOpen(false);
   }
 
-  function closeBrowserTab() {
-    setBrowserTabOpen(false);
-    if (activeTab === BROWSER_TAB) setActiveTab(DESIGN_FILES_TAB);
+  function closeBrowserTab(tabId: string) {
+    const closingIndex = browserTabs.findIndex((tab) => tab.id === tabId);
+    const nextTabs = browserTabs.filter((tab) => tab.id !== tabId);
+    setBrowserTabs(nextTabs);
+    if (activeTab === tabId) {
+      const nextActiveBrowser =
+        nextTabs[Math.min(Math.max(closingIndex, 0), nextTabs.length - 1)] ?? null;
+      setActiveTab(nextActiveBrowser?.id ?? DESIGN_FILES_TAB);
+    }
   }
+
+  const updateBrowserTabInfo = useCallback((tabId: string, info: BrowserPageInfo) => {
+    const nextUrl = info.url.trim();
+    const nextIconUrl = info.iconUrl?.trim() ?? '';
+    setBrowserTabs((current) => {
+      let changed = false;
+      const nextTabs = current.map((tab) => {
+        if (tab.id !== tabId) return tab;
+        const nextTitle = nextUrl
+          ? info.title.trim() || labelFromUrl(nextUrl)
+          : tab.label;
+        const normalizedUrl = nextUrl === 'about:blank' ? '' : nextUrl;
+        if (
+          tab.title === nextTitle
+          && (tab.url ?? '') === normalizedUrl
+          && (tab.iconUrl ?? '') === nextIconUrl
+        ) {
+          return tab;
+        }
+        changed = true;
+        const nextTab: BrowserWorkspaceTab = {
+          ...tab,
+          title: nextTitle,
+          url: normalizedUrl,
+        };
+        if (nextIconUrl) {
+          nextTab.iconUrl = nextIconUrl;
+        } else {
+          delete nextTab.iconUrl;
+        }
+        return nextTab;
+      });
+      return changed ? nextTabs : current;
+    });
+  }, []);
 
   function activatePending(name: string) {
     // Pending sketches are not in tabsState.tabs — flip the local
@@ -352,7 +475,13 @@ export function FileWorkspace({
   // back to the last remaining tab. Skip transient activeTab values
   // (DESIGN_FILES_TAB, pending sketches) since those aren't in persistedTabs.
   useEffect(() => {
-    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || activeTab === BROWSER_TAB) return;
+    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB) return;
+    if (isBrowserTabId(activeTab)) {
+      if (!browserTabs.some((tab) => tab.id === activeTab)) {
+        setActiveTab(DESIGN_FILES_TAB);
+      }
+      return;
+    }
     if (sketches[activeTab] && !sketches[activeTab]!.persisted) return;
     if (!persistedTabs.includes(activeTab)) {
       setPersistedActive(persistedTabs[persistedTabs.length - 1] ?? null);
@@ -523,7 +652,7 @@ export function FileWorkspace({
       Array.from(e.dataTransfer?.types ?? []).includes('Files');
     const isAllowedDropTarget = (target: EventTarget | null) => {
       if (!(target instanceof Element)) return false;
-      return Boolean(target.closest('.df-drop, .composer'));
+      return Boolean(target.closest('.df-panel, .composer'));
     };
     const onDragOver = (e: DragEvent) => {
       if (!hasFiles(e) || isAllowedDropTarget(e.target)) return;
@@ -559,7 +688,7 @@ export function FileWorkspace({
   // The Design Files entry is already sticky-pinned, so we only scroll
   // for real workspace tabs. Issue #775.
   useEffect(() => {
-    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || activeTab === BROWSER_TAB) return;
+    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB) return;
     const tabBar = tabsBarRef.current;
     if (!tabBar) return;
     const el = tabBar.querySelector<HTMLElement>('.ws-tab.active');
@@ -682,6 +811,7 @@ export function FileWorkspace({
     const result = await renameProjectFile(projectId, oldName, nextName);
     const renamed = result.file;
     await onRefreshFiles();
+    await refreshProjectFolders();
 
     const nextTabs = persistedTabs.map((name) => (name === oldName ? renamed.name : name));
     const nextActive = tabsState.active === oldName ? renamed.name : tabsState.active;
@@ -827,7 +957,7 @@ export function FileWorkspace({
   }
 
   const activeFile = useMemo<ProjectFile | null>(() => {
-    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || activeTab === BROWSER_TAB) return null;
+    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || isBrowserTabId(activeTab)) return null;
     const onDisk = visibleFiles.find((f) => f.name === activeTab);
     if (onDisk) return onDisk;
     if (isSketchName(activeTab) && sketches[activeTab]) {
@@ -843,7 +973,7 @@ export function FileWorkspace({
   }, [activeTab, visibleFiles, sketches]);
 
   const activeLiveArtifact = useMemo<LiveArtifactWorkspaceEntry | null>(() => {
-    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || activeTab === BROWSER_TAB) return null;
+    if (activeTab === DESIGN_FILES_TAB || activeTab === DESIGN_SYSTEM_TAB || isBrowserTabId(activeTab)) return null;
     return liveArtifactEntries.find((entry) => entry.tabId === activeTab) ?? null;
   }, [activeTab, liveArtifactEntries]);
 
@@ -887,7 +1017,7 @@ export function FileWorkspace({
         ) : null}
         <div
           ref={tabsBarRef}
-          className="ws-tabs-bar"
+          className={`ws-tabs-bar${tabsOverflowing ? ' is-overflowing' : ''}`}
           role="tablist"
           aria-label={t('workspace.designFiles')}
           onDragLeave={(event) => {
@@ -931,49 +1061,25 @@ export function FileWorkspace({
             </span>
             <span className="ws-tab-label">{t('workspace.designFiles')}</span>
           </button>
-          <div className="ws-add-tab">
-            <button
-              ref={addButtonRef}
-              type="button"
-              className={`ws-tab-add ${addMenuOpen ? 'active' : ''}`}
-              aria-label="Add workspace module"
-              aria-haspopup="menu"
-              aria-expanded={addMenuOpen}
-              title="Add"
-              onClick={() => setAddMenuOpen((open) => !open)}
-            >
-              <Icon name="plus" size={15} />
-            </button>
-          </div>
-          {addMenuOpen && addMenuPos
-            ? createPortal(
-                <div
-                  ref={addMenuRef}
-                  className="ws-add-menu"
-                  role="menu"
-                  style={{ top: addMenuPos.top, left: addMenuPos.left }}
-                >
-                  <button type="button" role="menuitem" onClick={openBrowserTab}>
-                    <Icon name="globe" size={15} />
-                    <span>
-                      <strong>Browser</strong>
-                      <small>Reference sites and browser-harness tasks</small>
-                    </span>
-                  </button>
-                </div>,
-                document.body,
-              )
-            : null}
-          {browserTabOpen ? (
-            <Tab
-              key={BROWSER_TAB}
-              label="Browser"
-              active={activeTab === BROWSER_TAB}
-              onActivate={() => setActiveTab(BROWSER_TAB)}
-              onClose={closeBrowserTab}
-              kind="browser"
-            />
-          ) : null}
+          {browserTabs.map((browserTab) => {
+            const browserUrl = browserTab.url?.trim() ?? '';
+            const browserTitle = browserUrl
+              ? browserTab.title?.trim() || labelFromUrl(browserUrl)
+              : browserTab.label;
+            const browserMeta = browserUrl ? formatBrowserTabUrl(browserUrl) : undefined;
+            return (
+              <Tab
+                key={browserTab.id}
+                label={browserTitle}
+                meta={browserMeta}
+                title={browserUrl ? `${browserTitle}\n${browserUrl}` : browserTitle}
+                active={activeTab === browserTab.id}
+                onActivate={() => setActiveTab(browserTab.id)}
+                onClose={() => closeBrowserTab(browserTab.id)}
+                kind="browser"
+              />
+            );
+          })}
           {tabNames.map((name) => {
             const sketchEntry = sketches[name];
             const dirtyMark =
@@ -1034,7 +1140,40 @@ export function FileWorkspace({
               />
             );
           })}
+          <div className="ws-add-tab">
+            <button
+              ref={addButtonRef}
+              type="button"
+              className={`ws-tab-add ${addMenuOpen ? 'active' : ''}`}
+              aria-label="Add workspace module"
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              title="Add"
+              onClick={() => setAddMenuOpen((open) => !open)}
+            >
+              <Icon name="plus" size={15} />
+            </button>
+          </div>
         </div>
+        {addMenuOpen && addMenuPos
+          ? createPortal(
+              <div
+                ref={addMenuRef}
+                className="ws-add-menu"
+                role="menu"
+                style={{ top: addMenuPos.top, left: addMenuPos.left }}
+              >
+                <button type="button" role="menuitem" onClick={openBrowserTab}>
+                  <Icon name="globe" size={15} />
+                  <span>
+                    <strong>Browser</strong>
+                    <small>Reference sites and browser-harness tasks</small>
+                  </span>
+                </button>
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
       <div className="ws-body">
         {/* Banner moved into DesignFilesPanel for the Design Files tab so
@@ -1056,6 +1195,20 @@ export function FileWorkspace({
             </button>
           </div>
         ) : null}
+        {browserTabs.map((browserTab) => (
+          <div
+            key={browserTab.id}
+            className={`ws-browser-panel ${activeTab === browserTab.id ? 'active' : ''}`}
+            aria-hidden={activeTab === browserTab.id ? undefined : true}
+          >
+            <DesignBrowserPanel
+              projectId={projectId}
+              onRefreshFiles={onRefreshFiles}
+              onOpenFile={openFile}
+              onPageInfoChange={(info) => updateBrowserTabInfo(browserTab.id, info)}
+            />
+          </div>
+        ))}
         {activeTab === DESIGN_SYSTEM_TAB && designSystemProject ? (
           <DesignSystemProjectPanel
             projectId={projectId}
@@ -1080,6 +1233,7 @@ export function FileWorkspace({
             key={projectId}
             projectId={projectId}
             files={visibleFiles}
+            folders={projectFolders}
             liveArtifacts={liveArtifactEntries}
             onRefreshFiles={onRefreshFiles}
             onOpenFile={openFile}
@@ -1110,6 +1264,13 @@ export function FileWorkspace({
               fileInputRef.current?.click();
             }}
             onUploadFiles={(picked) => void uploadFiles(picked)}
+            onCreateFolder={async (name) => {
+              const folder = await createProjectFolder(projectId, name);
+              if (folder) {
+                await refreshProjectFolders();
+              }
+              return folder;
+            }}
             onPaste={() => {
               trackFileManagerClick(analytics.track, {
                 page_name: 'file_manager',
@@ -1132,12 +1293,8 @@ export function FileWorkspace({
             activePluginActionPaths={activePluginActionPaths}
             hiddenPluginActionPaths={hiddenPluginActionPaths}
           />
-        ) : activeTab === BROWSER_TAB && browserTabOpen ? (
-          <DesignBrowserPanel
-            projectId={projectId}
-            onRefreshFiles={onRefreshFiles}
-            onOpenFile={openFile}
-          />
+        ) : isBrowserTabId(activeTab) ? (
+          null
         ) : isActiveSketch && activeSketch && activeFile ? (
           activeSketch.loaded ? (
             <SketchEditor
@@ -2575,6 +2732,8 @@ function DesignSystemInlinePreview({
 
 function Tab({
   label,
+  meta,
+  title,
   active,
   onActivate,
   onClose,
@@ -2591,6 +2750,8 @@ function Tab({
   onDragEnd,
 }: {
   label: string;
+  meta?: string;
+  title?: string;
   active: boolean;
   onActivate: () => void;
   onClose?: () => void;
@@ -2608,10 +2769,12 @@ function Tab({
 }) {
   const t = useT();
   const iconName = kindIconName(kind);
+  const tabTitle = title ?? (meta ? `${label} ${meta}` : label);
   return (
     <div
       className={[
         'ws-tab',
+        meta ? 'has-meta' : '',
         kind === 'live-artifact' ? 'live-artifact-tab' : '',
         active ? 'active' : '',
         draggable ? 'draggable' : '',
@@ -2628,6 +2791,7 @@ function Tab({
       role="tab"
       aria-selected={active}
       tabIndex={0}
+      title={tabTitle}
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
       onDragOver={draggable ? onDragOver : undefined}
@@ -2640,7 +2804,10 @@ function Tab({
           <Icon name={iconName} size={13} />
         </span>
       ) : null}
-      <span className="ws-tab-label">{label}</span>
+      <span className="ws-tab-text">
+        <span className="ws-tab-label">{label}</span>
+        {meta ? <span className="ws-tab-meta">{meta}</span> : null}
+      </span>
       {liveArtifact ? (
         <LiveArtifactBadges
           compact
@@ -2717,6 +2884,10 @@ function kindIconName(
   if (kind === 'code') return 'file-code';
   if (kind === 'text') return 'file';
   return 'file';
+}
+
+function isBrowserTabId(tabId: string): boolean {
+  return tabId.startsWith(BROWSER_TAB_PREFIX);
 }
 
 function isSketchName(name: string): boolean {

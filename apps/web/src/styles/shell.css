@@ -70,6 +70,7 @@
 .workspace-tabs-new-btn {
   width: 24px;
   height: 24px;
+  margin-left: 4px;
   padding: 0;
   border: 0;
   border-radius: 5px;
@@ -81,6 +82,13 @@
   flex: 0 0 auto;
   -webkit-app-region: no-drag;
   transition: background 100ms ease, color 100ms ease;
+}
+.workspace-tabs-strip.is-overflowing .workspace-tabs-new-btn {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--bg-panel) 94%, var(--bg-subtle));
+  box-shadow: -10px 0 12px -10px color-mix(in srgb, var(--text) 24%, transparent);
 }
 .workspace-tabs-new-btn:hover {
   background: color-mix(in srgb, var(--bg-panel) 72%, var(--bg-subtle));

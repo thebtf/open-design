@@ -175,6 +175,12 @@ const MEMORY_STRING_FLAGS = new Set([
 const MEMORY_BOOLEAN_FLAGS = new Set([
   'help', 'h', 'json',
 ]);
+const SHARE_STRING_FLAGS = new Set([
+  'daemon-url', 'url', 'title', 'text', 'copy-text', 'locale', 'platform',
+]);
+const SHARE_BOOLEAN_FLAGS = new Set([
+  'help', 'h', 'json',
+]);
 // Hoisted because `runAutomation` is reachable through the top-of-file
 // SUBCOMMAND_MAP dispatch, which runs during module evaluation —
 // any `const` declared further down would still be in TDZ when
@@ -216,6 +222,7 @@ const SUBCOMMAND_MAP = {
   plugin: runPlugin,
   ui: runUi,
   marketplace: runMarketplace,
+  share: runShare,
   project: runProject,
   automation: runAutomation,
   automations: runAutomation,
@@ -326,6 +333,10 @@ function printRootHelp() {
 
   od memory tree <list|view|edit|move> [args]
       Inspect and edit the memory tree that is injected into agent prompts.
+
+  od share <open-design|url> [options]
+      Build localized social-share targets for the Open Design repo or a
+      deployed project URL. Use --json for scripted integrations.
 
   od ui <list|show|respond|revoke|prefill> [args]
       Read and answer GenUI surfaces (form / choice / confirmation / oauth-prompt) headlessly.
@@ -4310,6 +4321,95 @@ and bare marketplace names resolved through configured registry sources.`);
 
 async function projectDaemonUrl(flags) {
   return cliDaemonUrl(flags);
+}
+
+function printShareUsage() {
+  console.log(`Usage:
+  od share open-design [--locale <locale>] [--platform <id>] [--json]
+  od share url --url <https-url> [--title <title>] [--text <text>]
+               [--copy-text <text>] [--locale <locale>] [--platform <id>] [--json]
+
+Platforms:
+  x, linkedin, facebook, reddit, telegram, whatsapp, weibo, line, instagram, xiaohongshu
+
+Common options:
+  --daemon-url <url>   Open Design daemon HTTP base.
+  --json               Emit raw JSON.`);
+}
+
+async function runShare(args) {
+  const wantsHelp = args.length === 0
+    || args[0] === 'help'
+    || args.includes('--help')
+    || args.includes('-h');
+  if (wantsHelp) {
+    printShareUsage();
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+
+  const sub = args[0] && !args[0].startsWith('-') ? args[0] : 'open-design';
+  const rest = sub === args[0] ? args.slice(1) : args;
+  const flags = parseFlags(rest, {
+    string: SHARE_STRING_FLAGS,
+    boolean: SHARE_BOOLEAN_FLAGS,
+  });
+  const base = (await cliDaemonUrl(flags)).replace(/\/$/, '');
+  const positional = positionalArgs(rest, SHARE_STRING_FLAGS);
+  const url = flags.url ?? positional[0];
+  const body = sub === 'url'
+    ? {
+        kind: 'project-html',
+        url,
+        title: flags.title,
+        text: flags.text,
+        copyText: flags['copy-text'],
+        locale: flags.locale,
+      }
+    : {
+        kind: 'open-design-repo',
+        title: flags.title,
+        text: flags.text,
+        copyText: flags['copy-text'],
+        locale: flags.locale,
+      };
+
+  if (sub !== 'open-design' && sub !== 'url') {
+    console.error(`unknown share target: ${sub}`);
+    printShareUsage();
+    process.exit(2);
+  }
+  if (body.kind === 'project-html' && !body.url) {
+    console.error('Usage: od share url --url <https-url>');
+    process.exit(2);
+  }
+
+  const resp = await fetch(`${base}/api/social-share`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) return structuredHttpFailure(resp);
+  const data = await resp.json();
+  if (flags.platform) {
+    const target = (data.platforms ?? []).find((item) => item.platform === flags.platform);
+    if (!target) {
+      console.error(`unknown platform: ${flags.platform}`);
+      process.exit(2);
+    }
+    if (flags.json) return process.stdout.write(JSON.stringify(target, null, 2) + '\n');
+    if (target.shareUrl) {
+      console.log(target.shareUrl);
+      return;
+    }
+    console.log(data.copyText);
+    if (target.entryUrl) console.log(target.entryUrl);
+    return;
+  }
+  if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+  console.log(data.copyText);
+  for (const target of data.platforms ?? []) {
+    console.log(`${target.platform}\t${target.shareUrl ?? target.entryUrl ?? '-'}`);
+  }
 }
 
 function safeReadJsonFile(p) {

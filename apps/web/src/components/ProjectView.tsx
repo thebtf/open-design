@@ -140,6 +140,7 @@ import {
 import { buildPptxExportPrompt } from '../lib/build-pptx-export-prompt';
 import { AppChromeHeader } from './AppChromeHeader';
 import { AvatarMenu } from './AvatarMenu';
+import { EntrySettingsMenu } from './EntrySettingsMenu';
 import { HandoffButton } from './HandoffButton';
 import { ProjectDesignSystemPicker } from './ProjectDesignSystemPicker';
 import { ChatPane } from './ChatPane';
@@ -217,6 +218,7 @@ interface Props {
     choice: { model?: string; reasoning?: string },
   ) => void;
   onRefreshAgents: () => void;
+  onThemeChange?: (theme: AppConfig['theme']) => void;
   onOpenSettings: (section?: SettingsSection) => void;
   onOpenAmrSettings?: () => void;
   onOpenMcpSettings?: () => void;
@@ -500,6 +502,7 @@ export function ProjectView({
   onAgentChange,
   onAgentModelChange,
   onRefreshAgents,
+  onThemeChange,
   onOpenSettings,
   onOpenAmrSettings,
   onOpenMcpSettings,
@@ -517,6 +520,7 @@ export function ProjectView({
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
   const iframeKeepAlivePool = useIframeKeepAlivePool();
+  const handleThemeChange = onThemeChange ?? (() => {});
   // P0 page_view page_name=chat_panel — fire once per project mount.
   // ProjectView outlives conversation switches (ChatPane is keyed by
   // activeConversationId so it remounts when the user switches chats,
@@ -4323,7 +4327,11 @@ export function ProjectView({
               onAgentModelChange={onAgentModelChange}
               onOpenSettings={onOpenSettings}
               onRefreshAgents={onRefreshAgents}
-              onBack={onBack}
+            />
+            <EntrySettingsMenu
+              config={config}
+              onThemeChange={handleThemeChange}
+              onOpenSettings={onOpenSettings}
             />
           </>
         )}
@@ -4453,13 +4461,24 @@ export function ProjectView({
                   autoFocus
                 />
                 <div className="project-instructions-actions">
-                  <button type="button" className="btn-sm" disabled={instructionsSaving} onClick={() => {
-                    setInstructionsDraft(project.customInstructions ?? '');
-                    setInstructionsMode((project.customInstructions ?? '').trim() ? 'review' : 'closed');
-                  }}>
+                  <button
+                    type="button"
+                    className="btn-sm"
+                    disabled={instructionsSaving}
+                    onClick={() => {
+                      setInstructionsDraft(project.customInstructions ?? '');
+                      setInstructionsMode((project.customInstructions ?? '').trim() ? 'review' : 'closed');
+                    }}
+                  >
                     {t('common.cancel')}
                   </button>
-                  <button type="button" className="btn-sm btn-primary" data-testid="project-instructions-save" disabled={instructionsSaving} onClick={handleSaveInstructions}>
+                  <button
+                    type="button"
+                    className="btn-sm btn-primary"
+                    data-testid="project-instructions-save"
+                    disabled={instructionsSaving}
+                    onClick={handleSaveInstructions}
+                  >
                     {t('common.save')}
                   </button>
                 </div>

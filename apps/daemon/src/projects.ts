@@ -78,6 +78,62 @@ export async function listFiles(projectsRoot, projectId, opts = {}) {
   return out;
 }
 
+export async function listProjectFolders(projectsRoot, projectId, opts = {}) {
+  const metadata = opts?.metadata;
+  const dir = resolveProjectDir(projectsRoot, projectId, metadata);
+  const out = [];
+  const skipDirs = metadata?.baseDir ? isIgnoredProjectDirName : undefined;
+  await collectFolders(dir, '', out, skipDirs);
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
+async function collectFolders(dir, relDir, out, shouldSkipDir?: (name: string) => boolean) {
+  let entries = [];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return;
+    throw err;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (e.name.startsWith('.')) continue;
+    if (shouldSkipDir?.(e.name)) continue;
+    const rel = relDir ? `${relDir}/${e.name}` : e.name;
+    const full = path.join(dir, e.name);
+    const st = await stat(full);
+    out.push({
+      name: rel,
+      path: rel,
+      type: 'dir',
+      size: 0,
+      mtime: st.mtimeMs,
+    });
+    await collectFolders(full, rel, out, shouldSkipDir);
+  }
+}
+
+export async function createProjectFolder(projectsRoot, projectId, name, metadata?) {
+  const dir = await ensureProject(projectsRoot, projectId, metadata);
+  const safeName = sanitizePath(name);
+  const target = await resolveSafeReal(dir, safeName);
+  await mkdir(target, { recursive: true });
+  const st = await stat(target);
+  if (!st.isDirectory()) {
+    const err = new Error('target path is not a folder');
+    err.code = 'ENOTDIR';
+    throw err;
+  }
+  return {
+    name: safeName,
+    path: safeName,
+    type: 'dir',
+    size: 0,
+    mtime: st.mtimeMs,
+  };
+}
+
 // Best-effort entry-file detector — looks for index.html at the root,
 // then any *.html file. Returns null if nothing obvious is found, in
 // which case the project simply opens to the file panel with no

@@ -28,6 +28,10 @@ vi.mock('../../src/providers/registry', async () => {
   };
 });
 
+vi.mock('../../src/components/DesignBrowserPanel', () => ({
+  DesignBrowserPanel: () => <div data-testid="design-browser-panel" />,
+}));
+
 const mockedFetchProjectFileText = vi.mocked(fetchProjectFileText);
 const mockedUploadProjectFiles = vi.mocked(uploadProjectFiles);
 const mockedWriteProjectTextFile = vi.mocked(writeProjectTextFile);
@@ -864,6 +868,51 @@ describe('FileWorkspace add-module menu', () => {
     // portaled out of the clipping bar to stay visible.
     const tabsBar = document.querySelector('.ws-tabs-bar');
     expect(tabsBar).not.toBeNull();
+    expect(tabsBar!.contains(addButton)).toBe(false);
     expect(tabsBar!.contains(menu)).toBe(false);
+  });
+
+  it('adds a new browser tab every time the Browser module is selected', () => {
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    const addButton = screen.getByRole('button', { name: 'Add workspace module' });
+    for (let i = 0; i < 3; i += 1) {
+      act(() => {
+        fireEvent.click(addButton);
+      });
+      act(() => {
+        fireEvent.click(screen.getByRole('menuitem', { name: /Browser/ }));
+      });
+    }
+
+    const browserTabs = screen
+      .getAllByRole('tab')
+      .filter((tab) => /Browser(?: \d+)?/.test(tab.textContent ?? ''));
+    expect(browserTabs).toHaveLength(3);
+    expect(browserTabs.map((tab) => tab.textContent?.trim())).toEqual([
+      'Browser',
+      'Browser 2',
+      'Browser 3',
+    ]);
+    expect(browserTabs[2]!.getAttribute('aria-selected')).toBe('true');
+
+    const browserPanels = screen
+      .getAllByTestId('design-browser-panel')
+      .map((panel) => panel.closest('.ws-browser-panel'));
+    expect(browserPanels).toHaveLength(3);
+    expect(browserPanels[0]!.className).not.toContain('active');
+    expect(browserPanels[1]!.className).not.toContain('active');
+    expect(browserPanels[2]!.className).toContain('active');
   });
 });

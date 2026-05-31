@@ -337,6 +337,7 @@ export function WorkspaceTabsBar({ route, projects }: Props) {
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [hoverPreview, setHoverPreview] = useState<HoverPreviewState | null>(null);
+  const [tabsOverflowing, setTabsOverflowing] = useState(false);
   const stripRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -425,6 +426,33 @@ export function WorkspaceTabsBar({ route, projects }: Props) {
     window.addEventListener(OPEN_WORKSPACE_TAB_EVENT, onOpenWorkspaceTab);
     return () => window.removeEventListener(OPEN_WORKSPACE_TAB_EVENT, onOpenWorkspaceTab);
   }, []);
+
+  useEffect(() => {
+    const stripElement = stripRef.current;
+    if (!stripElement) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      setTabsOverflowing(stripElement.scrollWidth > stripElement.clientWidth + 1);
+    };
+    const requestMeasure = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    requestMeasure();
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(requestMeasure);
+    if (resizeObserver) {
+      resizeObserver.observe(stripElement);
+      Array.from(stripElement.children).forEach((child) => resizeObserver.observe(child));
+    }
+    window.addEventListener('resize', requestMeasure);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', requestMeasure);
+    };
+  }, [state.tabs.length]);
 
   useEffect(() => {
     const stripElement = stripRef.current;
@@ -542,7 +570,7 @@ export function WorkspaceTabsBar({ route, projects }: Props) {
     <header className="app-chrome-header workspace-tabs-chrome" aria-label="Workspace tabs">
       <div className="app-chrome-traffic-space workspace-tabs-traffic" aria-hidden />
       <div
-        className="workspace-tabs-strip"
+        className={`workspace-tabs-strip${tabsOverflowing ? ' is-overflowing' : ''}`}
         role="tablist"
         aria-label="Open workspaces"
         ref={stripRef}
@@ -590,8 +618,6 @@ export function WorkspaceTabsBar({ route, projects }: Props) {
             </div>
           );
         })}
-      </div>
-      <div className="workspace-tabs-actions" ref={menuRef}>
         <button
           type="button"
           className="workspace-tabs-new-btn"
@@ -601,6 +627,8 @@ export function WorkspaceTabsBar({ route, projects }: Props) {
         >
           <Icon name="plus" size={14} />
         </button>
+      </div>
+      <div className="workspace-tabs-actions" ref={menuRef}>
         <button
           type="button"
           className={`workspace-tabs-icon-btn${tabsMenuOpen ? ' is-active' : ''}`}
