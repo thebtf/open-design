@@ -94,7 +94,9 @@ export class MentionNode extends TextNode {
   }
 
   updateDOM(prev: MentionNode, dom: HTMLElement, config: EditorConfig): boolean {
-    const updated = super.updateDOM(prev, dom, config);
+    // `TextNode.updateDOM` is typed against `this`; MentionNode is a strict
+    // subtype, so cast through the base shape to satisfy the variance check.
+    const updated = super.updateDOM(prev as unknown as TextNode, dom, config);
     if (prev.__mentionKind !== this.__mentionKind) {
       dom.className = `composer-inline-mention composer-inline-mention--${this.__mentionKind}`;
       dom.setAttribute('data-mention-kind', this.__mentionKind);

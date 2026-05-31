@@ -484,97 +484,160 @@
 }
 .composer-shell:focus-within {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), 0 0 0 3px var(--accent-soft);
 }
 .composer.drag-active .composer-shell {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.composer textarea {
-  min-height: 88px;
-  max-height: min(184px, 34vh);
-  border: none;
-  background: transparent;
-  padding: 4px 4px;
-  resize: none;
-  overflow-y: hidden;
-}
-.composer textarea:focus { outline: none; box-shadow: none; }
+/* -------- Lexical contenteditable input ---------------------------- */
 .composer-input-wrap {
   position: relative;
   display: flex;
   flex-direction: column;
 }
-.composer-textarea-layer {
+/* The wrapper that owns scroll + max-height (Lexical's ContentEditable is
+   the inner [contenteditable] element). */
+.composer-input-editor {
   position: relative;
   min-height: 88px;
+  max-height: min(184px, 34vh);
+  overflow-y: auto;
 }
-.composer-input-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
+.composer-input-editor [contenteditable='true'],
+.composer-input-editor .composer-editable {
+  outline: none;
   min-height: 88px;
-  padding: 0;
-  color: var(--text);
-  font: inherit;
-  line-height: normal;
-  pointer-events: none;
-  white-space: pre-wrap;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.composer-input-overlay-inner {
-  min-height: 100%;
   padding: 4px;
-  transform: translateY(calc(-1 * var(--composer-input-scroll, 0px)));
-}
-.composer-input-wrap.has-mention-overlay textarea {
-  color: transparent;
-  caret-color: var(--text);
-}
-.composer-input-wrap.has-mention-overlay textarea::selection {
-  background: color-mix(in srgb, var(--accent) 24%, transparent);
-  color: transparent;
-}
-.composer-inline-mention {
-  display: inline-block;
-  max-width: min(240px, 25vw);
-  margin: 0;
-  padding: 0 1px;
-  border: 0;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
-  color: color-mix(in srgb, var(--accent) 62%, var(--text));
   font: inherit;
-  font-size: inherit;
-  font-weight: inherit;
-  line-height: inherit;
-  letter-spacing: inherit;
-  vertical-align: bottom;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  caret-color: var(--accent);
+  -webkit-user-modify: read-write-plaintext-only; /* paste-as-plain-text guard */
+}
+/* Lexical placeholder — absolutely positioned over the empty editor. The
+   editor adds/removes its sibling automatically; we style by class. */
+.composer-input-placeholder {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  pointer-events: none;
+  user-select: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.55;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: calc(100% - 8px);
 }
+/* Single-paragraph + LineBreakNode model: collapse paragraph margins so a
+   serialized "\n" reads as a single visual line break (no \n\n gap). */
+.composer-input-editor p,
+.composer-editor-paragraph { margin: 0; }
+
+/* -------- Mention pill — real Lexical atomic node ------------------- */
+/* Each @mention is a <span class="composer-inline-mention
+   composer-inline-mention--{kind}"> rendered INSIDE the contenteditable
+   line box, so it carries the native caret. Per-kind hue is driven by a
+   single local custom prop pair so dot + bg + ring stay in sync. */
+.composer-inline-mention {
+  --m-hue: var(--accent);
+  --m-tint: var(--accent-tint);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(240px, 25vw);
+  margin: 0 0.5px;
+  padding: 1px 7px 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--m-hue) 26%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--m-tint);
+  color: color-mix(in srgb, var(--m-hue) 72%, var(--text));
+  font: inherit;
+  font-size: 0.94em;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: baseline;
+  cursor: default;
+  /* user-select:none keeps the node atomic — the caret lands beside it,
+     never inside the "@token" glyphs. */
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+/* Leading type dot. Lexical TextNode tokens can't host child elements, so
+   render the dot via ::before — it costs nothing and reads as an icon. */
+.composer-inline-mention::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--m-hue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--m-hue) 18%, transparent);
+}
+.composer-inline-mention:hover {
+  border-color: color-mix(in srgb, var(--m-hue) 40%, var(--border));
+  background: color-mix(in srgb, var(--m-hue) 14%, var(--bg-panel));
+}
+/* Lexical applies a 'selected' class when the token is range-selected
+   (click / shift-arrow). Use the blue --selected token for the focus ring
+   so it reads distinctly from the warm accent hue. */
+.composer-inline-mention.selected {
+  border-color: var(--selected);
+  box-shadow: 0 0 0 2px var(--selected-soft);
+  background: color-mix(in srgb, var(--m-hue) 16%, var(--bg-panel));
+}
+/* Per-kind hue map — set only the two local props; everything above
+   derives from them. */
+.composer-inline-mention--plugin    { --m-hue: var(--accent);  --m-tint: var(--accent-tint); }
+.composer-inline-mention--skill     { --m-hue: var(--accent);  --m-tint: var(--accent-tint); }
+.composer-inline-mention--design,
+.composer-inline-mention--mcp        { --m-hue: var(--purple);  --m-tint: var(--purple-bg); }
+.composer-inline-mention--file       { --m-hue: var(--blue);    --m-tint: var(--blue-bg); }
+.composer-inline-mention--connector  { --m-hue: var(--green);   --m-tint: var(--green-bg); }
+.composer-inline-mention--asset      { --m-hue: var(--text-soft); --m-tint: var(--bg-subtle); }
 .composer-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding-top: 4px;
+  padding-top: 6px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-soft);
 }
 .composer-row .icon-btn {
-  width: 28px; height: 28px;
+  width: 30px; height: 30px;
   padding: 0;
   background: transparent;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
+  transition:
+    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.composer-row .icon-btn:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
+.composer-row .icon-btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--text);
+  border-color: var(--border);
+}
+.composer-row .icon-btn:disabled { opacity: 0.45; cursor: default; }
 .composer-spacer { flex: 1; }
 .composer-import {
   background: transparent;
@@ -614,13 +677,25 @@
   align-items: center;
   gap: 6px;
   background: var(--accent);
-  border-color: var(--accent);
+  border: 1px solid var(--accent);
   color: white;
-  font-weight: 500;
-  padding: 4px 14px;
+  font-weight: 600;
+  padding: 6px 16px;
   font-size: 12.5px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-xs);
+  transition:
+    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.composer-send:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.composer-send:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: var(--shadow-sm);
+}
+.composer-send:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 .composer-send.stop { background: var(--text); border-color: var(--text); color: var(--bg); }
 .composer-send.stop:hover { background: var(--text-strong); border-color: var(--text-strong); color: var(--bg); }
 .composer-hint {

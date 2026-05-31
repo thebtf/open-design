@@ -1,0 +1,511 @@
+'use client';
+
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from 'react';
+import { LexicalComposer } from '@lexical/react/LexicalComposer';
+import type { InitialConfigType } from '@lexical/react/LexicalComposer';
+import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin';
+import { ContentEditable } from '@lexical/react/LexicalContentEditable';
+import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
+import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { mergeRegister } from '@lexical/utils';
+import {
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  $isTextNode,
+  $isLineBreakNode,
+  COMMAND_PRIORITY_HIGH,
+  COMMAND_PRIORITY_LOW,
+  KEY_ENTER_COMMAND,
+  KEY_ARROW_DOWN_COMMAND,
+  KEY_ARROW_UP_COMMAND,
+  KEY_TAB_COMMAND,
+  KEY_ESCAPE_COMMAND,
+  INSERT_LINE_BREAK_COMMAND,
+  INSERT_PARAGRAPH_COMMAND,
+  PASTE_COMMAND,
+  type LexicalEditor,
+  type LexicalNode,
+  type RangeSelection,
+  type TextNode,
+} from 'lexical';
+import { MentionNode, $createMentionNode, $isMentionNode } from './MentionNode';
+import { serializeComposer } from './serialize';
+import { setComposerFromText } from './deserialize';
+import {
+  buildInlineMentionParts,
+  type InlineMentionEntity,
+} from '../../utils/inlineMentions';
+
+// One @mention to insert into the editor. `token` is the literal "@…" text
+// (already produced by `inlineMentionToken(label)`); `entity` carries the
+// id/kind/label/title used to drive the pill styling + staged sync.
+export interface MentionInsert {
+  token: string;
+  entity: InlineMentionEntity;
+}
+
+export interface LexicalComposerInputProps {
+  placeholder: string;
+  // = composerMentionEntities; used both to render existing @tokens as pills
+  // (via setText/seed) and to fold plain-text @tokens into the present list.
+  knownEntities: InlineMentionEntity[];
+  // Fires on every editor change with the serialized plain text + the entities
+  // currently referenced by the text (MentionNodes + plain @tokens matched
+  // against knownEntities).
+  onChange(plainText: string, present: InlineMentionEntity[]): void;
+  // Mention / slash trigger state derived from the caret position. Either side
+  // is null when no trigger is active.
+  onTrigger(state: {
+    mention: { q: string } | null;
+    slash: { q: string } | null;
+  }): void;
+  // Plain Enter (no popover, no IME) — host submits the turn.
+  onEnterSend(): void;
+  // Pasted files/images — host uploads them (mirrors the old textarea paste).
+  onPasteFiles?: (files: File[]) => void;
+  // Whether a popover is open; gates the arrow/tab/enter/escape routing.
+  popoverOpen: boolean;
+  // Routes a popover key to the host; returns true when the host consumed it.
+  onPopoverKey(
+    key: 'ArrowDown' | 'ArrowUp' | 'Tab' | 'Enter' | 'Escape',
+  ): boolean;
+}
+
+// Imperative surface the host drives. Mirrors the old textareaRef operations
+// but expressed in Lexical terms.
+export interface LexicalComposerInputHandle {
+  getText(): string;
+  setText(text: string): void;
+  clear(): void;
+  focus(): void;
+  insertMention(insert: MentionInsert): void;
+  replaceActiveTrigger(text: string): void;
+}
+
+const EDITOR_THEME = {
+  paragraph: 'composer-editor-paragraph',
+};
+
+// Walk back from the caret across the current line (stopping at the previous
+// LineBreakNode) to reconstruct the text the trigger regexes need. Mentions
+// are token nodes, so their text is included verbatim, which keeps the
+// trailing-space "already inserted" suppression working.
+function textBeforeCaretOnLine(node: TextNode, offset: number): string {
+  let acc = node.getTextContent().slice(0, offset);
+  let prev: LexicalNode | null = node.getPreviousSibling();
+  while (prev && !$isLineBreakNode(prev)) {
+    acc = prev.getTextContent() + acc;
+    prev = prev.getPreviousSibling();
+  }
+  return acc;
+}
+
+// Drop the in-flight trigger token (the "@query" / "/query" run at the caret)
+// from the anchor text node. The trigger always lives in plain text because
+// mentions are token nodes you can't type into.
+function deleteActiveTrigger(sel: RangeSelection, re: RegExp): void {
+  const node = sel.anchor.getNode();
+  if (!$isTextNode(node) || $isMentionNode(node)) return;
+  const offset = sel.anchor.offset;
+  const head = node.getTextContent().slice(0, offset);
+  const match = re.exec(head);
+  if (!match) return;
+  // Strip a leading whitespace capture (the `(^|\s)` group of the @-rule) so
+  // we only remove the literal token, not the space before it.
+  const tok = match[0].replace(/^\s+/, '');
+  const start = offset - tok.length;
+  if (start < 0) return;
+  node.spliceText(start, tok.length, '', true);
+}
+
+function EditorRefPlugin({
+  editorRef,
+}: {
+  editorRef: React.MutableRefObject<LexicalEditor | null>;
+}) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editorRef.current = editor;
+    return () => {
+      if (editorRef.current === editor) editorRef.current = null;
+    };
+  }, [editor, editorRef]);
+  return null;
+}
+
+function TriggerPlugin({
+  onTrigger,
+}: {
+  onTrigger: LexicalComposerInputProps['onTrigger'];
+}) {
+  const [editor] = useLexicalComposerContext();
+  const onTriggerRef = useRef(onTrigger);
+  onTriggerRef.current = onTrigger;
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState }) => {
+      editorState.read(() => {
+        const sel = $getSelection();
+        if (!$isRangeSelection(sel) || !sel.isCollapsed()) {
+          onTriggerRef.current({ mention: null, slash: null });
+          return;
+        }
+        const node = sel.anchor.getNode();
+        if (!$isTextNode(node) || $isMentionNode(node)) {
+          onTriggerRef.current({ mention: null, slash: null });
+          return;
+        }
+        const before = textBeforeCaretOnLine(node, sel.anchor.offset);
+        const m = /(^|\s)@([^\s@]*)$/.exec(before);
+        const s = /^\/([^\s/]*)$/.exec(before);
+        onTriggerRef.current({
+          mention: m ? { q: m[2] ?? '' } : null,
+          slash: s ? { q: s[1] ?? '' } : null,
+        });
+      });
+    });
+  }, [editor]);
+  return null;
+}
+
+function KeyboardPlugin({
+  popoverOpen,
+  onEnterSend,
+  onPopoverKey,
+}: {
+  popoverOpen: boolean;
+  onEnterSend: () => void;
+  onPopoverKey: LexicalComposerInputProps['onPopoverKey'];
+}) {
+  const [editor] = useLexicalComposerContext();
+  // Keep the latest callbacks/flag in refs so the command registrations are
+  // stable (registered once) yet always see fresh values.
+  const popoverOpenRef = useRef(popoverOpen);
+  popoverOpenRef.current = popoverOpen;
+  const onEnterSendRef = useRef(onEnterSend);
+  onEnterSendRef.current = onEnterSend;
+  const onPopoverKeyRef = useRef(onPopoverKey);
+  onPopoverKeyRef.current = onPopoverKey;
+  useEffect(() => {
+    return mergeRegister(
+      editor.registerCommand(
+        KEY_ENTER_COMMAND,
+        (e: KeyboardEvent | null) => {
+          // IME confirm Enter — let Lexical commit the composition.
+          if (editor.isComposing()) return false;
+          if (e?.shiftKey) {
+            editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false);
+            e.preventDefault();
+            return true;
+          }
+          // Cmd/Ctrl+Enter force-sends even with a popover open.
+          if (e?.metaKey || e?.ctrlKey) {
+            e.preventDefault();
+            onEnterSendRef.current();
+            return true;
+          }
+          if (popoverOpenRef.current) {
+            e?.preventDefault();
+            return onPopoverKeyRef.current('Enter');
+          }
+          e?.preventDefault();
+          onEnterSendRef.current();
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ARROW_DOWN_COMMAND,
+        (e) => {
+          if (!popoverOpenRef.current || editor.isComposing()) return false;
+          e?.preventDefault();
+          return onPopoverKeyRef.current('ArrowDown');
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ARROW_UP_COMMAND,
+        (e) => {
+          if (!popoverOpenRef.current || editor.isComposing()) return false;
+          e?.preventDefault();
+          return onPopoverKeyRef.current('ArrowUp');
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_TAB_COMMAND,
+        (e) => {
+          if (!popoverOpenRef.current || editor.isComposing()) return false;
+          e?.preventDefault();
+          return onPopoverKeyRef.current('Tab');
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ESCAPE_COMMAND,
+        () => {
+          if (!popoverOpenRef.current) return false;
+          return onPopoverKeyRef.current('Escape');
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      // Forbid a second paragraph — the composer is a single-paragraph model,
+      // so a hard Enter that survived above becomes a line break.
+      editor.registerCommand(
+        INSERT_PARAGRAPH_COMMAND,
+        () => {
+          editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false);
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+    );
+  }, [editor]);
+  return null;
+}
+
+function PastePlugin({
+  onPasteFiles,
+}: {
+  onPasteFiles?: (files: File[]) => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+  const onPasteFilesRef = useRef(onPasteFiles);
+  onPasteFilesRef.current = onPasteFiles;
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event: ClipboardEvent) => {
+        const files = Array.from(event.clipboardData?.files ?? []);
+        if (files.length > 0) {
+          event.preventDefault();
+          onPasteFilesRef.current?.(files);
+          return true;
+        }
+        // Otherwise fall through so PlainTextPlugin pastes as plain text.
+        return false;
+      },
+      COMMAND_PRIORITY_LOW,
+    );
+  }, [editor]);
+  return null;
+}
+
+function OnChangePlugin({
+  onChange,
+  knownEntities,
+}: {
+  onChange: LexicalComposerInputProps['onChange'];
+  knownEntities: InlineMentionEntity[];
+}) {
+  const [editor] = useLexicalComposerContext();
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const entitiesRef = useRef(knownEntities);
+  entitiesRef.current = knownEntities;
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState }) => {
+      const { text, present } = serializeComposer(editorState);
+      const folded = foldPresentEntities(text, present, entitiesRef.current);
+      onChangeRef.current(text, folded);
+    });
+  }, [editor]);
+  return null;
+}
+
+// Plugin/skill/mcp/connector mentions are inserted as plain `@token` text
+// (matching the old `replaceMentionWithText` byte-for-byte), so they aren't
+// MentionNodes in the tree. To prune their staged chips on delete, fold the
+// plain @tokens that still match a known entity into the present list.
+function foldPresentEntities(
+  text: string,
+  present: InlineMentionEntity[],
+  known: InlineMentionEntity[],
+): InlineMentionEntity[] {
+  const result: InlineMentionEntity[] = [...present];
+  const seen = new Set(present.map((e) => `${e.kind}:${e.id}`));
+  const parts = buildInlineMentionParts(text, known, { highlightUnknown: false });
+  if (parts) {
+    for (const part of parts) {
+      if (part.kind === 'mention' && part.entity.kind !== 'unknown') {
+        const key = `${part.entity.kind}:${part.entity.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(part.entity);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+// Seeds the editor from the host `draft` string only on genuine external
+// changes (initialDraft, plugin brief, template, tools-menu insert, annotation
+// append, reset()→''). When `draft` already equals the live serialized text,
+// the change came from the user typing — bail so the caret is preserved.
+function SeedingPlugin({
+  draft,
+  entities,
+}: {
+  draft: string;
+  entities: InlineMentionEntity[];
+}) {
+  const [editor] = useLexicalComposerContext();
+  const lastSeeded = useRef<string | null>(null);
+  const entitiesRef = useRef(entities);
+  entitiesRef.current = entities;
+  useEffect(() => {
+    const current = serializeComposer(editor.getEditorState()).text;
+    if (draft === current) return; // user-typed → no reseed → caret preserved
+    if (draft === lastSeeded.current) return; // StrictMode double-invoke guard
+    lastSeeded.current = draft;
+    setComposerFromText(editor, draft, entitiesRef.current);
+  }, [draft, editor]);
+  return null;
+}
+
+export const LexicalComposerInput = forwardRef<
+  LexicalComposerInputHandle,
+  LexicalComposerInputProps & { draft: string }
+>(function LexicalComposerInput(props, ref) {
+  const {
+    placeholder,
+    knownEntities,
+    onChange,
+    onTrigger,
+    onEnterSend,
+    onPasteFiles,
+    popoverOpen,
+    onPopoverKey,
+    draft,
+  } = props;
+  const editorRef = useRef<LexicalEditor | null>(null);
+  // knownEntities can change asynchronously (file/plugin lists). Keep a ref so
+  // the imperative handle's setText/insert paths always use the latest set
+  // without re-creating the handle.
+  const knownEntitiesRef = useRef(knownEntities);
+  knownEntitiesRef.current = knownEntities;
+
+  const initialConfig: InitialConfigType = {
+    namespace: 'chat-composer',
+    editable: true,
+    nodes: [MentionNode],
+    theme: EDITOR_THEME,
+    onError(err) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[composer-lexical]', err);
+      }
+    },
+    // editorState intentionally omitted → empty on first paint (SSR-safe).
+  };
+
+  useImperativeHandle(
+    ref,
+    (): LexicalComposerInputHandle => ({
+      getText() {
+        const editor = editorRef.current;
+        if (!editor) return '';
+        // Belt-and-suspenders: collapse any stray \n\n the single-paragraph
+        // model should never produce, so the wire format stays byte-stable.
+        return serializeComposer(editor.getEditorState()).text.replace(
+          /\n{2,}/g,
+          '\n',
+        );
+      },
+      setText(text: string) {
+        const editor = editorRef.current;
+        if (!editor) return;
+        setComposerFromText(editor, text, knownEntitiesRef.current);
+      },
+      clear() {
+        const editor = editorRef.current;
+        if (!editor) return;
+        setComposerFromText(editor, '', knownEntitiesRef.current);
+      },
+      focus() {
+        editorRef.current?.focus();
+      },
+      insertMention(insert: MentionInsert) {
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.update(() => {
+          let sel = $getSelection();
+          if (!$isRangeSelection(sel)) {
+            $getRoot().selectEnd();
+            sel = $getSelection();
+          }
+          if (!$isRangeSelection(sel)) return;
+          deleteActiveTrigger(sel, /(^|\s)@[^\s@]*$/);
+          const node = $createMentionNode({
+            mentionId: insert.entity.id,
+            mentionKind:
+              insert.entity.kind === 'unknown' ? 'file' : insert.entity.kind,
+            token: insert.token,
+            label: insert.entity.label,
+            title: insert.entity.title,
+          });
+          const active = $getSelection();
+          if ($isRangeSelection(active)) {
+            active.insertNodes([node]);
+            const after = $getSelection();
+            if ($isRangeSelection(after)) after.insertText(' ');
+          }
+        });
+      },
+      replaceActiveTrigger(text: string) {
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.update(() => {
+          let sel = $getSelection();
+          if (!$isRangeSelection(sel)) {
+            $getRoot().selectEnd();
+            sel = $getSelection();
+          }
+          if (!$isRangeSelection(sel)) return;
+          // Drop the active /query or @query, then insert the plain text.
+          deleteActiveTrigger(sel, /(^|\s)[@/][^\s@]*$/);
+          const active = $getSelection();
+          if ($isRangeSelection(active)) active.insertText(text);
+        });
+      },
+    }),
+    [],
+  );
+
+  return (
+    <LexicalComposer initialConfig={initialConfig}>
+      <div className="composer-input-editor">
+        <PlainTextPlugin
+          contentEditable={
+            <ContentEditable
+              data-testid="chat-composer-input"
+              className="ph-no-capture composer-editable"
+              ariaLabel={placeholder}
+            />
+          }
+          placeholder={
+            <div className="composer-input-placeholder">{placeholder}</div>
+          }
+          ErrorBoundary={LexicalErrorBoundary}
+        />
+      </div>
+      <HistoryPlugin />
+      <EditorRefPlugin editorRef={editorRef} />
+      <OnChangePlugin onChange={onChange} knownEntities={knownEntities} />
+      <TriggerPlugin onTrigger={onTrigger} />
+      <KeyboardPlugin
+        popoverOpen={popoverOpen}
+        onEnterSend={onEnterSend}
+        onPopoverKey={onPopoverKey}
+      />
+      <PastePlugin onPasteFiles={onPasteFiles} />
+      <SeedingPlugin draft={draft} entities={knownEntities} />
+    </LexicalComposer>
+  );
+});

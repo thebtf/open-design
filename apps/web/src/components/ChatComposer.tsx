@@ -1,8 +1,9 @@
+'use client';
+
 import {
   forwardRef,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -42,11 +43,13 @@ import { PluginDetailsModal } from "./PluginDetailsModal";
 import { PluginsSection, type PluginsSectionHandle } from "./PluginsSection";
 import { BUILT_IN_PETS, CUSTOM_PET_ID } from "./pet/pets";
 import {
-  buildInlineMentionParts,
   inlineMentionToken,
   type InlineMentionEntity,
 } from '../utils/inlineMentions';
-import { isImeComposing } from '../utils/imeComposing';
+import {
+  LexicalComposerInput,
+  type LexicalComposerInputHandle,
+} from './composer/LexicalComposerInput';
 import { ANNOTATION_EVENT, type AnnotationEventDetail } from "./PreviewDrawOverlay";
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
@@ -63,17 +66,6 @@ const USER_PLUGIN_SOURCE_KINDS = new Set<PluginSourceKind>([
   'url',
   'local',
 ]);
-
-const COMPOSER_TEXTAREA_MIN_HEIGHT = 88;
-const COMPOSER_TEXTAREA_MAX_HEIGHT = 184;
-
-function composerTextareaMaxHeight(): number {
-  if (typeof window === 'undefined') return COMPOSER_TEXTAREA_MAX_HEIGHT;
-  return Math.max(
-    COMPOSER_TEXTAREA_MIN_HEIGHT,
-    Math.min(COMPOSER_TEXTAREA_MAX_HEIGHT, Math.round(window.innerHeight * 0.34)),
-  );
-}
 
 interface SlashCommand {
   id: string;
@@ -242,19 +234,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     const [stagedMcpServers, setStagedMcpServers] = useState<McpServerConfig[]>([]);
     const [stagedConnectors, setStagedConnectors] = useState<ConnectorDetail[]>([]);
     const [dragActive, setDragActive] = useState(false);
-    const [mention, setMention] = useState<{
-      q: string;
-      cursor: number;
-    } | null>(null);
-    const [composerScrollTop, setComposerScrollTop] = useState(0);
-    // Slash-command popover state — when the draft starts with `/` and
-    // the cursor is still inside that token (no space committed yet),
-    // we show a small palette of supported commands. The query is the
-    // text after `/` so the user can type-to-filter.
-    const [slash, setSlash] = useState<{
-      q: string;
-      cursor: number;
-    } | null>(null);
+    // Lexical owns the caret, so the mention/slash trigger state only carries
+    // the typed query — no cursor offset.
+    const [mention, setMention] = useState<{ q: string } | null>(null);
+    // Slash-command popover state — when the draft starts with `/` and the
+    // cursor is still inside that token (no space committed yet), we show a
+    // small palette of supported commands. The query is the text after `/`
+    // so the user can type-to-filter.
+    const [slash, setSlash] = useState<{ q: string } | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -279,8 +266,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     const [toolsOpen, setToolsOpen] = useState(false);
     const [toolsTab, setToolsTab] = useState<ToolsTab>('plugins');
     const fileInputRef = useRef<HTMLInputElement | null>(null);
-    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-    const composingRef = useRef(false);
+    // The Lexical editor handle — drives text/mention/clear/focus from the
+    // host. Replaces the old textareaRef + manual selection plumbing. IME
+    // composition guarding now lives inside the editor's command handlers.
+    const editorRef = useRef<LexicalComposerInputHandle | null>(null);
     const toolsMenuRef = useRef<HTMLDivElement | null>(null);
     const toolsTriggerRef = useRef<HTMLButtonElement | null>(null);
     const petEnabled = Boolean(onAdoptPet && onTogglePet);
@@ -460,40 +449,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         }),
       [connectors, enabledMcpServers, pluginsForComposer, projectFiles, skills, staged],
     );
-    const composerMentionParts = useMemo(
-      () => buildInlineMentionParts(draft, composerMentionEntities),
-      [composerMentionEntities, draft],
-    );
-
-    function resizeTextarea() {
-      const ta = textareaRef.current;
-      if (!ta) return;
-      const maxHeight = composerTextareaMaxHeight();
-      ta.style.height = 'auto';
-      const nextHeight = Math.min(
-        Math.max(ta.scrollHeight, COMPOSER_TEXTAREA_MIN_HEIGHT),
-        maxHeight,
-      );
-      ta.style.height = `${nextHeight}px`;
-      ta.style.overflowY = ta.scrollHeight > maxHeight ? 'auto' : 'hidden';
-    }
-
-    useLayoutEffect(() => {
-      resizeTextarea();
-    }, [draft, composerMentionParts, staged.length, stagedSkills.length]);
-
-    useEffect(() => {
-      function onResize() {
-        resizeTextarea();
-      }
-      window.addEventListener('resize', onResize);
-      return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    useEffect(() => {
-      setComposerScrollTop(textareaRef.current?.scrollTop ?? 0);
-    }, [composerMentionParts]);
-
     // Resolve which tabs to surface in the consolidated tools popover.
     // Plugins is always visible while a project is active so users can
     // apply context without leaving the composer. MCP shows when wired by
@@ -607,21 +562,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     }, [slash, slashCommands]);
 
     function pickSlash(cmd: SlashCommand) {
-      const ta = textareaRef.current;
-      if (!ta || !slash) return;
-      const before = draft.slice(0, slash.cursor);
-      const after = draft.slice(slash.cursor);
-      // Replace the in-flight `/<query>` token with the picked
-      // command's canonical insertion text.
-      const replaced = before.replace(/\/[^\s/]*$/, cmd.insert);
-      const next = replaced + after;
-      setDraft(next);
+      if (!slash) return;
+      // Replace the in-flight `/<query>` trigger with the picked command's
+      // canonical insertion text. Lexical owns the caret afterwards.
+      editorRef.current?.replaceActiveTrigger(cmd.insert);
+      editorRef.current?.focus();
       setSlash(null);
-      requestAnimationFrame(() => {
-        ta.focus();
-        const pos = replaced.length;
-        ta.setSelectionRange(pos, pos);
-      });
     }
 
     // Expand a `/hatch <concept>` draft into the canonical hatch-pet
@@ -660,6 +606,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       if (!/^\/mcp\s*$/i.test(trimmed)) return false;
       onOpenMcpSettings();
       setDraft('');
+      editorRef.current?.clear();
       return true;
     }
 
@@ -726,6 +673,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         }
       }
       setDraft('');
+      editorRef.current?.clear();
       return true;
     }
 
@@ -734,14 +682,9 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       () => ({
         setDraft: (text: string) => {
           setDraft(text);
+          editorRef.current?.setText(text);
+          editorRef.current?.focus();
           seededRef.current = true;
-          requestAnimationFrame(() => {
-            const ta = textareaRef.current;
-            if (!ta) return;
-            ta.focus();
-            const pos = text.length;
-            ta.setSelectionRange(pos, pos);
-          });
         },
         restoreDraft: ({ text, attachments = [], commentAttachments = [] }) => {
           setDraft(text);
@@ -753,17 +696,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           setUploadError(null);
           setMention(null);
           setSlash(null);
+          editorRef.current?.setText(text);
+          editorRef.current?.focus();
           seededRef.current = true;
-          requestAnimationFrame(() => {
-            const ta = textareaRef.current;
-            if (!ta) return;
-            ta.focus();
-            const pos = text.length;
-            ta.setSelectionRange(pos, pos);
-          });
         },
         focus: () => {
-          textareaRef.current?.focus();
+          editorRef.current?.focus();
         },
       }),
       []
@@ -779,6 +717,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       setUploadError(null);
       setMention(null);
       setSlash(null);
+      editorRef.current?.clear();
     }
 
     function currentCommentAttachments(extra: ChatCommentAttachment[] = []): ChatCommentAttachment[] {
@@ -826,19 +765,30 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     async function insertSkillMention(skill: SkillSummary) {
       const applied = await applyProjectSkill(skill);
       if (!applied) return;
-      replaceMentionWithText(`${inlineMentionToken(skill.name)} `);
+      // Stage the skill so it rides this turn's skillIds, then insert an
+      // atomic `@<name>` pill carrying the skill's real id. The onChange
+      // prune keys on `skill:<id>` being present in the editor text, so the
+      // chip survives until the user deletes the pill.
+      setStagedSkills((prev) =>
+        prev.some((s) => s.id === skill.id) ? prev : [...prev, skill],
+      );
+      editorRef.current?.insertMention({
+        token: inlineMentionToken(skill.name),
+        entity: { id: skill.id, kind: 'skill', label: skill.name },
+      });
+      setMention(null);
     }
 
     function removeStagedSkill(id: string) {
       setStagedSkills((prev) => prev.filter((s) => s.id !== id));
       // Also strip the matching `@<id>` token from the draft so the chip
-      // and the textarea stay in sync. We allow trailing whitespace to be
-      // collapsed too.
-      setDraft((d) =>
-        d
-          .replace(new RegExp(`(^|\\s)@${escapeRegExp(id)}(\\s|$)`, 'g'), '$1$2')
-          .replace(/\s{2,}/g, ' '),
-      );
+      // and the editor stay in sync. We allow trailing whitespace to be
+      // collapsed too, then push the stripped text back into the editor.
+      const stripped = draft
+        .replace(new RegExp(`(^|\\s)@${escapeRegExp(id)}(\\s|$)`, 'g'), '$1$2')
+        .replace(/\s{2,}/g, ' ');
+      setDraft(stripped);
+      editorRef.current?.setText(stripped);
     }
 
     async function ensureProject(): Promise<string | null> {
@@ -1009,9 +959,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                     }),
                   ]);
                 }
-                if (detail.note) setDraft((d) => (d ? `${d}\n${detail.note}` : detail.note));
+                if (detail.note) {
+                  const nextDraft = draft ? `${draft}\n${detail.note}` : detail.note;
+                  setDraft(nextDraft);
+                  editorRef.current?.setText(nextDraft);
+                }
                 setStreamingAnnotationSendPending(true);
-                textareaRef.current?.focus();
+                editorRef.current?.focus();
                 ack({ ok: true });
                 return;
               }
@@ -1030,8 +984,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             }
 
             if (detail.note) {
-              setDraft((d) => (d ? `${d}\n${detail.note}` : detail.note));
-              textareaRef.current?.focus();
+              const nextDraft = draft ? `${draft}\n${detail.note}` : detail.note;
+              setDraft(nextDraft);
+              editorRef.current?.setText(nextDraft);
+              editorRef.current?.focus();
             }
             ack({ ok: true });
           } catch (err) {
@@ -1078,17 +1034,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       streamingAnnotationSendPending,
     ]);
 
-    function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-      const items = Array.from(e.clipboardData?.items ?? []);
-      const files: File[] = [];
-      for (const item of items) {
-        if (item.kind === "file") {
-          const f = item.getAsFile();
-          if (f) files.push(f);
-        }
-      }
+    // Paste handler invoked by the editor's PastePlugin. `files` are the items
+    // the clipboard exposed synchronously; when empty we fall back to the
+    // async Clipboard API to recover pasted screenshots that some browsers
+    // only surface through `navigator.clipboard.read()`.
+    function handlePasteFiles(files: File[]) {
       if (files.length > 0) {
-        e.preventDefault();
         void uploadFiles(files);
         return;
       }
@@ -1123,58 +1074,84 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       if (result?.metadata) onProjectMetadataChange?.(result.metadata);
     }
 
-    function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-      const value = e.target.value;
-      const cursor = e.target.selectionStart;
-      setDraft(value);
-      // Keep the staged-skill chips in sync with the draft. If the user
-      // hand-deletes an `@<id>` token from the textarea, the chip must
-      // disappear too — otherwise submit() would still forward that id in
-      // skillIds and the daemon would compose a skill the prompt no
-      // longer references. Mirror the removeStagedSkill() boundary
-      // (whitespace or string edge) so partial matches don't keep a chip
-      // alive accidentally. We do not run the same prune for `staged`
-      // file attachments because users frequently attach files via the
-      // upload button without leaving an `@<path>` token in the draft.
-      setStagedSkills((prev) =>
-        prev.filter((s) =>
-          new RegExp(`(^|\\s)@${escapeRegExp(s.id)}(\\s|$)`).test(value),
-        ),
+    // Lexical drives every text change through this callback. `present` is the
+    // entity list the editor's text currently references (MentionNodes plus
+    // plain `@token`s matched against composerMentionEntities, deduped by
+    // kind:id). We prune the staged skill/mcp/connector chips to whatever the
+    // text still references — generalizing the old skill-only regex prune so a
+    // hand-deleted token also drops its chip and never leaks into the run
+    // context. `staged` (files) is intentionally NOT pruned: users attach
+    // files via the upload button without leaving an `@<path>` token.
+    function handleEditorChange(text: string, present: InlineMentionEntity[]) {
+      setDraft(text);
+      const set = new Set(present.map((e) => `${e.kind}:${e.id}`));
+      setStagedSkills((prev) => prev.filter((s) => set.has(`skill:${s.id}`)));
+      setStagedMcpServers((prev) => prev.filter((m) => set.has(`mcp:${m.id}`)));
+      setStagedConnectors((prev) =>
+        prev.filter((c) => set.has(`connector:${c.id}`)),
       );
-      // Skip mention and slash detection during IME composition (e.g.,
-      // Chinese, Japanese, Korean input) to prevent cursor jumping.
-      // Issue #2851.
-      if (composingRef.current) return;
-      // Detect a fresh @ at start or after whitespace; capture the typed
-      // query up to the cursor.
-      const before = value.slice(0, cursor);
-      const m = /(^|\s)@([^\s@]*)$/.exec(before);
-      if (m) setMention({ q: m[2] ?? "", cursor });
-      else setMention(null);
-      // Slash-command popover — open as soon as the draft starts with
-      // `/` (and the cursor is still inside the bare command token, no
-      // space yet). Closes once the user commits a space or moves past
-      // the prefix.
-      const slashMatch = /^\/([^\s/]*)$/.exec(before);
-      if (slashMatch) {
-        setSlash({ q: slashMatch[1] ?? '', cursor });
+    }
+
+    // Lexical reports the active @/slash trigger derived from the caret. The
+    // mention popover state collapses to `{ q }`; the slash state replicates
+    // the old detection effect (reset the keyboard index on open). IME
+    // suppression already happened in the editor (it bails while composing).
+    function handleEditorTrigger({
+      mention: nextMention,
+      slash: nextSlash,
+    }: {
+      mention: { q: string } | null;
+      slash: { q: string } | null;
+    }) {
+      setMention(nextMention);
+      if (nextSlash) {
+        setSlash(nextSlash);
         setSlashIndex(0);
       } else {
         setSlash(null);
       }
     }
 
+    // Routes popover navigation keys lifted verbatim from the old textarea
+    // onKeyDown. Returns true when the key was consumed so the editor can
+    // preventDefault; false lets the editor handle it normally (e.g. plain
+    // arrow keys when no popover is open).
+    function handlePopoverKey(
+      key: 'ArrowDown' | 'ArrowUp' | 'Tab' | 'Enter' | 'Escape',
+    ): boolean {
+      if (slash && filteredSlash.length > 0) {
+        if (key === 'ArrowDown') {
+          setSlashIndex((i) => (i + 1) % filteredSlash.length);
+          return true;
+        }
+        if (key === 'ArrowUp') {
+          setSlashIndex(
+            (i) => (i - 1 + filteredSlash.length) % filteredSlash.length,
+          );
+          return true;
+        }
+        if (key === 'Tab' || key === 'Enter') {
+          const safe = Math.min(slashIndex, filteredSlash.length - 1);
+          pickSlash(filteredSlash[safe]!);
+          return true;
+        }
+        if (key === 'Escape') {
+          setSlash(null);
+          return true;
+        }
+      }
+      if (mention && key === 'Escape') {
+        setMention(null);
+        return true;
+      }
+      return false;
+    }
+
     function insertMention(filePath: string) {
-      if (!mention) return;
-      const ta = textareaRef.current;
-      if (!ta) return;
-      const cursor = mention.cursor;
-      const before = draft.slice(0, cursor);
-      const after = draft.slice(cursor);
-      const replaced = before.replace(/@([^\s@]*)$/, `@${filePath} `);
-      const next = replaced + after;
-      setDraft(next);
-      setMention(null);
+      editorRef.current?.insertMention({
+        token: inlineMentionToken(filePath),
+        entity: { id: filePath, kind: 'file', label: filePath },
+      });
       if (!staged.some((s) => s.path === filePath)) {
         setStaged((s) => [
           ...s,
@@ -1185,50 +1162,38 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           },
         ]);
       }
-      requestAnimationFrame(() => {
-        ta.focus();
-        const pos = replaced.length;
-        ta.setSelectionRange(pos, pos);
-      });
+      setMention(null);
     }
 
     async function insertPluginMention(record: InstalledPluginRecord) {
-      const inserted = replaceMentionWithText(`${inlineMentionToken(record.title)} `);
-      if (!inserted) return;
-      await pluginsSectionRef.current?.applyById(record.id, record);
-    }
-
-    function replaceMentionWithText(text: string): boolean {
-      if (!mention) return false;
-      const ta = textareaRef.current;
-      const cursor = mention.cursor;
-      const before = draft.slice(0, cursor);
-      const after = draft.slice(cursor);
-      const replaced = before.replace(/(^|\s)@([^\s@]*)$/, `$1${text}`);
-      const next = replaced + after;
-      setDraft(next);
-      setMention(null);
-      requestAnimationFrame(() => {
-        if (!ta) return;
-        ta.focus();
-        const pos = replaced.length;
-        ta.setSelectionRange(pos, pos);
+      editorRef.current?.insertMention({
+        token: inlineMentionToken(record.title),
+        entity: { id: record.id, kind: 'plugin', label: record.title },
       });
-      return true;
+      setMention(null);
+      await pluginsSectionRef.current?.applyById(record.id, record);
     }
 
     function insertMcpMention(server: McpServerConfig) {
       setStagedMcpServers((current) => (
         current.some((item) => item.id === server.id) ? current : [...current, server]
       ));
-      replaceMentionWithText(`${inlineMentionToken(server.label || server.id)} `);
+      editorRef.current?.insertMention({
+        token: inlineMentionToken(server.label || server.id),
+        entity: { id: server.id, kind: 'mcp', label: server.label || server.id },
+      });
+      setMention(null);
     }
 
     function insertConnectorMention(connector: ConnectorDetail) {
       setStagedConnectors((current) => (
         current.some((item) => item.id === connector.id) ? current : [...current, connector]
       ));
-      replaceMentionWithText(`${inlineMentionToken(connector.name)} `);
+      editorRef.current?.insertMention({
+        token: inlineMentionToken(connector.name),
+        entity: { id: connector.id, kind: 'connector', label: connector.name },
+      });
+      setMention(null);
     }
 
     async function applyProjectSkill(skill: SkillSummary): Promise<boolean> {
@@ -1242,7 +1207,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     function removeStaged(p: string) {
       setStaged((s) => s.filter((a) => a.path !== p));
       setStagedVisualComments((current) => current.filter((attachment) => attachment.screenshotPath !== p));
-      setDraft((current) => stripInlineMentionToken(current, p));
+      // Strip the `@<path>` token from the draft and push the result back into
+      // the editor so the pill disappears in lockstep with the chip.
+      const stripped = stripInlineMentionToken(draft, p);
+      setDraft(stripped);
+      editorRef.current?.setText(stripped);
     }
 
     function removeCommentAttachment(id: string) {
@@ -1494,100 +1463,19 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               }}
             />
           ) : null}
-          <div
-            className={`composer-input-wrap${
-              composerMentionParts ? ' has-mention-overlay' : ''
-            }`}
-          >
-            <div className="composer-textarea-layer">
-              {composerMentionParts ? (
-                <div
-                  className="composer-input-overlay"
-                  data-testid="chat-composer-mention-overlay"
-                  aria-hidden="true"
-                  style={{ ['--composer-input-scroll' as string]: `${composerScrollTop}px` }}
-                >
-                  <div className="composer-input-overlay-inner">
-                    {composerMentionParts.map((part, index) =>
-                      part.kind === 'mention' ? (
-                        <span
-                          key={`${part.entity.kind}-${part.entity.id}-${index}`}
-                          className={`composer-inline-mention composer-inline-mention--${part.entity.kind}`}
-                          title={part.entity.title ?? part.text}
-                        >
-                          {part.text}
-                        </span>
-                      ) : (
-                        <span key={`text-${index}`}>{part.text}</span>
-                      ),
-                    )}
-                  </div>
-                </div>
-              ) : null}
-              <textarea
-                ref={textareaRef}
-                data-testid="chat-composer-input"
-                // ph-no-capture: prompt content is the most sensitive
-                // surface in the product. PostHog autocapture skips this
-                // element + subtree entirely.
-                className="ph-no-capture"
-                value={draft}
-                placeholder={t('chat.composerPlaceholder')}
-                spellCheck={false}
-                onChange={handleChange}
-                onPaste={handlePaste}
-                onScroll={(event) => {
-                  setComposerScrollTop(event.currentTarget.scrollTop);
-                }}
-                onCompositionStart={() => {
-                  composingRef.current = true;
-                }}
-                onCompositionEnd={() => {
-                  composingRef.current = false;
-                }}
-                onKeyDown={(e) => {
-                  if (isImeComposing(e, composingRef.current)) return;
-                  if (slash && filteredSlash.length > 0) {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setSlashIndex((i) => (i + 1) % filteredSlash.length);
-                      return;
-                    }
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setSlashIndex(
-                        (i) => (i - 1 + filteredSlash.length) % filteredSlash.length,
-                      );
-                      return;
-                    }
-                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey)) {
-                      e.preventDefault();
-                      const safe = Math.min(slashIndex, filteredSlash.length - 1);
-                      pickSlash(filteredSlash[safe]!);
-                      return;
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      setSlash(null);
-                      return;
-                    }
-                  }
-                  if (mention && e.key === "Escape") {
-                    setMention(null);
-                    return;
-                  }
-                  if (
-                    e.key === 'Enter' &&
-                    !e.shiftKey &&
-                    !e.altKey &&
-                    (e.metaKey || e.ctrlKey || !mention)
-                  ) {
-                    e.preventDefault();
-                    void submit();
-                  }
-                }}
-              />
-            </div>
+          <div className="composer-input-wrap">
+            <LexicalComposerInput
+              ref={editorRef}
+              draft={draft}
+              placeholder={t('chat.composerPlaceholder')}
+              knownEntities={composerMentionEntities}
+              onChange={handleEditorChange}
+              onTrigger={handleEditorTrigger}
+              onEnterSend={() => void submit()}
+              onPasteFiles={handlePasteFiles}
+              popoverOpen={Boolean(mention) || Boolean(slash && filteredSlash.length > 0)}
+              onPopoverKey={handlePopoverKey}
+            />
             {mention ? (
               <MentionPopover
                 files={filteredFiles}
@@ -1727,22 +1615,19 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                         onPick={async (skill) => {
                           const applied = await applyProjectSkill(skill);
                           if (!applied) return;
-                          const ta = textareaRef.current;
-                          const insert = `${inlineMentionToken(skill.name)} `;
-                          const currentDraft = ta?.value ?? draft;
-                          const cursor = ta?.selectionStart ?? currentDraft.length;
-                          const before = currentDraft.slice(0, cursor);
-                          const after = currentDraft.slice(cursor);
-                          const next = before + insert + after;
-                          setDraft(next);
-                          setToolsOpen(false);
-                          requestAnimationFrame(() => {
-                            const el = textareaRef.current;
-                            if (!el) return;
-                            el.focus();
-                            const pos = before.length + insert.length;
-                            el.setSelectionRange(pos, pos);
+                          // Mirror the @-picker skill insert: stage the skill
+                          // and drop an atomic `@<name>` pill at the caret.
+                          setStagedSkills((prev) =>
+                            prev.some((s) => s.id === skill.id)
+                              ? prev
+                              : [...prev, skill],
+                          );
+                          editorRef.current?.insertMention({
+                            token: inlineMentionToken(skill.name),
+                            entity: { id: skill.id, kind: 'skill', label: skill.name },
                           });
+                          editorRef.current?.focus();
+                          setToolsOpen(false);
                         }}
                       />
                     ) : null}
@@ -1751,22 +1636,23 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                         servers={enabledMcpServers}
                         templates={mcpTemplates}
                         onInsert={(serverId) => {
-                          const ta = textareaRef.current;
                           const server = enabledMcpServers.find((item) => item.id === serverId);
-                          const insert = `${inlineMentionToken(server?.label || serverId)} `;
-                          const cursor = ta?.selectionStart ?? draft.length;
-                          const before = draft.slice(0, cursor);
-                          const after = draft.slice(cursor);
-                          const next = before + insert + after;
-                          setDraft(next);
-                          setToolsOpen(false);
-                          requestAnimationFrame(() => {
-                            const el = textareaRef.current;
-                            if (!el) return;
-                            el.focus();
-                            const pos = before.length + insert.length;
-                            el.setSelectionRange(pos, pos);
+                          const label = server?.label || serverId;
+                          // Stage the server and insert an atomic `@<label>`
+                          // pill carrying its id, matching the @-picker path.
+                          setStagedMcpServers((current) =>
+                            current.some((item) => item.id === serverId)
+                              ? current
+                              : server
+                                ? [...current, server]
+                                : current,
+                          );
+                          editorRef.current?.insertMention({
+                            token: inlineMentionToken(label),
+                            entity: { id: serverId, kind: 'mcp', label },
                           });
+                          editorRef.current?.focus();
+                          setToolsOpen(false);
                         }}
                         onManage={() => {
                           setToolsOpen(false);
