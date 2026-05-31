@@ -324,7 +324,7 @@ export function Header({
             <img src='/amr-logo.svg' alt='' width={28} height={28} aria-hidden='true' />
             <span className='nav-amr-copy'>
               <span className='nav-amr-title'>AMR</span>
-              <span className='nav-amr-kicker'>Design Agent</span>
+              <span className='nav-amr-kicker'>{productMenuCopy.amrKicker}</span>
             </span>
           </a>
           <a
