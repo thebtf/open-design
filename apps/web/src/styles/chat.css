@@ -455,6 +455,23 @@
   position: relative;
   z-index: 1;
 }
+.split:has(.session-mode-toggle__popover),
+.split:has(.session-mode-toggle__hover-card),
+.split-chat-slot:has(.session-mode-toggle__popover),
+.split-chat-slot:has(.session-mode-toggle__hover-card),
+.split-chat-slot > .pane:has(.session-mode-toggle__popover),
+.split-chat-slot > .pane:has(.session-mode-toggle__hover-card) {
+  overflow: visible;
+}
+.split-chat-slot:has(.session-mode-toggle__popover),
+.split-chat-slot:has(.session-mode-toggle__hover-card),
+.split-chat-slot > .pane:has(.session-mode-toggle__popover),
+.split-chat-slot > .pane:has(.session-mode-toggle__hover-card),
+.composer:has(.session-mode-toggle__popover),
+.composer:has(.session-mode-toggle__hover-card) {
+  position: relative;
+  z-index: 1500;
+}
 /* Elevation kicks in only when a pinned todo card is sitting directly
  * above the composer. Without the card the chat scroll already provides
  * its own visual edge; the shadow would just darken empty whitespace. */
@@ -625,7 +642,7 @@
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
-  z-index: 32;
+  z-index: 1502;
   display: flex;
   width: max-content;
   max-width: calc(100vw - 32px);
@@ -689,7 +706,7 @@
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
-  z-index: 33;
+  z-index: 1503;
   width: min(320px, calc(100vw - 32px));
 }
 .session-mode-toggle__popover-card {
