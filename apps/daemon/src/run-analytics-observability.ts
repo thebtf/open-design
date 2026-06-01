@@ -93,6 +93,7 @@ export function scanRunEventsForUsageAnalytics(
 ): RunUsageAnalytics {
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
+  let providerTotalTokens: number | undefined;
   let cacheReadInputTokens: number | undefined;
   let cacheCreationInputTokens: number | undefined;
   let cacheTokenSource: RunUsageAnalytics['cache_token_source'] = 'unavailable';
@@ -122,37 +123,48 @@ export function scanRunEventsForUsageAnalytics(
       if (usage) {
         inputTokens = firstNumber(usage, ['input_tokens', 'prompt_tokens']);
         outputTokens = firstNumber(usage, ['output_tokens', 'completion_tokens']);
+        providerTotalTokens = firstNumber(usage, ['total_tokens', 'totalTokens']);
         const anthropicCacheReadInputTokens = firstNumber(
           usage,
-          [
-            'cache_read_input_tokens',
-            'cached_input_tokens',
-            'cache_read_tokens',
-            'cached_read_tokens',
-          ],
+          ['cache_read_input_tokens'],
+        );
+        const normalizedCachedReadInputTokens = firstNumber(
+          usage,
+          ['cached_input_tokens', 'cache_read_tokens', 'cached_read_tokens'],
         );
         const openAiCachedInputTokens = readNestedNumber(
           usage,
           ['prompt_tokens_details', 'cached_tokens'],
         );
         cacheReadInputTokens =
-          anthropicCacheReadInputTokens ?? openAiCachedInputTokens;
-        cacheCreationInputTokens = firstNumber(
+          anthropicCacheReadInputTokens ??
+          normalizedCachedReadInputTokens ??
+          openAiCachedInputTokens;
+        const anthropicCacheCreationInputTokens = firstNumber(
           usage,
           [
             'cache_creation_input_tokens',
             'cache_write_input_tokens',
             'cache_creation_tokens',
-            'cached_write_tokens',
           ],
           [['cache_creation', 'input_tokens']],
         );
+        const normalizedCachedWriteInputTokens = firstNumber(
+          usage,
+          ['cached_write_tokens'],
+        );
+        cacheCreationInputTokens =
+          anthropicCacheCreationInputTokens ?? normalizedCachedWriteInputTokens;
         if (
           anthropicCacheReadInputTokens !== undefined ||
-          cacheCreationInputTokens !== undefined
+          anthropicCacheCreationInputTokens !== undefined
         ) {
           cacheTokenSource = 'anthropic';
-        } else if (openAiCachedInputTokens !== undefined) {
+        } else if (
+          normalizedCachedReadInputTokens !== undefined ||
+          normalizedCachedWriteInputTokens !== undefined ||
+          openAiCachedInputTokens !== undefined
+        ) {
           cacheTokenSource = 'openai';
         }
         haveUsageTokens = inputTokens !== undefined || outputTokens !== undefined;
@@ -186,9 +198,10 @@ export function scanRunEventsForUsageAnalytics(
         : inputTokens
       : undefined;
   const totalTokens =
-    inputTokensEffective !== undefined && outputTokens !== undefined
+    providerTotalTokens ??
+    (inputTokensEffective !== undefined && outputTokens !== undefined
       ? inputTokensEffective + outputTokens
-      : undefined;
+      : undefined);
   const uncachedInputTokens =
     inputTokens !== undefined && cacheTokenSource === 'anthropic'
       ? inputTokens

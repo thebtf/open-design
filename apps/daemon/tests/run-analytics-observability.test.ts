@@ -104,7 +104,7 @@ describe('scanRunEventsForUsageAnalytics', () => {
     expect(result.cache_hit_ratio).toBeUndefined();
   });
 
-  it('reads normalized cached_read_tokens / cached_write_tokens aliases', () => {
+  it('treats normalized cached_read_tokens / cached_write_tokens aliases as input subsets', () => {
     const result = scanRunEventsForUsageAnalytics(
       [
         {
@@ -126,15 +126,48 @@ describe('scanRunEventsForUsageAnalytics', () => {
 
     expect(result).toMatchObject({
       input_tokens_provider: 400,
-      input_tokens_effective: 550,
+      input_tokens_effective: 400,
       output_tokens: 20,
-      total_tokens: 570,
+      total_tokens: 420,
       cache_read_input_tokens: 120,
       cache_creation_input_tokens: 30,
-      uncached_input_tokens: 400,
-      cache_token_source: 'anthropic',
+      uncached_input_tokens: 280,
+      cache_token_source: 'openai',
     });
-    expect(result.cache_hit_ratio).toBeCloseTo(120 / 550);
+    expect(result.cache_hit_ratio).toBeCloseTo(120 / 400);
+  });
+
+  it('preserves ACP provider totals when cache read tokens are already included in input', () => {
+    const result = scanRunEventsForUsageAnalytics(
+      [
+        {
+          event: 'agent',
+          data: {
+            type: 'usage',
+            usage: {
+              input_tokens: 31_711,
+              output_tokens: 30,
+              cached_read_tokens: 2_560,
+              thought_tokens: 20,
+              total_tokens: 31_741,
+            },
+          },
+        },
+      ],
+      '',
+      0,
+    );
+
+    expect(result).toMatchObject({
+      input_tokens_provider: 31_711,
+      input_tokens_effective: 31_711,
+      output_tokens: 30,
+      total_tokens: 31_741,
+      cache_read_input_tokens: 2_560,
+      uncached_input_tokens: 29_151,
+      cache_token_source: 'openai',
+    });
+    expect(result.cache_hit_ratio).toBeCloseTo(2_560 / 31_711);
   });
 });
 
