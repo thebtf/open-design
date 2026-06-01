@@ -3,11 +3,56 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { isLocalSameOrigin } from '../src/origin-validation.js';
 import { listDesignSystems } from '../src/design-systems.js';
-import { registerStaticResourceRoutes } from '../src/static-resource-routes.js';
+import {
+  detectAgentsForApi,
+  registerStaticResourceRoutes,
+  resetAgentDetectionCacheForTests,
+} from '../src/static-resource-routes.js';
+
+afterEach(() => {
+  resetAgentDetectionCacheForTests();
+});
+
+describe('agent detection API cache', () => {
+  it('serves repeated scans from the short-lived cache until forced', async () => {
+    const agents = [{ id: 'amr', name: 'AMR', available: true, models: [] }] as any;
+    const detect = vi.fn(async () => agents);
+
+    await expect(
+      detectAgentsForApi({}, { detect, nowMs: 100, ttlMs: 10_000 }),
+    ).resolves.toBe(agents);
+    await expect(
+      detectAgentsForApi({}, { detect, nowMs: 200, ttlMs: 10_000 }),
+    ).resolves.toBe(agents);
+    expect(detect).toHaveBeenCalledTimes(1);
+
+    await expect(
+      detectAgentsForApi({}, { detect, force: true, nowMs: 300, ttlMs: 10_000 }),
+    ).resolves.toBe(agents);
+    expect(detect).toHaveBeenCalledTimes(2);
+  });
+
+  it('dedupes concurrent ordinary scans', async () => {
+    const agents = [{ id: 'amr', name: 'AMR', available: true, models: [] }] as any;
+    let resolveScan: (value: any) => void = () => undefined;
+    const detect = vi.fn(
+      () => new Promise<any>((resolve) => {
+        resolveScan = resolve;
+      }),
+    );
+
+    const first = detectAgentsForApi({}, { detect, nowMs: 100, ttlMs: 10_000 });
+    const second = detectAgentsForApi({}, { detect, nowMs: 100, ttlMs: 10_000 });
+
+    expect(detect).toHaveBeenCalledTimes(1);
+    resolveScan(agents);
+    await expect(Promise.all([first, second])).resolves.toEqual([agents, agents]);
+  });
+});
 
 describe('static resource mutation routes', () => {
   let server: http.Server;

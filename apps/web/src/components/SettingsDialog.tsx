@@ -199,6 +199,7 @@ interface Props {
 export interface AgentRefreshOptions {
   throwOnError?: boolean;
   agentCliEnv?: AppConfig['agentCliEnv'];
+  force?: boolean;
 }
 
 function codexPathStrings(locale: Locale) {
@@ -1142,7 +1143,10 @@ export function SettingsDialog({
     setAgentRescanRunning(true);
     setAgentRescanNotice(null);
     try {
-      const refreshed = await onRefreshAgents(agentRefreshOptionsForConfig(cfg));
+      const refreshed = await onRefreshAgents({
+        ...agentRefreshOptionsForConfig(cfg),
+        force: true,
+      });
       const nextAgents = Array.isArray(refreshed) ? refreshed : agents;
       setAgentRescanNotice({
         kind: 'success',

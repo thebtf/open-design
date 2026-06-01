@@ -85,9 +85,14 @@ function deployProviderQuery(providerId?: WebDeployProviderId): string {
   return providerId ? `?providerId=${encodeURIComponent(providerId)}` : '';
 }
 
-export async function fetchAgents(options?: { throwOnError?: boolean }): Promise<AgentInfo[]> {
+export async function fetchAgents(options?: {
+  throwOnError?: boolean;
+  force?: boolean;
+}): Promise<AgentInfo[]> {
   try {
-    const resp = await fetch('/api/agents', { cache: 'no-store' });
+    const resp = await fetch(options?.force ? '/api/agents?refresh=1' : '/api/agents', {
+      cache: 'no-store',
+    });
     if (!resp.ok) {
       if (options?.throwOnError) throw new Error(`agents ${resp.status}`);
       return [];

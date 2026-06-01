@@ -283,5 +283,8 @@ describe('App media provider sync flows', () => {
     await waitFor(() => {
       expect(mockedFetchAgents).toHaveBeenCalledTimes(2);
     });
+    expect(mockedFetchAgents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ force: true }),
+    );
   });
 });

@@ -1256,6 +1256,7 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     expect(onRefreshAgents).toHaveBeenCalledWith({
       throwOnError: true,
       agentCliEnv: {},
+      force: true,
     });
     expect(rescanButton.disabled).toBe(true);
     expect(screen.getByText('Scanning...')).toBeTruthy();
@@ -1317,6 +1318,7 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
       expect(onRefreshAgents).toHaveBeenCalledWith({
         throwOnError: true,
         agentCliEnv: {},
+        force: true,
       });
     });
   });

@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { detectAgents } from './agents.js';
+import type { DetectedAgent } from './runtimes/types.js';
 import {
   SkillImportError,
   deleteUserSkill,
@@ -27,6 +28,88 @@ import { installFromTarget, uninstallById } from './library-install.js';
 import type { RouteDeps } from './server-context.js';
 
 export interface RegisterStaticResourceRoutesDeps extends RouteDeps<'http' | 'paths' | 'resources'> {}
+
+export const AGENT_DETECTION_CACHE_TTL_MS = 30_000;
+
+let cachedAgentDetection:
+  | { envKey: string; agents: DetectedAgent[]; expiresAtMs: number }
+  | null = null;
+let inflightAgentDetection:
+  | { envKey: string; force: boolean; promise: Promise<DetectedAgent[]> }
+  | null = null;
+
+export function resetAgentDetectionCacheForTests() {
+  cachedAgentDetection = null;
+  inflightAgentDetection = null;
+}
+
+export async function detectAgentsForApi(
+  configuredEnvByAgent: Record<string, Record<string, string>> = {},
+  options: {
+    force?: boolean;
+    nowMs?: number;
+    ttlMs?: number;
+    detect?: typeof detectAgents;
+  } = {},
+): Promise<DetectedAgent[]> {
+  const envKey = stableJson(configuredEnvByAgent);
+  const nowMs = options.nowMs ?? Date.now();
+  const ttlMs = options.ttlMs ?? AGENT_DETECTION_CACHE_TTL_MS;
+  const force = options.force === true;
+  if (
+    !force &&
+    cachedAgentDetection &&
+    cachedAgentDetection.envKey === envKey &&
+    cachedAgentDetection.expiresAtMs > nowMs
+  ) {
+    return cachedAgentDetection.agents;
+  }
+  if (
+    inflightAgentDetection &&
+    inflightAgentDetection.envKey === envKey &&
+    (!force || inflightAgentDetection.force)
+  ) {
+    return inflightAgentDetection.promise;
+  }
+  const detect = options.detect ?? detectAgents;
+  const promise = detect(configuredEnvByAgent).then((agents) => {
+    cachedAgentDetection = {
+      envKey,
+      agents,
+      expiresAtMs: (options.nowMs ?? Date.now()) + ttlMs,
+    };
+    return agents;
+  });
+  inflightAgentDetection = { envKey, force, promise };
+  promise.finally(() => {
+    if (inflightAgentDetection?.promise === promise) {
+      inflightAgentDetection = null;
+    }
+  }).catch(() => undefined);
+  return promise;
+}
+
+function stableJson(value: unknown): string {
+  if (!value || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(',')}}`;
+}
+
+function shouldForceAgentDetection(query: Record<string, unknown>): boolean {
+  return ['refresh', 'force', 'rescan'].some((key) => {
+    const value = query[key];
+    if (Array.isArray(value)) return value.some(isForceQueryValue);
+    return isForceQueryValue(value);
+  });
+}
+
+function isForceQueryValue(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1' || value === '';
+}
 
 export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticResourceRoutesDeps) {
   const {
@@ -56,10 +139,12 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     return false;
   };
 
-  app.get('/api/agents', async (_req, res) => {
+  app.get('/api/agents', async (req, res) => {
     try {
       const config = await readAppConfig(RUNTIME_DATA_DIR);
-      const list = await detectAgents(config.agentCliEnv ?? {});
+      const list = await detectAgentsForApi(config.agentCliEnv ?? {}, {
+        force: shouldForceAgentDetection(req.query),
+      });
       res.json({ agents: list });
     } catch (err: any) {
       res.status(500).json({ error: String(err) });

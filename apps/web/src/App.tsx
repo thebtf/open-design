@@ -796,14 +796,21 @@ export function App() {
   );
 
   const refreshAgents = useCallback(
-    async (options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] }) => {
+    async (options?: {
+      throwOnError?: boolean;
+      agentCliEnv?: AppConfig['agentCliEnv'];
+      force?: boolean;
+    }) => {
       if (options && Object.prototype.hasOwnProperty.call(options, 'agentCliEnv')) {
         const nextConfig = { ...config, agentCliEnv: options.agentCliEnv ?? {} };
         saveConfig(nextConfig);
         await syncConfigToDaemon(nextConfig);
         setConfig(nextConfig);
       }
-      const next = await fetchAgents({ throwOnError: options?.throwOnError });
+      const next = await fetchAgents({
+        throwOnError: options?.throwOnError,
+        force: options?.force,
+      });
       setAgents(next);
       return next;
     },
@@ -815,7 +822,7 @@ export function App() {
       if (amrLoginStatusEventReason(event) !== 'status-changed') return;
       if (amrAuthAgentRefreshRunningRef.current) return;
       amrAuthAgentRefreshRunningRef.current = true;
-      void refreshAgents()
+      void refreshAgents({ force: true })
         .catch(() => undefined)
         .finally(() => {
           amrAuthAgentRefreshRunningRef.current = false;
