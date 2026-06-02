@@ -272,73 +272,75 @@ bash "$SKILL_DIR/scripts/create-issue.sh" \
 
 ### Step 3e — Plugin submission
 
-A plugin is a portable agent-skill folder with an `open-design.json` sidecar. Lands at `plugins/community/<plugin-id>/` by default. See `references/od-repo-map.md` for layout details and the `plugins/spec/` reference docs in the workdir.
+A plugin is a portable agent-skill folder with an `open-design.json` sidecar that ships OD-marketplace metadata, inputs, preview, pipeline, and capabilities. Lands at `plugins/community/<plugin-id>/` by default.
 
-**3e.1** Setup workspace:
+**Design intent**: the user has already done the work — they built something inside Open Design (a prototype, a landing page, a deck, an image bundle). Everything in the plugin manifest is recoverable from that OD project: the title, the kind of artifact, the input brief, the asset list, the preview entry. Reverse-engineer those, do not re-ask. Only ask the user about dimensions OD did not record into the project folder (today: design-system name, capability set).
+
+**3e.1** List the user's existing OD projects so they can pick which one to ship:
 
 ```bash
-bash "$SKILL_DIR/scripts/setup-workspace.sh" plugin <plugin-id>
-# capture WORKDIR
+bash "$SKILL_DIR/scripts/inspect-project.sh" --list
 ```
 
-`<plugin-id>` is the kebab-case slug the user picks in 3e.2.
+The script prints `<uuid>\t<title>\t<mtime_iso>` per project under `~/Library/Application Support/Open Design/namespaces/default/data/projects/`, ranked newest first. Show the user the top 4 in an `AskUserQuestion` with the title as the option label and the date as the description. (`(untitled, …)` titles mean the project is empty — skip those unless they're the only options.)
 
-**3e.2** Collect 5 short fields. Translate the question text into the user's chat language; keep the enum values English (they map to the manifest schema).
-
-| # | Question | Type | Validation |
-|---|---|---|---|
-| Q1 | "What's the local path to your work?" | free-text | path must exist on disk |
-| Q2 | "What's it called? Pick a short kebab-case id (e.g. `editorial-landing`)" | free-text | `^[a-z][a-z0-9]*(-[a-z0-9]+)*$` |
-| Q3 | "Which lane?" | `AskUserQuestion` 4 options visible at a time | one of: `create`, `import`, `export`, `share`, `deploy`, `refine`, `extend` |
-| Q4 | "Which output mode?" | `AskUserQuestion` 4 options visible at a time | one of: `prototype`, `deck`, `live-artifact`, `image`, `video`, `hyperframes`, `audio`, `design-system` |
-| Q5 | "One sentence describing what this plugin does (becomes the marketplace description)" | free-text | non-empty |
-
-For the lane and mode pickers, **break the enums into 2 separate `AskUserQuestion` calls** if you need more than 4 options — `AskUserQuestion` caps at 4 options per call. Suggested groupings:
-
-- **Lanes**: first card { create, import, export, share }; second card { deploy, refine, extend }.
-- **Modes**: first card { prototype, deck, live-artifact, image }; second card { video, hyperframes, audio, design-system }.
-
-**3e.3** Scaffold from the templates already shipped in the workdir:
+**3e.2** Inspect the chosen project to populate fields automatically:
 
 ```bash
+INSPECT_JSON="$(bash "$SKILL_DIR/scripts/inspect-project.sh" "<uuid>")"
+```
+
+The output is one JSON object with `project`, `suggested`, `brief`, `assets`, and `needs_user_input`. Most fields the manifest needs are already in there — title, identifier, kind, entry, brief excerpt, asset list, suggested plugin-id / lane / mode.
+
+**3e.3** Setup workspace and scaffold in one call. The scaffolder accepts `--from-project` and re-runs `inspect-project.sh` itself, so we don't have to thread JSON through the agent:
+
+```bash
+bash "$SKILL_DIR/scripts/setup-workspace.sh" plugin "<suggested.plugin_id>"
+# capture WORKDIR
+
 bash "$SKILL_DIR/scripts/scaffold-plugin.sh" \
   --workdir "$WORKDIR" \
-  --plugin-id "<plugin-id>" \
-  --title "<Plugin Title>" \
-  --lane "<lane>" \
-  --mode "<mode>" \
-  --description "<one-sentence description from Q5>"
+  --from-project "$(printf '%s' "$INSPECT_JSON" | jq -r '.project.path')" \
+  --design-system "<answer from 3e.4 below, or empty>"
 ```
 
-The script copies `plugins/spec/templates/{SKILL,open-design,README,README.zh-CN}.template.*` into `$WORKDIR/plugins/community/<plugin-id>/` and substitutes the user-supplied fields. It refuses to overwrite an existing folder. Capture `TARGET_DIR`, `MANIFEST_PATH`, `SKILL_PATH` from stdout.
+This auto-fills the manifest's `name`, `title`, `description`, `od.taskKind`, `od.mode`, `od.preview.entry`, `od.context.assets[]`, copies HTML/CSS/JS/image files into `preview/` (preserving `screens/*` subdirs), `.md`/`.txt`/etc into `assets/`, and skips OD's internal `*.artifact.json` sidecars.
 
-**3e.4** Copy the user's artifact (path from Q1) into the right slot under `$TARGET_DIR/`. Use this routing rule:
+The agent MAY override any auto-derived field by passing the explicit flag (`--plugin-id`, `--title`, `--description`, `--lane`, `--mode`). Use this only when the user has corrected the agent's read of their work.
 
-| If the user's path is… | Drop it under… | Update the manifest so… |
+**3e.4** Ask the user only the questions OD does not record into the project folder. Translate question text into the user's chat language; keep enum values English.
+
+| # | Question | Why we ask |
 |---|---|---|
-| a folder containing `index.html` (or other web bundle) | `$TARGET_DIR/preview/` | `od.preview.entry` points at `./preview/index.html` |
-| a single image file | `$TARGET_DIR/preview/cover.png` (rename) | `od.preview.entry` points at `./preview/cover.png`, `od.preview.type` = `"image"` |
-| a folder of images | `$TARGET_DIR/preview/` (copy as-is) | add `od.useCase.exampleOutputs[]` entries pointing at each |
-| `.md` / `.txt` content | `$TARGET_DIR/assets/` | reference from the SKILL.md body where useful |
-| a `SKILL.md` already (the user already drafted one) | overwrite `$TARGET_DIR/SKILL.md` | keep the scaffolded `open-design.json`; merge user's frontmatter into it |
+| Q1 | "Which design system did you use? (e.g. Craft, or leave blank if none)" | `od.designSystem.primary` is not stored in the project folder. Free-text. Pass to `scaffold-plugin.sh --design-system` if non-empty. |
+| Q2 | "What capabilities does this plugin need?" — show the auto-default `[prompt:inject, fs:write]` and ask "OK or want to change?" | Most plugins are exactly this. Only widen if the user explicitly needs `network:write`, `fs:delete`, etc. |
 
-When in doubt, default to dropping the artifact under `assets/` and ask the user whether they'd prefer it as the preview entry. The scaffolded manifest's path-typed fields (`compat.agentSkills[].path`, `od.context.skills[].path`) initially point only at `./SKILL.md`; add more as needed.
+**Skip every other question.** The plugin-id, title, lane, mode, description, preview entry, asset list, identifier — all already in the project.
 
-**3e.5** Validate:
+**3e.5** Show the user the auto-generated manifest for one final eyeball:
 
 ```bash
-bash "$SKILL_DIR/scripts/validate-plugin.sh" "$TARGET_DIR"
+jq '{name, title, description, "od.mode": .od.mode, "od.taskKind": .od.taskKind, "od.preview": .od.preview, "od.designSystem": .od.designSystem, asset_count: (.od.context.assets | length)}' \
+  "$WORKDIR/plugins/community/<plugin-id>/open-design.json"
 ```
 
-The validator runs schema and path checks: required manifest fields, path-typed fields resolve on disk, lane and mode are from the enums, capabilities are from the known set. On `RESULT=fail` → surface the FAIL lines verbatim, ask the user to fix (or tell the agent which manifest field needs an update), retry. **Never push a failing plugin.**
+If the user spots something wrong (title is awkward, description is the literal first line of brand-spec.md and not a real one-liner, etc.), let them say so and either edit the manifest in place via `jq` or re-scaffold with explicit overrides.
 
-**3e.6** Render `templates/PR-BODY-plugin.md` with substitutions:
-- `{{PLUGIN_ID}}`, `{{PLUGIN_VERSION}}` (from manifest, default `0.1.0`)
-- `{{LANE}}`, `{{MODE}}`, `{{DESCRIPTION}}`
-- `{{LONGER_NOTES}}` (optional 1–2 paragraphs from the agent: motivation, what's interesting about this artifact)
-- `{{TRIGGER_EXAMPLES}}` (2–3 example chat prompts users would type to invoke this plugin)
-- `{{CAPABILITIES_LIST}}` (bullet list pulled from `od.capabilities`)
-- `{{SCREENSHOTS_OR_EXAMPLES}}` (Markdown image block referencing `./preview/...` or `./assets/...`, or "_(no preview supplied)_")
+**3e.6** Validate:
+
+```bash
+bash "$SKILL_DIR/scripts/validate-plugin.sh" "$WORKDIR/plugins/community/<plugin-id>"
+```
+
+Schema + path checks: required manifest fields, path-typed fields resolve on disk, lane and mode are from the enums, capabilities are from the known set. On `RESULT=fail` → surface the FAIL lines verbatim, fix, retry. Never push a failing plugin.
+
+**3e.7** Render `templates/PR-BODY-plugin.md` with substitutions:
+- `{{PLUGIN_ID}}`, `{{PLUGIN_VERSION}}` (from manifest)
+- `{{LANE}}` (from manifest's `od.taskKind`), `{{MODE}}` (from `od.mode`), `{{DESCRIPTION}}`
+- `{{LONGER_NOTES}}` (1–2 sentences from the agent; can pull from `brief.excerpt` if more context is helpful)
+- `{{TRIGGER_EXAMPLES}}` (2–3 short example chat prompts that would invoke this plugin — agent generates from the title and mode)
+- `{{CAPABILITIES_LIST}}` (bullet list from `od.capabilities`)
+- `{{SCREENSHOTS_OR_EXAMPLES}}` (markdown image block referencing `./preview/...` if a static-image asset exists, else a list of preview HTML pages)
 - `{{DISCORD_INVITE}}` from `$OD_DISCORD_INVITE`
 
 Write to `$WORKDIR/.od-contrib/PR-BODY.md`.

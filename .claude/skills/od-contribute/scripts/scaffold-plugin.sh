@@ -35,20 +35,51 @@ MODE=""
 DESCRIPTION=""
 AUTHOR_NAME="Open Design Community"
 TARGET_KIND="community"
+FROM_PROJECT=""        # path to OD project dir; when set, fields auto-derived
+DESIGN_SYSTEM=""       # optional; only used in --from-project mode
+PROJECT_ASSETS_ROOT="" # internal; resolved from $FROM_PROJECT for the copy step
 
 while (($#)); do
   case "$1" in
-    --workdir)      WORKDIR="$2"; shift 2 ;;
-    --plugin-id)    PLUGIN_ID="$2"; shift 2 ;;
-    --title)        TITLE="$2"; shift 2 ;;
-    --lane)         LANE="$2"; shift 2 ;;
-    --mode)         MODE="$2"; shift 2 ;;
-    --description)  DESCRIPTION="$2"; shift 2 ;;
-    --author-name)  AUTHOR_NAME="$2"; shift 2 ;;
-    --target)       TARGET_KIND="$2"; shift 2 ;;
+    --workdir)        WORKDIR="$2"; shift 2 ;;
+    --plugin-id)      PLUGIN_ID="$2"; shift 2 ;;
+    --title)          TITLE="$2"; shift 2 ;;
+    --lane)           LANE="$2"; shift 2 ;;
+    --mode)           MODE="$2"; shift 2 ;;
+    --description)    DESCRIPTION="$2"; shift 2 ;;
+    --author-name)    AUTHOR_NAME="$2"; shift 2 ;;
+    --target)         TARGET_KIND="$2"; shift 2 ;;
+    --from-project)   FROM_PROJECT="$2"; shift 2 ;;
+    --design-system)  DESIGN_SYSTEM="$2"; shift 2 ;;
     *) od::die "unknown flag: $1" ;;
   esac
 done
+
+# --from-project mode: run inspect-project.sh against the OD project folder
+# and use its output to fill in any field the caller didn't override.
+# Explicit flags from the caller still win (so the agent can let the user
+# tweak any auto-derived value before scaffolding).
+if [[ -n "$FROM_PROJECT" ]]; then
+  [[ -d "$FROM_PROJECT" ]] || od::die "--from-project: not a directory: $FROM_PROJECT"
+  od::require jq
+
+  INSPECT_JSON="$(bash "$(dirname "$0")/inspect-project.sh" "$FROM_PROJECT")" \
+    || od::die "inspect-project.sh failed; can't auto-derive fields"
+
+  PROJECT_ASSETS_ROOT="$(printf '%s' "$INSPECT_JSON" | jq -r '.project.path')"
+
+  # Fill defaults from inspection. Only when the flag wasn't explicit.
+  [[ -z "$PLUGIN_ID"   ]] && PLUGIN_ID="$(printf '%s' "$INSPECT_JSON"   | jq -r '.suggested.plugin_id')"
+  [[ -z "$TITLE"       ]] && TITLE="$(printf '%s' "$INSPECT_JSON"       | jq -r '.project.title // .suggested.plugin_id')"
+  [[ -z "$LANE"        ]] && LANE="$(printf '%s' "$INSPECT_JSON"        | jq -r '.suggested.lane')"
+  [[ -z "$MODE"        ]] && MODE="$(printf '%s' "$INSPECT_JSON"        | jq -r '.suggested.mode')"
+  [[ -z "$DESCRIPTION" ]] && DESCRIPTION="$(printf '%s' "$INSPECT_JSON" | jq -r '.brief.excerpt // ""')"
+
+  # If brief.excerpt was empty (no brand-spec.md / README.md), the
+  # description ends up empty — that's still a fail downstream. Synthesize a
+  # placeholder the agent can replace before push.
+  [[ -z "$DESCRIPTION" ]] && DESCRIPTION="A plugin built in Open Design — please fill in a one-sentence description."
+fi
 
 [[ -n "$WORKDIR"     ]] || od::die "--workdir required"
 [[ -n "$PLUGIN_ID"   ]] || od::die "--plugin-id required"
@@ -148,6 +179,95 @@ if [[ -f "$TEMPLATES/README.template.zh-CN.md" ]]; then
     -e "s|{{LANE}}|${LANE}|g" \
     -e "s|{{MODE}}|${MODE}|g" \
     "$TEMPLATES/README.template.zh-CN.md" > "$TARGET_DIR/README.zh-CN.md"
+fi
+
+# ----- --from-project: copy assets + auto-route paths in the manifest ----
+# When the caller pointed us at an OD project folder, copy that project's
+# files into the scaffolded plugin and update the manifest so paths resolve.
+# Routing rule (matches what the SKILL.md flow describes):
+#
+#   <entry>.html and any sibling HTML / CSS / JS / image files
+#       → preview/                    (the marketplace card preview)
+#       → manifest.od.preview.entry  = ./preview/<entry-basename>
+#
+#   nested directories of HTML (e.g. screens/01-home.html)
+#       → preview/<dir>/...           (preserve subdir)
+#
+#   .md / .txt / .json / .csv / other prose-or-config files
+#       → assets/                    (referenced from SKILL.md as needed)
+#
+# We DO NOT copy:
+#   - .artifact.json sidecars         (OD's internal metadata, not user content)
+#   - .DS_Store and other OS noise
+#   - data/ subdir                    (OD scratch)
+#   - any file whose name starts with `od-contribute-`  (leftovers from
+#     previous skill runs in the same project — would re-introduce stale
+#     SKILL.md / PR-BODY into the new plugin)
+if [[ -n "$FROM_PROJECT" && -n "$PROJECT_ASSETS_ROOT" ]]; then
+  # Track copied paths so we can list them in the manifest's
+  # od.context.assets[] field.
+  COPIED_PATHS=$'\n'
+
+  copy_asset() {
+    local src="$1" rel="$2" dest_subdir="$3"
+    local dest="$TARGET_DIR/$dest_subdir/$rel"
+    mkdir -p "$(dirname "$dest")"
+    cp "$src" "$dest"
+    COPIED_PATHS+="./${dest_subdir}/${rel}"$'\n'
+  }
+
+  while IFS= read -r -d '' src; do
+    rel="${src#$PROJECT_ASSETS_ROOT/}"
+    [[ -z "$rel" || "$rel" == "$src" ]] && continue
+    case "$rel" in
+      .DS_Store|*.DS_Store) continue ;;
+      *.artifact.json)      continue ;;
+      data/*)               continue ;;
+      od-contribute-*)      continue ;;
+    esac
+
+    case "$rel" in
+      *.html|*.css|*.js|*.mjs|*.cjs \
+      |*.png|*.jpg|*.jpeg|*.gif|*.webp|*.svg|*.ico)
+        copy_asset "$src" "$rel" "preview"
+        ;;
+      *)
+        copy_asset "$src" "$rel" "assets"
+        ;;
+    esac
+  done < <(find "$PROJECT_ASSETS_ROOT" -type f -print0 2>/dev/null)
+
+  # Patch manifest: real preview entry, asset list, optional design-system.
+  ENTRY_FROM_PROJECT="$(jq -r '.project.entry // ""' <<< "$INSPECT_JSON")"
+  PREVIEW_ENTRY=""
+  if [[ -n "$ENTRY_FROM_PROJECT" && -f "$TARGET_DIR/preview/$ENTRY_FROM_PROJECT" ]]; then
+    PREVIEW_ENTRY="./preview/$ENTRY_FROM_PROJECT"
+  elif [[ -f "$TARGET_DIR/preview/index.html" ]]; then
+    PREVIEW_ENTRY="./preview/index.html"
+  fi
+
+  # Newline-separated list → JSON array.
+  ASSETS_ARR_JSON="$(printf '%s' "$COPIED_PATHS" \
+    | grep -v '^$' \
+    | jq -R -s 'split("\n") | map(select(length > 0)) | map({path: .})')"
+
+  TMP_MANIFEST="$TARGET_DIR/open-design.json.tmp"
+  jq \
+    --arg preview "$PREVIEW_ENTRY" \
+    --arg ds "$DESIGN_SYSTEM" \
+    --argjson assets "$ASSETS_ARR_JSON" \
+    '
+      if ($preview | length) > 0
+        then .od.preview = { type: "html", entry: $preview }
+        else .
+      end
+      | .od.context.assets = $assets
+      | if ($ds | length) > 0
+          then .od.designSystem = { primary: $ds }
+          else .
+        end
+    ' "$TARGET_DIR/open-design.json" > "$TMP_MANIFEST" \
+    && mv "$TMP_MANIFEST" "$TARGET_DIR/open-design.json"
 fi
 
 od::log "scaffolded plugin at $TARGET_DIR"
