@@ -335,8 +335,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
         with:
+          clean: false
           fetch-depth: 1
+          lfs: false
           path: _release-publish
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/scripts/release/r2/
 
       - name: Download windows publish manifest
         if: ${{ inputs.enable_win && needs.build_win.result == 'success' }}

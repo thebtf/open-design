@@ -145,6 +145,7 @@ describe("packaged smoke workflow", () => {
     expect(workflow).toContain("RELEASE_SIGNED: ${{ inputs.mac_sign_mode == 'on' && 'true' || 'false' }}");
     expect(workflow).toContain("name: Publish beta metadata to Nexu S3");
     expect(workflow).toContain("path: _release-publish");
+    expect(workflow).toContain(".github/scripts/release/r2/");
     expect(workflow).toContain("working-directory: _release-publish");
     expect(workflow).toContain("node --experimental-strip-types .github/scripts/release/r2/publish-beta-metadata.ts");
     expect(workflow).toContain("ASSET_VERSION_SUFFIX: auto");
