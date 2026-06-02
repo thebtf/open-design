@@ -3,19 +3,19 @@
 > 🔥 Open Design 0.8.0 已发布。这一版重点上线两件事：Plugin 体系，让模板和工作流像文件夹一样添加、复制、分享；Design System，支持导入品牌规范并沉淀为可复用的 [`DESIGN.md`](design-systems/)。[下载 0.8.0](https://github.com/nexu-io/open-design/releases) · [参与讨论](https://github.com/nexu-io/open-design/discussions/1727)
 
 <p align="center">
-  <img src="docs/assets/banner-zh.png" alt="Open Design — The open-source Claude Design alternative · 129 Design Systems · 116 Plugins · 16 Coding Agents · 14 Media Providers" width="100%" />
+  <img src="docs/assets/banner-zh.png" alt="Open Design — The open-source Claude Design alternative · 150 Design Systems · 261 Plugins · 21 Coding Agents · 14 Media Providers" width="100%" />
 </p>
 
 <p align="center">
-  <a href="https://open-design.ai/"><img alt="website" src="https://img.shields.io/badge/website-open--design.ai-blue?style=flat" /></a>
-  <a href="https://open-design.ai/"><img alt="download" src="https://img.shields.io/badge/download-open--design.ai-ff6b35?style=flat" /></a>
+  <a href="https://open-design.ai/">官网</a> ·
+  <a href="https://open-design.ai/">下载</a> ·
+  <a href="https://discord.gg/qhbcCH8Am4">Discord</a> ·
+  <a href="https://x.com/nexudotio">关注 @nexudotio</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/nexu-io/open-design/releases"><img alt="release" src="https://img.shields.io/github/v/release/nexu-io/open-design?style=flat&color=blueviolet&label=release&include_prereleases&display_name=tag" /></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat" /></a>
-  <a href="https://discord.gg/qhbcCH8Am4"><img alt="discord" src="https://img.shields.io/badge/discord-join-5865F2?style=flat&logo=discord&logoColor=white" /></a>
-  <!-- 动态在线人数版本（shields.io 经 GitHub camo 代理偶发限流裂开，作为备用）:
-  <a href="https://discord.gg/qhbcCH8Am4"><img alt="discord" src="https://img.shields.io/discord/1479002485040480266?style=flat&logo=discord&logoColor=white&label=discord&color=5865F2&cacheSeconds=3600" /></a>
-  -->
-  <a href="https://x.com/nexudotio"><img alt="follow" src="https://img.shields.io/badge/follow-%40nexudotio-1DA1F2?style=flat&logo=x&logoColor=white" /></a>
   <a href="QUICKSTART.md"><img alt="quickstart" src="https://img.shields.io/badge/quickstart-3%20commands-green?style=flat" /></a>
 </p>
 
@@ -39,7 +39,7 @@
 
 ## 什么是 Open Design
 
-🎨 **本地优先、开源的 [Claude Design][cd] 替代品。** &nbsp;🖥️ **macOS 与 Windows 原生桌面应用。** &nbsp;⚡ **100+ 技能** · ✨ **100+ 品牌级 `DESIGN.md` 系统** · 📦 **400+ 开箱即用的插件。** &nbsp;🖼️ 可生成 **Web · 桌面 · 移动端原型**、**实时仪表盘 / 工件**、**演示文稿**、**图片**、**视频**，以及 **HyperFrames** 动态图形。🔒 沙箱 iframe 预览 · HTML / PDF / PPTX / MP4 导出。&nbsp;🤖 **运行于 Claude Code · OpenClaw · Codex · Cursor · OpenCode · Qwen · Copilot · Hermes · Kimi · Antigravity 等 17+ 本地 CLI**，或通过 BYOK 接入任何 OpenAI 兼容端点。
+🎨 **本地优先、开源的 [Claude Design][cd] 替代品。** &nbsp;🖥️ **macOS 与 Windows 原生桌面应用。** &nbsp;⚡ **100+ 技能** · ✨ **150 个品牌级 `DESIGN.md` 系统** · 📦 **261 个开箱即用的插件。** &nbsp;🖼️ 可生成 **Web · 桌面 · 移动端原型**、**实时仪表盘 / 工件**、**演示文稿**、**图片**、**视频**，以及 **HyperFrames** 动态图形。🔒 沙箱 iframe 预览 · HTML / PDF / PPTX / MP4 导出。&nbsp;🤖 **运行于 Claude Code · OpenClaw · Codex · Cursor · OpenCode · Qwen · Copilot · Hermes · Kimi · Antigravity 等 21 个本地 CLI**，或通过 BYOK 接入任何 OpenAI 兼容端点。
 
 Open Design 是这样一种产物：Anthropic 随 Claude Design 推出的 **Agent 原生**循环——发现需求、锁定方向、流式输出工件、评审、交付——不再封闭，而是变成了一个由**技能、设计系统和插件组成的文件系统**，你笔记本电脑上已有的编码 Agent 就能读取、编写和混搭。你的 CLI 变成设计引擎，你的笔记本变成工作坊，团队的 `DESIGN.md` 变成品牌契约。
 
@@ -120,12 +120,8 @@ Open Design 是这样一种产物：Anthropic 随 Claude Design 推出的 **Agen
 
 > Open Design 以 **技能、CLI 和 MCP 服务器**的形式交付，主流编码 Agent 可原生消费。装好 OD 后，一行 `od mcp install <agent>` 把 MCP 服务器 wire 进对应 Agent 的配置，任何 Agent 内调用相同工具。
 
-<p align="center">
-  <img src="docs/assets/coding-agents.png" alt="Open Design 支持的 21 个编码 Agent CLI — Claude Code · Codex · OpenCode · Hermes · Antigravity · Gemini · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Devin · Trae" width="100%" />
-</p>
-
-| 平台 | 状态 | 安装方式 |
-|---|---|---|
+| 编码 Agent / 平台 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | 状态 &nbsp;&nbsp; | 一行命令安装 MCP 服务器 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
+|---|:---:|---|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | ✅ 支持 | `od mcp install claude` |
 | [Codex CLI](https://github.com/openai/codex) | ✅ 支持 | `od mcp install codex` |
 | [Cursor](https://www.cursor.com/cli) | ✅ 支持 | `od mcp install cursor` |
@@ -143,6 +139,10 @@ Open Design 是这样一种产物：Anthropic 随 Claude Design 推出的 **Agen
 | [Hermes Agent](https://github.com/nousresearch/hermes-agent) | ✅ 支持 | `od mcp install hermes` |
 
 `od mcp install <agent> --print` 干跑预览 · `--uninstall` 卸载 · 完整清单 `od mcp install --help`。
+
+<p align="center">
+  <img src="docs/assets/coding-agents.png" alt="Open Design 支持的 21 个编码 Agent CLI — Claude Code · Codex · OpenCode · Hermes · Antigravity · Gemini · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Devin · Trae" width="100%" />
+</p>
 
 **未安装任何 CLI？** `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` 的 BYOK 代理提供同样的循环（无需 spawn 进程）——粘贴 `baseUrl` + `apiKey` + `model`，支持 OpenAI、Anthropic、Azure OpenAI、Google Gemini、Ollama、LM Studio、vLLM 或任何 OpenAI 兼容端点。每个目标的 SSRF 防护在守护进程边缘拦截内网 IP / link-local / CGNAT。
 
@@ -271,7 +271,7 @@ Open Design 是这样一种产物：Anthropic 随 Claude Design 推出的 **Agen
 Open Design (OD) 是开源替代品。同样的循环，同样的工件优先心智模型，没有任何锁定：
 
 - 🤖 **Agent 原生，不绑定模型。** 我们不发布 Agent。你 `PATH` 上已有的 `claude` / `codex` / `cursor-agent` / `copilot` / `hermes` / `kimi` 就是设计引擎。一键切换。
-- 🧠 **默认品牌级。** 每次渲染都读取激活的 `DESIGN.md`——9 节 schema 涵盖色板、字体、间距、动效、语言风格、反模式。129 个系统随仓库发布（Linear、Stripe、Vercel、Airbnb、Apple、Tesla、Notion、Anthropic、Cursor、Supabase、Figma……）。放入文件夹，选择器自动识别。
+- 🧠 **默认品牌级。** 每次渲染都读取激活的 `DESIGN.md`——9 节 schema 涵盖色板、字体、间距、动效、语言风格、反模式。150 个系统随仓库发布（Linear、Stripe、Vercel、Airbnb、Apple、Tesla、Notion、Anthropic、Cursor、Supabase、Figma……）。放入文件夹，选择器自动识别。
 - 🖥️ **本地优先，每一层都可 BYOK。** macOS（Apple Silicon + Intel）和 Windows（x64）原生桌面应用。Linux AppImage 在可选发布通道。SQLite 存储在 `.od/app.sqlite`，文件在 `.od/projects/<id>/`，无遥测，无云端往返。
 - 🌍 **三个平面上可组合。** **插件**承载可运行的工作流 · **技能**承载 Agent 的设计品味 · **设计系统**承载品牌。三者都是普通文件，任何人都可以编写、版本控制和发布。
 - 🔁 **刷新现有代码库。** 将 `git` 仓库 + `DESIGN.md` 交给 Agent，它就能将你的真实组件重构到品牌规范。专门的插件用于将 Figma / Pencil 工作流迁移到 React / Next.js / Vue 代码。
@@ -283,9 +283,9 @@ Open Design (OD) 是开源替代品。同样的循环，同样的工件优先心
 |---|---|---|---|---|
 | 开源 | ❌ | ❌ | ❌ | **✅ Apache-2.0** |
 | 自托管 / 桌面 | ❌ | ❌ | ❌ | **✅ macOS + Windows + Vercel** |
-| Agent 原生（在 CLI 中运行） | 仅 Anthropic | ❌ | 仅云端 Agent | **✅ 16 CLI + BYOK** |
-| 品牌级 `DESIGN.md` | 私有 | Theme JSON | 有限 token | **✅ 129 系统随附** |
-| 技能 / 插件 / 模板 | 封闭 | 插件商店 | 封闭 | **✅ 100+ 技能 · 400+ 插件** |
+| Agent 原生（在 CLI 中运行） | 仅 Anthropic | ❌ | 仅云端 Agent | **✅ 21 CLI + BYOK** |
+| 品牌级 `DESIGN.md` | 私有 | Theme JSON | 有限 token | **✅ 150 系统随附** |
+| 技能 / 插件 / 模板 | 封闭 | 插件商店 | 封闭 | **✅ 100+ 技能 · 261 插件** |
 | HyperFrames (HTML→MP4) | ❌ | ❌ | ❌ | **✅ 一等公民** |
 | 将现有仓库刷新到品牌 | ❌ | ❌ | ❌ | **✅ 通过 Agent + `DESIGN.md`** |
 | 最低费用 | Pro / Max / Team | Pro / Org | Pro / Team | **BYOK · 任意兼容端点** |
@@ -302,7 +302,7 @@ Open Design (OD) 是开源替代品。同样的循环，同样的工件优先心
 - **Windows**（x64）→ [**open-design.ai**](https://open-design.ai/) 或 [GitHub Releases](https://github.com/nexu-io/open-design/releases)
 - **Linux**（AppImage，可选通道）→ [GitHub Releases](https://github.com/nexu-io/open-design/releases)
 
-安装后：应用自动检测 `PATH` 上的所有编码 Agent CLI，加载 100+ 技能和 129 个设计系统，打开后即可在入口视图中输入需求。
+安装后：应用自动检测 `PATH` 上的所有编码 Agent CLI，加载 100+ 技能和 150 个设计系统，打开后即可在入口视图中输入需求。
 
 ### 🤖 安装到你的编码 Agent（无 UI）
 
@@ -416,7 +416,7 @@ od skill list --scenario marketing
 
 ## 设计系统
 
-**129 个品牌级 `DESIGN.md` 系统**随仓库发布——每个系统是一个 Markdown 文件，包含 9 节 schema（颜色、字体、间距、布局、组件、动效、语言风格、品牌、反模式），来自 [`VoltAgent/awesome-design-md`][acd2]。切换系统 → 下次渲染即使用新 token。无需 Theme JSON。
+**150 个品牌级 `DESIGN.md` 系统**随仓库发布——每个系统是一个 Markdown 文件，包含 9 节 schema（颜色、字体、间距、布局、组件、动效、语言风格、品牌、反模式），来自 [`VoltAgent/awesome-design-md`][acd2]。切换系统 → 下次渲染即使用新 token。无需 Theme JSON。
 
 <details>
 <summary><b>完整目录（点击展开）</b></summary>
@@ -449,7 +449,7 @@ od skill list --scenario marketing
 
 ## 插件
 
-**400+ 插件**位于 [`plugins/_official/`](plugins/_official/)。每个插件就是一个**可移植的 agent skill 文件夹**——一个 `SKILL.md`（任何支持 Agent Skills 的 Agent 都能读），外加一个可选的 `open-design.json` manifest（给 Open Design 提供 marketplace 元数据、输入参数、预览、流水线与权限声明）。直接跳转到分类浏览：
+**261 个官方插件**位于 [`plugins/_official/`](plugins/_official/)。每个插件就是一个**可移植的 agent skill 文件夹**——一个 `SKILL.md`（任何支持 Agent Skills 的 Agent 都能读），外加一个可选的 `open-design.json` manifest（给 Open Design 提供 marketplace 元数据、输入参数、预览、流水线与权限声明）。直接跳转到分类浏览：
 
 | 分类 | 数量 | 内容 |
 |---|---|---|
@@ -570,15 +570,15 @@ pnpm guard && pnpm --filter @open-design/plugin-runtime typecheck
 
 ## 路线图
 
-- [x] 守护进程 + 16 个编码 Agent CLI 适配器 + 技能注册中心 + 设计系统目录
+- [x] 守护进程 + 21 个编码 Agent CLI 适配器 + 技能注册中心 + 设计系统目录
 - [x] Web 应用 + 聊天 + 问题表单 + 5 方向选择器 + 待办进度 + 沙箱预览
-- [x] 100+ 技能 · 129 设计系统 · 5 视觉方向 · 5 设备外框
+- [x] 100+ 技能 · 150 设计系统 · 5 视觉方向 · 5 设备外框
 - [x] SQLite 支撑的项目 · 会话 · 消息 · 标签页 · 模板
 - [x] 多供应商 BYOK 代理（`/api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream`）+ SSRF 防护
 - [x] Claude Design ZIP 导入（`/api/import/claude-design`）
 - [x] Sidecar 协议 + Electron 桌面 + IPC 自动化
 - [x] 工件 Lint API + 五维自评预输出门控
-- [x] **0.8.0**——插件市场基础设施（400+ 官方插件、manifest 规范、逐 Agent 安装脚本）
+- [x] **0.8.0**——插件市场基础设施（261 个官方插件、manifest 规范、逐 Agent 安装脚本）
 - [x] 打包 Electron 构建——macOS（Apple Silicon + Intel）+ Windows（x64）+ Linux AppImage（可选通道）
 - [ ] 评论模式精确编辑——部分已发布，可靠的定向补丁进行中
 - [ ] AI 输出的调参面板 UX——尚未实现
