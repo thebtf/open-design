@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ProjectView } from '../../src/components/ProjectView';
+import { ProjectView, mergeSavedPreviewComment } from '../../src/components/ProjectView';
 import type {
   AgentInfo,
   AppConfig,
@@ -385,6 +385,22 @@ const secondPreviewComment: PreviewComment = {
   text: 'Start now',
   note: 'keep this attached',
 };
+
+describe('mergeSavedPreviewComment', () => {
+  it('appends newly saved comments after existing comments', () => {
+    expect(mergeSavedPreviewComment([previewComment], secondPreviewComment).map((comment) => comment.id))
+      .toEqual(['comment-1', 'comment-2']);
+  });
+
+  it('replaces existing comments without moving them', () => {
+    const updatedFirst = { ...previewComment, note: 'updated first', updatedAt: 10 };
+
+    const next = mergeSavedPreviewComment([previewComment, secondPreviewComment], updatedFirst);
+
+    expect(next.map((comment) => comment.id)).toEqual(['comment-1', 'comment-2']);
+    expect(next[0]?.note).toBe('updated first');
+  });
+});
 
 describe('ProjectView conversation run isolation', () => {
   let resolveConversationBMessages: ((messages: ChatMessage[]) => void) | null = null;

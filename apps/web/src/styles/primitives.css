@@ -91,6 +91,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .od-tooltip-layer {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: 4000;
   max-width: min(260px, calc(100vw - 16px));
   padding: 5px 8px;
@@ -102,8 +104,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
+  contain: layout paint style;
   pointer-events: none;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  will-change: transform;
 }
 
 /* -------- Inputs ---------------------------------------------------- */

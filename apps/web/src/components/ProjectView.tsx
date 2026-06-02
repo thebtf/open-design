@@ -190,6 +190,12 @@ type ProjectChatSendMeta = ChatSendMeta & {
   sessionMode?: ChatSessionMode;
 };
 
+export function mergeSavedPreviewComment(current: PreviewComment[], saved: PreviewComment): PreviewComment[] {
+  const existingIndex = current.findIndex((comment) => comment.id === saved.id);
+  if (existingIndex < 0) return [...current, saved];
+  return current.map((comment, index) => (index === existingIndex ? saved : comment));
+}
+
 interface Props {
   project: Project;
   routeFileName: string | null;
@@ -2000,11 +2006,7 @@ export function ProjectView({
         ...(attachments.length > 0 ? { attachments } : {}),
       });
       if (!saved) return null;
-      setPreviewComments((current) => {
-        const existingIndex = current.findIndex((comment) => comment.id === saved.id);
-        if (existingIndex < 0) return [...current, saved];
-        return current.map((comment, index) => (index === existingIndex ? saved : comment));
-      });
+      setPreviewComments((current) => mergeSavedPreviewComment(current, saved));
       setAttachedComments((current) =>
         attachAfterSave ? mergeAttachedComments(current, saved) : current.map((comment) => comment.id === saved.id ? saved : comment),
       );

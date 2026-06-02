@@ -8,8 +8,8 @@ interface TooltipState {
   text: string;
   placement: TooltipPlacement;
   style: {
-    left: number;
-    top: number;
+    x: number;
+    y: number;
     visibility: 'hidden' | 'visible';
   };
 }
@@ -65,8 +65,8 @@ function positionTooltip(
   }
 
   return {
-    left: clamp(left, TOOLTIP_MARGIN, maxLeft),
-    top: clamp(top, TOOLTIP_MARGIN, maxTop),
+    x: Math.round(clamp(left, TOOLTIP_MARGIN, maxLeft)),
+    y: Math.round(clamp(top, TOOLTIP_MARGIN, maxTop)),
     visibility: 'visible',
   };
 }
@@ -75,27 +75,52 @@ function sameStyle(
   left: TooltipState['style'],
   right: TooltipState['style'],
 ): boolean {
-  return left.left === right.left
-    && left.top === right.top
+  return left.x === right.x
+    && left.y === right.y
     && left.visibility === right.visibility;
 }
 
 export function TooltipLayer() {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const suppressedTitleRef = useRef<{ target: HTMLElement; title: string } | null>(null);
   const [state, setState] = useState<TooltipState | null>(null);
+
+  const restoreNativeTitle = useCallback(() => {
+    const suppressed = suppressedTitleRef.current;
+    if (!suppressed) return;
+    if (document.contains(suppressed.target)) {
+      if (!suppressed.target.hasAttribute('title')) {
+        suppressed.target.setAttribute('title', suppressed.title);
+      }
+      suppressed.target.removeAttribute('data-od-tooltip-native-title');
+    }
+    suppressedTitleRef.current = null;
+  }, []);
+
+  const suppressNativeTitle = useCallback((target: HTMLElement) => {
+    if (suppressedTitleRef.current?.target === target) return;
+    restoreNativeTitle();
+    const title = target.getAttribute('title');
+    if (!title) return;
+    target.setAttribute('data-od-tooltip-native-title', title);
+    target.removeAttribute('title');
+    suppressedTitleRef.current = { target, title };
+  }, [restoreNativeTitle]);
 
   const hideTooltip = useCallback(() => {
     if (rafRef.current !== null) {
       window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    restoreNativeTitle();
     setState(null);
-  }, []);
+  }, [restoreNativeTitle]);
 
   const showTooltip = useCallback((target: HTMLElement) => {
     const text = target.dataset.tooltip?.trim();
     if (!text) return;
+    suppressNativeTitle(target);
     const placement = tooltipPlacement(target);
     setState((current) => {
       if (current?.target === target) {
@@ -106,10 +131,10 @@ export function TooltipLayer() {
         target,
         text,
         placement,
-        style: { left: 0, top: 0, visibility: 'hidden' },
+        style: { x: 0, y: 0, visibility: 'hidden' },
       };
     });
-  }, []);
+  }, [suppressNativeTitle]);
 
   const updatePosition = useCallback(() => {
     setState((current) => {
@@ -153,8 +178,9 @@ export function TooltipLayer() {
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+      restoreNativeTitle();
     };
-  }, []);
+  }, [restoreNativeTitle]);
 
   useEffect(() => {
     const onPointerOver = (event: PointerEvent) => {
@@ -209,8 +235,7 @@ export function TooltipLayer() {
       className="od-tooltip-layer"
       role="tooltip"
       style={{
-        left: state.style.left,
-        top: state.style.top,
+        transform: `translate3d(${state.style.x}px, ${state.style.y}px, 0)`,
         visibility: state.style.visibility,
       }}
     >
