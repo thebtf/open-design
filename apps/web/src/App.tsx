@@ -989,6 +989,26 @@ function AppInner() {
       const pendingFiles = Array.isArray(input.pendingFiles)
         ? input.pendingFiles.filter((file): file is File => file instanceof File)
         : [];
+      // Flip the project onto the user-picked working directory BEFORE
+      // uploading staged Home attachments. `replaceProjectWorkingDir` changes
+      // `metadata.baseDir`, so the project starts reading from the external
+      // folder. If we uploaded first, the staged files would land in the
+      // temporary managed `.od/projects/<id>` root and then silently vanish
+      // from Design Files and the first auto-send context once the working
+      // dir flips. Doing the handoff first means the initial upload lands in
+      // the final tree.
+      const userWorkingDir = input.metadata?.userWorkingDir;
+      if (userWorkingDir) {
+        try {
+          await replaceProjectWorkingDir(
+            result.project.id,
+            userWorkingDir,
+            input.userWorkingDirToken,
+          );
+        } catch (err) {
+          console.warn('Failed to set working directory for new project', userWorkingDir, err);
+        }
+      }
       let firstMessageAttachments: ChatAttachment[] = [];
       if (pendingFiles.length > 0) {
         // Home composer attaches stay client-side until submit lands a
@@ -1013,18 +1033,6 @@ function AppInner() {
             ? { error_code: uploadResult.error }
             : {}),
         });
-      }
-      const userWorkingDir = input.metadata?.userWorkingDir;
-      if (userWorkingDir) {
-        try {
-          await replaceProjectWorkingDir(
-            result.project.id,
-            userWorkingDir,
-            input.userWorkingDirToken,
-          );
-        } catch (err) {
-          console.warn('Failed to set working directory for new project', userWorkingDir, err);
-        }
       }
       trackProjectCreateResult(
         analytics.track,

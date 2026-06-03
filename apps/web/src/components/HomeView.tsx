@@ -940,8 +940,17 @@ export function HomeView({
       if (result.ok) {
         setWorkingDir(result.baseDir);
         setWorkingDirToken(result.token);
+        return;
       }
-      return;
+      // The user explicitly cancelled the host picker — respect that and do
+      // not pop a second dialog.
+      if ('canceled' in result && result.canceled) return;
+      // Otherwise the host could not service the pick: either this is a
+      // mixed-version desktop upgrade where the web bundle has the new
+      // `project.pickWorkingDir` method but the shipped preload does not, or
+      // the host call errored. Fall through to the browser folder dialog so
+      // the pre-create picker keeps working instead of becoming a silent
+      // no-op.
     }
     const picked = await openFolderDialog();
     if (picked) {
