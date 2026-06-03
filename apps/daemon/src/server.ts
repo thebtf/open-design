@@ -2749,6 +2749,85 @@ export function telemetryPromptFromRunRequest(message, currentPrompt) {
 
 const FORM_ANSWERS_HEADER_RE = /^\s*\[form answers\s+(?:\u2014|-)\s*([^\]\r\n]+)\]/i;
 
+const TASK_TYPE_MEDIA_ROUTE_BY_LABEL = {
+  Image:       { kind: 'image' },
+  Video:       { kind: 'video' },
+  HyperFrames: { kind: 'video', videoModel: 'hyperframes-html' },
+  Audio:       { kind: 'audio' },
+};
+
+function taskTypeAnswerFromPrompt(prompt) {
+  if (typeof prompt !== 'string') return null;
+  const trimmed = prompt.trim();
+  if (!trimmed) return null;
+  const match = FORM_ANSWERS_HEADER_RE.exec(trimmed);
+  if (!match) return null;
+  const formId = ((match[1] || 'form').trim().replace(/[^\w.-]/g, '') || 'form').toLowerCase();
+  if (formId !== 'task-type') return null;
+  const lines = trimmed.split(/\r?\n/).slice(1);
+  for (const line of lines) {
+    const bullet = /^\s*-\s+[^:]+:\s*(.+?)\s*$/.exec(line);
+    if (!bullet) continue;
+    const answer = bullet[1].replace(/\s*\[value:\s*[^\]]+\]\s*$/i, '').trim();
+    return answer && answer !== '(skipped)' ? answer : null;
+  }
+  return null;
+}
+
+function mediaProjectMetadataForTaskTypeAnswer(taskType, metadata) {
+  const route = typeof taskType === 'string' ? TASK_TYPE_MEDIA_ROUTE_BY_LABEL[taskType] : null;
+  if (!route) return null;
+  return {
+    ...(metadata && typeof metadata === 'object' ? metadata : {}),
+    ...route,
+  };
+}
+
+function mediaExecutionPolicyForProjectMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  if (metadata.kind === 'image') {
+    const model = typeof metadata.imageModel === 'string' ? metadata.imageModel.trim() : '';
+    return model
+      ? { mode: 'enabled', allowedSurfaces: ['image'], allowedModels: [model] }
+      : { mode: 'enabled', allowedSurfaces: ['image'] };
+  }
+  if (metadata.kind === 'video') {
+    const model = typeof metadata.videoModel === 'string' ? metadata.videoModel.trim() : '';
+    return model
+      ? { mode: 'enabled', allowedSurfaces: ['video'], allowedModels: [model] }
+      : { mode: 'enabled', allowedSurfaces: ['video'] };
+  }
+  if (metadata.kind === 'audio') {
+    const model = typeof metadata.audioModel === 'string' ? metadata.audioModel.trim() : '';
+    return model
+      ? { mode: 'enabled', allowedSurfaces: ['audio'], allowedModels: [model] }
+      : { mode: 'enabled', allowedSurfaces: ['audio'] };
+  }
+  return undefined;
+}
+
+function mediaPluginInputsForProjectMetadata(metadata, project) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const mediaKind = metadata.kind;
+  if (mediaKind !== 'image' && mediaKind !== 'video' && mediaKind !== 'audio') return null;
+  const subject = [project?.pendingPrompt, project?.name, `${mediaKind} concept`]
+    .find((value) => typeof value === 'string' && value.trim().length > 0)
+    ?.trim();
+  const aspect = mediaKind === 'image'
+    ? metadata.imageAspect
+    : mediaKind === 'video'
+      ? metadata.videoAspect
+      : undefined;
+  return {
+    mediaKind,
+    subject: subject || `${mediaKind} concept`,
+    style: typeof metadata.imageStyle === 'string' && metadata.imageStyle.trim().length > 0
+      ? metadata.imageStyle.trim()
+      : 'cinematic, high-quality, on-brand',
+    ...(typeof aspect === 'string' && aspect.trim().length > 0 ? { aspect } : {}),
+  };
+}
+
 // Aggressive OVERRIDE for weak / medium-strength plain agents (e.g.
 // GPT-OSS-120B Medium, Gemini 3.5 Flash) that otherwise echo RULE 1's
 // fenced form example back at the user on follow-up turns even when
@@ -13616,6 +13695,25 @@ export async function startServer({
     if (!toolBundle.ok) {
       return sendApiError(res, 400, 'BAD_REQUEST', toolBundle.message);
     }
+    const taskTypeAnswer = taskTypeAnswerFromPrompt(
+      typeof requestBody.currentPrompt === 'string' ? requestBody.currentPrompt : requestBody.message,
+    );
+    let projectRow =
+      typeof requestBody.projectId === 'string' && requestBody.projectId
+        ? getProject(db, requestBody.projectId)
+        : null;
+    let taskTypeMediaExecution = null;
+    if (projectRow && taskTypeAnswer) {
+      const nextMetadata = mediaProjectMetadataForTaskTypeAnswer(taskTypeAnswer, projectRow.metadata);
+      if (nextMetadata) {
+        if (JSON.stringify(projectRow.metadata ?? null) !== JSON.stringify(nextMetadata)) {
+          projectRow = updateProject(db, requestBody.projectId, { metadata: nextMetadata }) ?? projectRow;
+        } else {
+          projectRow = { ...projectRow, metadata: nextMetadata };
+        }
+        taskTypeMediaExecution = mediaExecutionPolicyForProjectMetadata(projectRow.metadata) ?? null;
+      }
+    }
     // Plan §3.A1 / spec §11.5: resolve any pluginId / appliedPluginSnapshotId
     // before the run is created. The resolver returns null when the body
     // does not mention a plugin (legacy runs unchanged), an error envelope
@@ -13642,14 +13740,23 @@ export async function startServer({
         requestBody.pluginId || requestBody.appliedPluginSnapshotId;
       let runResolveBody = requestBody;
       if (!explicitPlugin) {
-        const projectRow = getProject(db, requestBody.projectId);
         const hasPin =
           typeof projectRow?.appliedPluginSnapshotId === 'string'
           && projectRow.appliedPluginSnapshotId.length > 0;
-        if (!hasPin) {
-          const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectRow?.metadata);
+        const pinnedPluginId = hasPin
+          ? getSnapshot(db, projectRow.appliedPluginSnapshotId)?.pluginId ?? null
+          : null;
+        const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectRow?.metadata);
+        if (fallbackPluginId && (!hasPin || pinnedPluginId === 'od-default')) {
           if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
-            runResolveBody = { ...requestBody, pluginId: fallbackPluginId };
+            const pluginInputs = fallbackPluginId === 'od-media-generation'
+              ? mediaPluginInputsForProjectMetadata(projectRow?.metadata, projectRow)
+              : null;
+            runResolveBody = {
+              ...requestBody,
+              pluginId: fallbackPluginId,
+              ...(pluginInputs ? { pluginInputs } : {}),
+            };
           }
         }
       }
@@ -13677,7 +13784,9 @@ export async function startServer({
     }
     const meta = {
       ...requestBody,
-      mediaExecution: mediaExecution.policy,
+      mediaExecution: requestBody.mediaExecution === undefined && taskTypeMediaExecution
+        ? taskTypeMediaExecution
+        : mediaExecution.policy,
       toolBundle: toolBundle.bundle,
     };
     if (resolvedSnapshot?.ok) {
@@ -13691,10 +13800,10 @@ export async function startServer({
         if (renderedQuery.length > 0) meta.message = renderedQuery;
       }
     }
-    let runProject = null;
+    let runProject = projectRow;
     if (typeof meta.projectId === 'string' && meta.projectId) {
       try {
-        runProject = getProject(db, meta.projectId);
+        runProject ??= getProject(db, meta.projectId);
         assertSandboxProjectRootAvailable(runProject?.metadata);
       } catch (err) {
         if (err instanceof SandboxImportedProjectError) {

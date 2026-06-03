@@ -1871,6 +1871,88 @@ process.stdin.on('end', () => {
       }
     }
   });
+
+  it('routes task-type image answers away from od-default and into image generation', async () => {
+    const captureDir = mkdtempSync(join(tmpdir(), 'od-task-type-image-'));
+    tempDirs.push(captureDir);
+    const capturePath = join(captureDir, 'prompt.txt');
+    const previousCapturePath = process.env.OD_CAPTURE_PROMPT_PATH;
+    process.env.OD_CAPTURE_PROMPT_PATH = capturePath;
+    try {
+      await withFakeAgent(
+        'opencode',
+        `
+const fs = require('node:fs');
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+  fs.writeFileSync(process.env.OD_CAPTURE_PROMPT_PATH, input, 'utf8');
+  console.log(JSON.stringify({ type: 'text', part: { text: 'image route locked' } }));
+});
+`,
+        async () => {
+          const projectId = `project-${randomUUID()}`;
+          const projectResponse = await fetch(`${baseUrl}/api/projects`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: projectId,
+              name: 'Freeform image project',
+              metadata: { kind: 'other' },
+              pluginId: 'od-default',
+            }),
+          });
+          expect(projectResponse.status).toBe(200);
+          const projectBody = await projectResponse.json() as { conversationId: string };
+
+          const currentPrompt = [
+            '[form answers — task-type]',
+            '- What should I build?: Image',
+            '- Who is this for?: (skipped)',
+          ].join('\n');
+          const transcript = [
+            '## user',
+            'Generate a cinematic product image for a launch campaign.',
+            '',
+            '## assistant',
+            '<question-form id="task-type" title="Choose the task type"></question-form>',
+            '',
+            '## user',
+            currentPrompt,
+          ].join('\n');
+
+          const createResponse = await fetch(`${baseUrl}/api/runs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agentId: 'opencode',
+              projectId,
+              conversationId: projectBody.conversationId,
+              message: transcript,
+              currentPrompt,
+            }),
+          });
+          expect(createResponse.status).toBe(202);
+          const createBody = await createResponse.json() as { runId: string; pluginId: string | null };
+          expect(createBody.pluginId).toBe('od-media-generation');
+
+          const statusBody = await waitForRunStatus(baseUrl, createBody.runId);
+          expect(statusBody.status).toBe('succeeded');
+          expect(existsSync(capturePath)).toBe(true);
+          const prompt = readFileSync(capturePath, 'utf8');
+          expect(prompt).toContain('- **imageModel**: gpt-image-2 (default');
+          expect(prompt).toContain('media generate --surface image --model <imageModel>');
+        },
+      );
+    } finally {
+      if (previousCapturePath == null) {
+        delete process.env.OD_CAPTURE_PROMPT_PATH;
+      } else {
+        process.env.OD_CAPTURE_PROMPT_PATH = previousCapturePath;
+      }
+    }
+  });
 });
 
 describe('daemon run creation during shutdown', () => {
