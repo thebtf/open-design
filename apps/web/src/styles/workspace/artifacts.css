@@ -1383,13 +1383,13 @@
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
 .agent-card-amr-auth .amr-account-control__action:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
   background: color-mix(in srgb, var(--accent-tint) 76%, var(--bg-panel));
   color: var(--accent-strong);
-  transform: none;
+  transform: translateY(-1px);
 }
 .agent-card-amr-auth .amr-account-control__action:disabled {
   cursor: default;
@@ -1398,10 +1398,6 @@
 .agent-card-amr-auth .amr-account-control__error,
 .agent-card-amr-auth .amr-login-pill-badge {
   display: none;
-}
-.amr-auth-anchor .amr-coachmark,
-.amr-auth-anchor .amr-coachmark__ring {
-  animation: none;
 }
 .agent-model-row-head {
   font-size: 12px;
