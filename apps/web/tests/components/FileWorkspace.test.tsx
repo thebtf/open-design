@@ -623,10 +623,21 @@ describe('FileWorkspace generation failure recovery', () => {
     fireEvent.click(screen.getByTestId('generation-preview-recharge'));
     fireEvent.click(screen.getByTestId('generation-preview-retry'));
 
-    expect(openSpy).toHaveBeenCalledWith(
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const [walletUrl, target, features] = openSpy.mock.calls[0] ?? [];
+    expect(target).toBe('_blank');
+    expect(features).toBe('noopener,noreferrer');
+    const parsedWalletUrl = new URL(String(walletUrl));
+    expect(`${parsedWalletUrl.origin}${parsedWalletUrl.pathname}`).toBe(
       'https://open-design.ai/amr/wallet',
-      '_blank',
-      'noopener,noreferrer',
+    );
+    expect(parsedWalletUrl.searchParams.get('od_origin')).toBe('open_design');
+    expect(parsedWalletUrl.searchParams.get('od_entry_source')).toBe(
+      'generation_preview_recharge',
+    );
+    expect(parsedWalletUrl.searchParams.get('od_entry_id')).toMatch(/^od-amr-/u);
+    expect(Number.isFinite(Date.parse(parsedWalletUrl.searchParams.get('od_entry_at') ?? ''))).toBe(
+      true,
     );
     expect(onRetry).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'msg-amr_insufficient_balance', agentId: 'amr' }),
