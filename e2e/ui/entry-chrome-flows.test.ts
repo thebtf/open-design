@@ -100,7 +100,8 @@ test('entry chrome exposes the primary home creation surface and settings entry'
   // entry layout.
   await expect(page.locator('.pet-rail')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Open settings' }).click();
+  await page.getByTestId('entry-settings-menu-trigger').click();
+  await page.getByTestId('entry-settings-open-details').click();
   const settingsDialog = page.getByRole('dialog');
   await expect(settingsDialog).toBeVisible();
   await expect(settingsDialog.getByRole('heading', { name: 'Execution mode' })).toBeVisible();
@@ -402,14 +403,16 @@ test('home topbar overlays close on outside click, Escape, and Settings open', a
 
   const pill = page.getByTestId('inline-model-switcher-chip');
   const executionPopover = page.getByTestId('inline-model-switcher-popover');
-  const settingsButton = page.getByRole('button', { name: 'Open settings' });
 
   await pill.click();
   await expect(executionPopover).toBeVisible();
 
-  await settingsButton.click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  // The settings entry is a menu; opening it dismisses the execution popover,
+  // and its "Settings" item opens the full dialog.
+  await page.getByTestId('entry-settings-menu-trigger').click();
   await expect(executionPopover).toHaveCount(0);
+  await page.getByTestId('entry-settings-open-details').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
