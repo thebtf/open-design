@@ -1350,6 +1350,45 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect(testConnectionCalls).toHaveLength(0);
   });
 
+  it('blocks mistyped first-party URLs with a valid key before auto-testing', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input.toString() === '/api/memory') {
+        return new Response(
+          JSON.stringify({ enabled: true, memories: [], extraction: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`unexpected request: ${input.toString()}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderSettingsDialog({
+      apiKey: 'sk-ant-test-provider',
+      baseUrl: 'https://api.anthropic.comx',
+      apiProviderBaseUrl: null,
+    });
+
+    const apiKeyField = screen.getByLabelText('API key').closest('label');
+    const baseUrlField = screen.getByLabelText('Base URL').closest('label');
+    expect(apiKeyField).toBeTruthy();
+    expect(baseUrlField).toBeTruthy();
+    expect(
+      within(apiKeyField as HTMLElement).queryByText('Invalid API key.'),
+    ).toBeNull();
+    expect(
+      within(baseUrlField as HTMLElement).getByText('Base URL is invalid or unreachable.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Test' })).toBeNull();
+    expect(screen.queryByText('Ready to test')).toBeNull();
+
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    const testConnectionCalls = fetchMock.mock.calls.filter(
+      ([input]) => input.toString() === '/api/test/connection',
+    );
+    expect(testConnectionCalls).toHaveLength(0);
+    expect(fetchProviderModelsMock).not.toHaveBeenCalled();
+  });
+
   it('sends a cleaned API key when the pasted value has trailing newline/zero-width characters', async () => {
     let sentApiKey: unknown;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1573,6 +1612,42 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
       within(baseUrlField as HTMLElement).getByText('Base URL is invalid or unreachable.'),
     ).toBeTruthy();
     expect(screen.getAllByText('Base URL is invalid or unreachable.')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Retry test' })).toBeTruthy();
+  });
+
+  it('renders auth failed test failures on the API key field', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === '/api/memory') {
+        return new Response(
+          JSON.stringify({ enabled: true, memories: [], extraction: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      expect(url).toBe('/api/test/connection');
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          kind: 'auth_failed',
+          latencyMs: 12,
+          model: 'claude-sonnet-4-5',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderSettingsDialog({ apiKey: 'sk-ant-test-provider' });
+
+    expect(await screen.findByText('Invalid API key.')).toBeTruthy();
+    const apiKeyField = screen.getByLabelText('API key').closest('label');
+    expect(apiKeyField).toBeTruthy();
+    expect(
+      within(apiKeyField as HTMLElement).getByText('Invalid API key.'),
+    ).toBeTruthy();
+    expect(screen.getAllByText('Invalid API key.')).toHaveLength(1);
+    expect(screen.queryByText('Authentication failed. Check your API key.')).toBeNull();
+    expect(screen.queryByText('Ready to test')).toBeNull();
     expect(screen.getByRole('button', { name: 'Retry test' })).toBeTruthy();
   });
 

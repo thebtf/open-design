@@ -1375,10 +1375,23 @@ export function SettingsDialog({
       return;
     }
     const blockingIssues = blockingByokDraftIssues(byokDraftValidation);
+    const hasFirstPartyHostTypo = Boolean(byokFirstPartyBaseUrl?.hostTypo);
     const currentConfigKey = providerConnectionTestKey(apiProtocol, cfg);
     const lastUnsuccessfulConfigKey = byokLastUnsuccessfulTestKeyRef.current;
     const configKeyChanged = lastUnsuccessfulConfigKey !== null &&
       lastUnsuccessfulConfigKey !== currentConfigKey;
+    if (hasFirstPartyHostTypo) {
+      if (!options.silentPreconditions) {
+        setByokPreconditionNotice({
+          action: 'test',
+          field: 'base_url',
+          message: t('settings.testInvalidBaseUrl'),
+        });
+        focusByokRequiredField('base_url');
+      }
+      byokLastUnsuccessfulTestKeyRef.current = currentConfigKey;
+      return;
+    }
     if (blockingIssues.length > 0) {
       if (options.silentPreconditions) {
         return;
@@ -1494,6 +1507,9 @@ export function SettingsDialog({
     if (providerTestState.status === 'running') {
       return;
     }
+    if (byokFirstPartyBaseUrl?.hostTypo) {
+      return;
+    }
     if (blockingByokDraftIssues(byokDraftValidation).length > 0) {
       return;
     }
@@ -1563,6 +1579,17 @@ export function SettingsDialog({
     const modelFetchBlockingIssues = blockingByokDraftIssues(
       byokModelFetchDraftValidation,
     );
+    if (byokFirstPartyBaseUrl?.hostTypo) {
+      if (!options.silent) {
+        setByokPreconditionNotice({
+          action: 'test',
+          field: 'base_url',
+          message: t('settings.testInvalidBaseUrl'),
+        });
+        focusByokRequiredField('base_url');
+      }
+      return;
+    }
     if (modelFetchBlockingIssues.length > 0) {
       trackModelsFetchResult({
         result: 'failed',
@@ -2127,7 +2154,10 @@ export function SettingsDialog({
   const fetchedApiModelOptions =
     activeProviderModelsCache[providerModelsKey] ?? [];
   const commitProviderModelsInputs = () => {
-    if (blockingByokDraftIssues(byokModelFetchDraftValidation).length > 0) {
+    if (
+      byokFirstPartyBaseUrl?.hostTypo ||
+      blockingByokDraftIssues(byokModelFetchDraftValidation).length > 0
+    ) {
       setProviderModelsCommittedKey(null);
       return;
     }
@@ -2160,7 +2190,10 @@ export function SettingsDialog({
   useEffect(() => {
     if (!deferAfterKeyCleanRef.current) return;
     deferAfterKeyCleanRef.current = false;
-    if (blockingByokDraftIssues(byokModelFetchDraftValidation).length > 0) {
+    if (
+      byokFirstPartyBaseUrl?.hostTypo ||
+      blockingByokDraftIssues(byokModelFetchDraftValidation).length > 0
+    ) {
       setProviderModelsCommittedKey(null);
     } else {
       setProviderModelsCommittedKey(providerModelsKey);
@@ -2168,10 +2201,16 @@ export function SettingsDialog({
     // Runs after the provider-test reset effect (declaration order) bumped the
     // revision for the cleaned key, so this auto-test is not flagged stale.
     handleAutoTestProvider();
-  }, [cfg.apiKey, byokModelFetchDraftValidation, providerModelsKey]);
+  }, [
+    byokFirstPartyBaseUrl?.hostTypo,
+    byokModelFetchDraftValidation,
+    cfg.apiKey,
+    providerModelsKey,
+  ]);
   useEffect(() => {
     if (cfg.mode !== 'api') return;
     if (providerTestState.status === 'running') return;
+    if (byokFirstPartyBaseUrl?.hostTypo) return;
     if (blockingByokDraftIssues(byokDraftValidation).length > 0) return;
     const key = providerConnectionTestKey(apiProtocol, cfg);
     if (providerAutoTestKeyRef.current === key) return;
@@ -2181,6 +2220,7 @@ export function SettingsDialog({
     return () => window.clearTimeout(timer);
   }, [
     apiProtocol,
+    byokFirstPartyBaseUrl?.hostTypo,
     byokDraftValidation,
     cfg.apiKey,
     cfg.apiVersion,
@@ -2192,6 +2232,7 @@ export function SettingsDialog({
   useEffect(() => {
     if (cfg.mode !== 'api') return;
     if (apiProtocol === 'azure' || apiProtocol === 'ollama') return;
+    if (byokFirstPartyBaseUrl?.hostTypo) return;
     if (blockingByokDraftIssues(byokModelFetchDraftValidation).length > 0) return;
     if (providerModelsCommittedKey !== providerModelsKey) return;
     const timer = window.setTimeout(() => {
@@ -2200,6 +2241,7 @@ export function SettingsDialog({
     return () => window.clearTimeout(timer);
   }, [
     apiProtocol,
+    byokFirstPartyBaseUrl?.hostTypo,
     cfg.apiKey,
     cfg.baseUrl,
     cfg.mode,
@@ -2232,6 +2274,13 @@ export function SettingsDialog({
     providerTestState.status === 'done' &&
     !providerTestState.result.ok &&
     providerTestState.result.kind === 'invalid_base_url';
+  const providerTestApiKeyAuthFailed =
+    providerTestState.status === 'done' &&
+    !providerTestState.result.ok &&
+    providerTestState.result.kind === 'auth_failed';
+  const apiKeyFieldAuthFailed =
+    providerTestApiKeyAuthFailed ||
+    (apiKeyAuthFailed && providerTestState.status === 'idle');
   const baseUrlErrorMessage = baseUrlInvalid
     ? t('settings.baseUrlInvalid')
     : providerTestBaseUrlInvalid || byokFirstPartyBaseUrl?.hostTypo
@@ -3561,9 +3610,12 @@ export function SettingsDialog({
                 </div>
                 <ByokConnectionTestControl
                   baseUrlValid={baseUrlValid}
-                  canRunConnectionTest={canRunProviderConnectionTest(cfg, {
-                    requiresApiKey: byokRequiresApiKey,
-                  })}
+                  canRunConnectionTest={
+                    !byokFirstPartyBaseUrl?.hostTypo &&
+                    canRunProviderConnectionTest(cfg, {
+                      requiresApiKey: byokRequiresApiKey,
+                    })
+                  }
                   labels={{
                     readyToTest: t('settings.byokReadyToTest'),
                     test: t('settings.test'),
@@ -3573,10 +3625,13 @@ export function SettingsDialog({
                   }}
                   providerTestState={providerTestState}
                   renderTestMessage={(result) => renderTestMessage(result, 'api')}
-                  suppressResultStatus={providerTestBaseUrlInvalid}
+                  suppressResultStatus={
+                    providerTestBaseUrlInvalid || providerTestApiKeyAuthFailed
+                  }
                   suppressReadyState={Boolean(
                     byokPreconditionNotice ||
-                      apiKeyAuthFailed ||
+                      apiKeyFieldAuthFailed ||
+                      providerTestBaseUrlInvalid ||
                       byokBlockingDraftIssues.length > 0,
                   )}
                   onTestProvider={() => handleTestProvider()}
@@ -3637,7 +3692,7 @@ export function SettingsDialog({
                 }}
                 requiresApiKey={byokRequiresApiKey}
                 showApiKeyInvalid={Boolean(
-                  (apiKeyAuthFailed && providerTestState.status === 'idle') ||
+                  apiKeyFieldAuthFailed ||
                     byokPreconditionNotice?.field === 'api_key' ||
                     apiKeyDraftInvalid,
                 )}
