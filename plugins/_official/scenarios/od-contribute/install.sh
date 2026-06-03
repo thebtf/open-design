@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # OD Contribute installer — self-bootstrapping.
-# Fetches the latest od-contribute skill from nexu-io/open-design and installs
-# it into every supported AI agent's home directory.
+# Fetches the latest od-contribute scenario from nexu-io/open-design and
+# installs it into every supported AI agent's home directory.
+#
+# This installer exists for the SECONDARY distribution channel: users on
+# standalone Claude Code / Codex / Cursor that aren't running through the
+# Open Design app. Users on OD already have the plugin pre-bundled at
+# plugins/_official/scenarios/od-contribute/ and don't need this script.
 #
 # Two ways to run this:
 #
 # 1) Tell your AI agent (Claude Code / Codex / Cursor / etc.) in the chat:
 #
-#      curl -sSL https://raw.githubusercontent.com/nexu-io/open-design/main/.claude/skills/od-contribute/install.sh | bash
+#      curl -sSL https://raw.githubusercontent.com/nexu-io/open-design/main/plugins/_official/scenarios/od-contribute/install.sh | bash
 #
 #    The agent's Bash tool runs this. You never open a terminal yourself.
 #
@@ -15,7 +20,7 @@
 #
 # Targets installed:
 #   ~/.claude/skills/od-contribute/        Claude Code (native skill format)
-#   ~/.claude/commands/od-contribute.md    Claude Code slash command
+#   ~/.claude/commands/od-contribute.md    Claude Code slash command (synthesized below)
 #   ~/.agents/skills/od-contribute/        Codex CLI (canonical path)
 #   ~/.codex/skills/od-contribute/         Codex CLI (legacy, only if ~/.codex exists)
 #
@@ -44,19 +49,17 @@ TARBALL="$TMPDIR/repo.tar.gz"
 curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o "$TARBALL" \
   || die "failed to fetch ${REPO}@${BRANCH} (branch may not exist)"
 
-# Extract just the two paths we need. GitHub tarballs name the root dir
-# <repo>-<branch>/, with slashes in branch names converted to dashes.
+# Extract just the scenario folder we need. GitHub tarballs name the root
+# dir <repo>-<branch>/, with slashes in branch names converted to dashes.
+# The Claude Code slash command shim is synthesized below — no longer
+# kept as a separate file in the OD repo.
 TARBALL_ROOT="open-design-${BRANCH//\//-}"
 tar -xzf "$TARBALL" -C "$TMPDIR" \
-  "${TARBALL_ROOT}/.claude/skills/od-contribute" \
-  "${TARBALL_ROOT}/.claude/commands/od-contribute.md" \
+  "${TARBALL_ROOT}/plugins/_official/scenarios/od-contribute" \
   2>/dev/null || die "skill files not found in tarball — branch may have different layout"
 
-SKILL_SRC="$TMPDIR/${TARBALL_ROOT}/.claude/skills/od-contribute"
-CMD_SRC="$TMPDIR/${TARBALL_ROOT}/.claude/commands/od-contribute.md"
-
+SKILL_SRC="$TMPDIR/${TARBALL_ROOT}/plugins/_official/scenarios/od-contribute"
 [[ -f "$SKILL_SRC/SKILL.md" ]] || die "SKILL.md missing at expected path"
-[[ -f "$CMD_SRC"             ]] || die "slash command missing at expected path"
 
 install_skill_to() {
   local dest="$1" label="$2"
@@ -102,8 +105,38 @@ install_skill_to() {
 
 # --- Claude Code (native, always install) -----------------------------------
 install_skill_to "$HOME/.claude/skills/od-contribute" "Claude Code skill"
+
+# Synthesize the slash command shim so the user can just type /od-contribute.
+# We embed it inline (rather than a separate file in the OD repo) because the
+# shim's only job is to load the skill — its content rarely needs maintenance,
+# and one less repo file means one less place for the OD repo to surface a
+# Claude-Code-specific artifact.
 mkdir -p "$HOME/.claude/commands"
-cp "$CMD_SRC" "$HOME/.claude/commands/od-contribute.md"
+cat > "$HOME/.claude/commands/od-contribute.md" <<'EOF'
+---
+description: Open a first-contribution PR (or bug issue) on nexu-io/open-design — works for non-coders too.
+argument-hint: "[skill | design-system | i18n | docs | bug | plugin — optional]"
+---
+
+You are entering the **od-contribute** flow.
+
+User input (may be empty): `$ARGUMENTS`
+
+## What to do right now
+
+1. Load the `od-contribute` skill via the Skill tool. The skill owns the full execution playbook — do not reimplement it inline.
+
+2. Pass the user input forward:
+   - If `$ARGUMENTS` matches `skill`, `design-system`, `i18n`, `docs`, `bug`, or `plugin` (or a recognizable equivalent in any language), pre-select that branch and skip the type-picking question.
+   - Otherwise, the skill will ask the user via `AskUserQuestion`.
+
+3. Honor the interactive contract:
+   - Run the prerequisite check first. If it fails, surface the install/auth hint verbatim and stop.
+   - Show the preview and require explicit confirmation before pushing or opening any PR/issue.
+   - Print the PR or issue URL on its own line at the end.
+
+Begin by invoking the skill now.
+EOF
 green "  ✓ Claude Code slash command (/od-contribute)"
 gray  "      $HOME/.claude/commands/od-contribute.md"
 

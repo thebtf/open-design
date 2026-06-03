@@ -1,0 +1,67 @@
+{
+  "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
+  "name": "od-contribute",
+  "title": "Open Design Contributor",
+  "title_i18n": {
+    "en": "Open Design Contributor",
+    "zh-CN": "Open Design 贡献者"
+  },
+  "version": "0.2.0",
+  "description": "Ship a Skill, Design System, plugin, translation, doc fix, or bug report to nexu-io/open-design — without writing code. The agent introspects your local OD project, fills the manifest from what's already there, and opens a real PR.",
+  "description_i18n": {
+    "en": "Ship a Skill, Design System, plugin, translation, doc fix, or bug report to nexu-io/open-design — without writing code. The agent introspects your local OD project, fills the manifest from what's already there, and opens a real PR.",
+    "zh-CN": "把你做的 Skill、Design System、plugin、翻译、文档修复或 bug 上报到 nexu-io/open-design — 不用写代码。Agent 自动读你本地的 OD project,把 plugin manifest 填满,然后开一个真 PR。"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Open Design",
+    "url": "https://github.com/nexu-io"
+  },
+  "homepage": "https://github.com/nexu-io/open-design/tree/main/plugins/_official/scenarios/od-contribute",
+  "tags": [
+    "scenario",
+    "first-party",
+    "contribute",
+    "non-coder",
+    "plugin-authoring"
+  ],
+  "compat": {
+    "agentSkills": [
+      { "path": "./SKILL.md" }
+    ]
+  },
+  "od": {
+    "kind": "skill",
+    "scenario": "contribute",
+    "useCase": {
+      "query": {
+        "en": "I want to contribute to Open Design.",
+        "zh-CN": "我想给 Open Design 做贡献。"
+      }
+    },
+    "context": {
+      "skills": [
+        { "path": "./SKILL.md" }
+      ]
+    },
+    "capabilities": [
+      "prompt:inject",
+      "fs:read",
+      "fs:write"
+    ],
+    "trigger": {
+      "displayName": "Contribute to Open Design",
+      "phrases": [
+        "contribute to open design",
+        "ship my OD plugin",
+        "ship my OD skill",
+        "ship my OD design system",
+        "translate OD docs",
+        "report an OD bug",
+        "fix OD typo",
+        "od-contribute"
+      ]
+    }
+  }
+}

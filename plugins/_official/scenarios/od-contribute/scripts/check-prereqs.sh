@@ -21,39 +21,123 @@ _OD_SKILL_DIR_HINT="$(cd "$(dirname "$0")/.." && pwd)"
 
 STATUS=0
 MISSING=()
-HINTS=()
 
 check_bin() {
-  local bin="$1" install_hint="$2"
+  local bin="$1"
   if command -v "$bin" >/dev/null 2>&1; then
     printf '  ✓ %s\n' "$bin" >&2
   else
     printf '  ✗ %s (not installed)\n' "$bin" >&2
     MISSING+=("$bin")
-    HINTS+=("$install_hint")
     STATUS=2
   fi
 }
 
 printf '[od-contrib] checking prerequisites...\n' >&2
 
-OS="$(uname -s)"
-case "$OS" in
-  Darwin) GH_HINT="brew install gh" ;;
-  Linux)  GH_HINT="see https://github.com/cli/cli#installation (e.g. 'sudo apt install gh' or 'brew install gh')" ;;
-  *)      GH_HINT="see https://github.com/cli/cli#installation" ;;
+# Detect platform — we surface platform-specific install instructions when
+# something's missing. Many od-contribute users are designers, not engineers,
+# so we lean toward concrete steps (with download URLs) rather than the
+# usual "install gh for your OS" pointer.
+OS_RAW="$(uname -s 2>/dev/null || echo unknown)"
+case "$OS_RAW" in
+  Darwin)                  PLATFORM="macos" ;;
+  Linux)                   PLATFORM="linux" ;;
+  MINGW*|MSYS*|CYGWIN*)    PLATFORM="windows" ;;
+  *)                       PLATFORM="unknown" ;;
 esac
 
-check_bin gh   "$GH_HINT"
-check_bin git  "install git for your OS"
-check_bin jq   "$( [[ $OS == Darwin ]] && echo 'brew install jq' || echo 'sudo apt install jq  (or brew install jq)' )"
+check_bin gh
+check_bin git
+check_bin jq
 
 if ((${#MISSING[@]} > 0)); then
-  printf '\n[od-contrib][error] missing required tools: %s\n' "${MISSING[*]}" >&2
-  printf '\nInstall hints:\n' >&2
-  for i in "${!MISSING[@]}"; do
-    printf '  - %s: %s\n' "${MISSING[$i]}" "${HINTS[$i]}" >&2
-  done
+  printf '\n[od-contrib][error] These tools need to be installed before od-contribute can run:\n' >&2
+  printf '  %s\n\n' "${MISSING[*]}" >&2
+
+  case "$PLATFORM" in
+    macos)
+      cat >&2 <<'EOF'
+─── If you have Homebrew (most macOS dev setups do) ───────────────
+
+  brew install gh git jq
+
+  Don't have Homebrew? Install it from https://brew.sh first
+  (one paste-into-terminal command on the page).
+
+─── If you don't want to use Homebrew ────────────────────────────
+
+  gh:  https://cli.github.com  →  download "macOS .pkg" → double-click
+  git: https://git-scm.com/download/mac
+  jq:  https://jqlang.github.io/jq/download/
+
+EOF
+      ;;
+    linux)
+      cat >&2 <<'EOF'
+─── Debian / Ubuntu / Mint ───────────────────────────────────────
+
+  sudo apt update
+  sudo apt install gh git jq
+
+  (If apt can't find gh: https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
+
+─── Fedora / RHEL / CentOS ───────────────────────────────────────
+
+  sudo dnf install gh git jq
+
+─── Arch ─────────────────────────────────────────────────────────
+
+  sudo pacman -S github-cli git jq
+
+EOF
+      ;;
+    windows)
+      cat >&2 <<'EOF'
+─── Recommended: install all three with winget (Windows 10+) ─────
+
+  winget install --id GitHub.cli
+  winget install --id Git.Git
+  winget install --id jqlang.jq
+
+─── Alternative: download installers ─────────────────────────────
+
+  gh:  https://cli.github.com  →  download "Windows MSI" → run
+  git: https://git-scm.com/download/win  →  download → run
+  jq:  https://jqlang.github.io/jq/download/  →  Windows binary
+
+After installing, **close and reopen** any terminal / agent so
+they pick up the new programs on PATH.
+
+EOF
+      ;;
+    *)
+      cat >&2 <<'EOF'
+─── Unrecognized platform ────────────────────────────────────────
+
+Install these from their official sites:
+  gh:  https://cli.github.com
+  git: https://git-scm.com/downloads
+  jq:  https://jqlang.github.io/jq/download/
+
+EOF
+      ;;
+  esac
+
+  cat >&2 <<'EOF'
+─── After installing the tools ───────────────────────────────────
+
+You also need to log in to GitHub once. From a regular terminal,
+run this and follow the browser prompt:
+
+  gh auth login
+
+Pick: GitHub.com → HTTPS → authenticate via web browser. The 'repo'
+scope is required (it's the default).
+
+That's a one-time setup. After it's done, re-run /od-contribute and
+this check will pass.
+EOF
   exit 2
 fi
 
