@@ -224,6 +224,16 @@ export interface Dict {
   'settings.rescanFailed': string;
   'settings.test': string;
   'settings.testTitle': string;
+  'settings.healthcheck.button': string;
+  'settings.healthcheck.run': string;
+  'settings.healthcheck.rerun': string;
+  'settings.healthcheck.overall.pass': string;
+  'settings.healthcheck.overall.warn': string;
+  'settings.healthcheck.overall.fail': string;
+  'settings.healthcheck.check.detected': string;
+  'settings.healthcheck.check.invocable': string;
+  'settings.healthcheck.check.authenticated': string;
+  'settings.healthcheck.check.smoke': string;
   'settings.testRunning': string;
   'settings.testCancel': string;
   'settings.testRetry': string;

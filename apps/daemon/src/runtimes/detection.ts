@@ -290,6 +290,21 @@ export async function detectAgents(
   return results;
 }
 
+// Single-agent variant: probe exactly one registered agent by id, reusing the
+// same fault-isolated `safeProbe` path so a health check / connection test can
+// get fresh detection diagnostics for one CLI without walking all of them.
+// Returns `null` for an unknown id so callers can map it to a 404.
+export async function detectAgent(
+  id: string,
+  configuredEnv: Record<string, string> = {},
+): Promise<DetectedAgent | null> {
+  const def = AGENT_DEFS.find((a) => a.id === id);
+  if (!def) return null;
+  const agent = await safeProbe(def, configuredEnv);
+  rememberLiveModels(agent.id, agent.models);
+  return agent;
+}
+
 // Streaming variant: yields each agent the moment its probe settles, in
 // completion order rather than registry order, so the UI can paint a card
 // as soon as it resolves instead of waiting for the slowest CLI. The model

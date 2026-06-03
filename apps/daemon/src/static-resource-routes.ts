@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { detectAgents, detectAgentsStream } from './agents.js';
+import { runAgentHealthCheck } from './agent-healthcheck.js';
 import {
   SkillImportError,
   deleteUserSkill,
@@ -106,6 +107,49 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       }
     } finally {
       res.end();
+    }
+  });
+
+  // Per-agent "configuration health check": fresh detection diagnostics +
+  // optional live smoke test, folded into one red/yellow/green report. Backs
+  // the Settings health-check panel and `od agent healthcheck <id> --json`.
+  app.post('/api/agents/:id/healthcheck', async (req, res) => {
+    const agentId = String(req.params.id || '').trim();
+    if (!agentId) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'agent id is required');
+    }
+    let config;
+    try {
+      config = await readAppConfig(RUNTIME_DATA_DIR);
+    } catch (err: any) {
+      return sendApiError(res, 500, 'INTERNAL', String(err));
+    }
+    const body = req.body || {};
+    const controller = new AbortController();
+    const abortIfClosed = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    req.on('close', abortIfClosed);
+    try {
+      const result = await runAgentHealthCheck(agentId, {
+        model: typeof body.model === 'string' ? body.model : undefined,
+        reasoning: typeof body.reasoning === 'string' ? body.reasoning : undefined,
+        skipSmoke: body.skipSmoke === true,
+        agentCliEnv: config.agentCliEnv ?? {},
+        signal: controller.signal,
+      });
+      if (!result) {
+        return sendApiError(res, 404, 'NOT_FOUND', `unknown agent id: ${agentId}`);
+      }
+      return res.json(result);
+    } catch (err: any) {
+      if (controller.signal.aborted) return;
+      console.warn(
+        `[agent:healthcheck] uncaught: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return sendApiError(res, 500, 'INTERNAL', 'Agent health check failed');
+    } finally {
+      req.off('close', abortIfClosed);
     }
   });
 

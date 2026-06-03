@@ -1,0 +1,123 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle, var(--bg-panel));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Overall verdict caption — tinted off the same red/yellow/green status as the
+   per-check dots so the headline reads at a glance. */
+.overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.overall[data-status='pass'] {
+  color: var(--success, #3fa65a);
+}
+
+.overall[data-status='warn'] {
+  color: color-mix(in srgb, var(--warning, #d9a441) 88%, var(--text));
+}
+
+.overall[data-status='fail'] {
+  color: var(--danger, #d9534f);
+}
+
+.rerun {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+
+.rerun svg {
+  flex: 0 0 auto;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+/* Status dot: the at-a-glance red/yellow/green signal for each step. Sized to
+   align with the first text line of the row. */
+.dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--border-strong, var(--border));
+}
+
+.dot[data-status='pass'] {
+  background: var(--success, #3fa65a);
+}
+
+.dot[data-status='warn'] {
+  background: var(--warning, #d9a441);
+}
+
+.dot[data-status='fail'] {
+  background: var(--danger, #d9534f);
+}
+
+.dot[data-status='skip'] {
+  background: var(--border-strong, var(--border));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Localized "what's being checked" label — the primary, always-translated text. */
+.name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* Technical specifics from the daemon (path / version / latency / reason). */
+.detail {
+  color: var(--text-muted, var(--text));
+  word-break: break-word;
+}
+
+/* A skipped step is informational only — dim the whole row so it never reads
+   as a result. */
+.item[data-status='skip'] .name {
+  color: var(--text-muted, var(--text));
+}
+
+.item[data-status='skip'] .detail {
+  color: var(--text-faint, var(--text-muted));
+}

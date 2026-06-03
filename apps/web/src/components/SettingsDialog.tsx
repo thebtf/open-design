@@ -30,6 +30,7 @@ import type { Locale } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
 import { AgentDiagnosticRow } from './AgentDiagnosticRow';
+import { AgentHealthCheckPanel } from './AgentHealthCheckPanel';
 import { AmrLoginPill } from './AmrLoginPill';
 import {
   fetchVelaLoginStatus,
@@ -76,6 +77,7 @@ import {
 } from '../state/maxTokens';
 import type {
   AgentInfo,
+  AgentHealthCheckResult,
   ApiProtocol,
   ApiProtocolConfig,
   AppConfig,
@@ -89,7 +91,11 @@ import type {
   ProviderModelsResponse,
   SkillSummary,
 } from '../types';
-import { testAgent, testApiProvider } from '../providers/connection-test';
+import {
+  healthcheckAgent,
+  testAgent,
+  testApiProvider,
+} from '../providers/connection-test';
 import { fetchProviderModels } from '../providers/provider-models';
 import {
   fetchConnectors,
@@ -297,6 +303,11 @@ type TestState =
   | { status: 'idle' }
   | { status: 'running' }
   | { status: 'done'; result: ConnectionTestResponse };
+
+type AgentHealthState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; result: AgentHealthCheckResult };
 
 type ProviderModelsState =
   | { status: 'idle' }
@@ -925,6 +936,9 @@ export function SettingsDialog({
   const [agentTestState, setAgentTestState] = useState<TestState>({
     status: 'idle',
   });
+  const [agentHealthState, setAgentHealthState] = useState<AgentHealthState>({
+    status: 'idle',
+  });
   const [amrCardStatus, setAmrCardStatus] = useState<VelaLoginStatus | null>(null);
   const [amrCardStatusReady, setAmrCardStatusReady] = useState(false);
   const [hoveredAgentCardId, setHoveredAgentCardId] = useState<string | null>(null);
@@ -990,6 +1004,8 @@ export function SettingsDialog({
       );
     });
   const agentTestAbortRef = useRef<AbortController | null>(null);
+  const agentHealthAbortRef = useRef<AbortController | null>(null);
+  const agentHealthRevisionRef = useRef(0);
   const providerTestAbortRef = useRef<AbortController | null>(null);
   const providerModelsAbortRef = useRef<AbortController | null>(null);
   const pendingAgentInstallRescanRef = useRef(false);
@@ -1109,6 +1125,10 @@ export function SettingsDialog({
     setAgentTestState((state) =>
       state.status === 'running' ? state : { status: 'idle' },
     );
+    agentHealthRevisionRef.current += 1;
+    setAgentHealthState((state) =>
+      state.status === 'running' ? state : { status: 'idle' },
+    );
   }, [
     cfg.agentId,
     agentChoiceForTest?.model,
@@ -1160,6 +1180,7 @@ export function SettingsDialog({
   useEffect(() => {
     return () => {
       agentTestAbortRef.current?.abort();
+      agentHealthAbortRef.current?.abort();
       providerTestAbortRef.current?.abort();
       providerModelsAbortRef.current?.abort();
     };
@@ -1304,6 +1325,56 @@ export function SettingsDialog({
     } finally {
       if (agentTestAbortRef.current === controller) {
         agentTestAbortRef.current = null;
+      }
+    }
+  };
+
+  const handleHealthCheck = async () => {
+    if (agentHealthState.status === 'running') return;
+    const selected = agents.find((a) => a.id === cfg.agentId && a.available);
+    if (!selected) return;
+    const choice = cfg.agentModels?.[selected.id] ?? {};
+    const controller = new AbortController();
+    agentHealthRevisionRef.current += 1;
+    const revision = agentHealthRevisionRef.current;
+    agentHealthAbortRef.current?.abort();
+    agentHealthAbortRef.current = controller;
+    setAgentHealthState({ status: 'running' });
+    try {
+      const result = await healthcheckAgent(
+        selected.id,
+        {
+          model: choice.model || undefined,
+          reasoning: choice.reasoning || undefined,
+        },
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      if (agentHealthRevisionRef.current !== revision) return;
+      setAgentHealthState({ status: 'done', result });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (agentHealthRevisionRef.current !== revision) return;
+      setAgentHealthState({
+        status: 'done',
+        result: {
+          agentId: selected.id,
+          agentName: displayAgentName(selected),
+          available: false,
+          overall: 'fail',
+          checks: [
+            {
+              id: 'detected',
+              status: 'fail',
+              label: err instanceof Error ? err.message : 'Health check failed',
+            },
+          ],
+          ranAt: new Date().toISOString(),
+        },
+      });
+    } finally {
+      if (agentHealthAbortRef.current === controller) {
+        agentHealthAbortRef.current = null;
       }
     }
   };
@@ -3054,10 +3125,38 @@ export function SettingsDialog({
                                     )}
                                   </button>
                                 ) : null}
+                                {active && !isAmrAgent ? (
+                                  <button
+                                    type="button"
+                                    className={
+                                      'ghost icon-btn settings-test-btn agent-card-healthcheck-btn' +
+                                      (agentHealthState.status === 'running'
+                                        ? ' loading'
+                                        : '')
+                                    }
+                                    onClick={() => void handleHealthCheck()}
+                                    disabled={agentHealthState.status === 'running'}
+                                    title={t('settings.healthcheck.run')}
+                                  >
+                                    {agentHealthState.status === 'running' ? (
+                                      <>
+                                        <Icon
+                                          name="spinner"
+                                          size={13}
+                                          className="icon-spin"
+                                        />
+                                        <span>{t('settings.healthcheck.button')}</span>
+                                      </>
+                                    ) : (
+                                      t('settings.healthcheck.button')
+                                    )}
+                                  </button>
+                                ) : null}
                               </div>
                               {active ? renderAgentModelConfig(a) : null}
                             </div>
                           );
+                          const rows = [cardEl];
                           if (active && agentTestState.status !== 'idle') {
                             const resultRow = (
                               <div
@@ -3144,9 +3243,25 @@ export function SettingsDialog({
                                 )}
                               </div>
                             );
-                            return [cardEl, resultRow];
+                            rows.push(resultRow);
                           }
-                          return [cardEl];
+                          if (active && agentHealthState.status === 'done') {
+                            rows.push(
+                              <div
+                                key={`${a.id}__health-result`}
+                                className="agent-test-result-row"
+                              >
+                                <AgentHealthCheckPanel
+                                  result={agentHealthState.result}
+                                  onRerun={() => void handleHealthCheck()}
+                                  handlers={{
+                                    onRescan: () => void handleRefreshAgents(),
+                                  }}
+                                />
+                              </div>,
+                            );
+                          }
+                          return rows;
                         })}
                       </div>
                     ) : (

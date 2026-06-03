@@ -242,6 +242,7 @@ const SUBCOMMAND_MAP = {
   status: runStatus,
   version: runVersion,
   doctor: runDoctor,
+  agent: runAgent,
   config: runConfig,
 };
 
@@ -6039,6 +6040,96 @@ or the daemon cannot be reached.`);
   }
   const hasError = report.issues.some((i) => i.severity === 'error');
   process.exit(hasError ? 1 : 0);
+}
+
+const AGENT_STRING_FLAGS = new Set(['daemon-url', 'model', 'reasoning']);
+const AGENT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'skip-smoke']);
+
+function healthGlyph(status) {
+  switch (status) {
+    case 'pass':
+      return '\u2713'; // ✓
+    case 'warn':
+      return '!';
+    case 'fail':
+      return '\u2717'; // ✗
+    default:
+      return '\u00b7'; // ·
+  }
+}
+
+async function runAgent(args) {
+  const positionals = positionalArgs(args, AGENT_STRING_FLAGS);
+  const sub = positionals[0];
+  if (!sub || sub === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`Usage:
+  od agent healthcheck <id> [--json] [--skip-smoke] [--model <id>] [--reasoning <id>]
+       Run a configuration health check for one CLI agent: detection, the
+       version probe, sign-in status, and a live smoke test, rendered as a
+       red/yellow/green checklist.
+
+Options:
+  --json          Print the full result as JSON.
+  --skip-smoke    Skip the live round-trip test (detection/auth checks only).
+  --model <id>    Model id to use for the smoke prompt.
+  --reasoning <id> Reasoning option id for the smoke prompt (when supported).
+
+Exit code is non-zero when the overall result is a failure.`);
+    process.exit(0);
+  }
+  if (sub !== 'healthcheck') {
+    console.error(`[agent] unknown subcommand: ${sub}. Run \`od agent --help\`.`);
+    process.exit(64);
+  }
+  const agentId = positionals[1];
+  if (!agentId) {
+    console.error('[agent] healthcheck requires an agent id: od agent healthcheck <id>');
+    process.exit(64);
+  }
+  const flags = parseFlags(args, {
+    string: AGENT_STRING_FLAGS,
+    boolean: AGENT_BOOLEAN_FLAGS,
+  });
+  const base = await cliDaemonBaseUrl(flags);
+  let result;
+  try {
+    const resp = await fetch(`${base}/api/agents/${encodeURIComponent(agentId)}/healthcheck`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: flags.model,
+        reasoning: flags.reasoning,
+        skipSmoke: !!flags['skip-smoke'],
+      }),
+    });
+    if (resp.status === 404) {
+      console.error(`[agent] unknown agent id: ${agentId}`);
+      process.exit(64);
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      console.error(`[agent] health check failed: HTTP ${resp.status} ${text}`);
+      process.exit(70);
+    }
+    result = await resp.json();
+  } catch (err) {
+    console.error(`[agent] daemon unreachable: ${err?.message ?? err}`);
+    process.exit(64);
+  }
+
+  if (flags.json) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  } else {
+    const overall = String(result.overall ?? 'fail').toUpperCase();
+    console.log(`${result.agentName ?? agentId} — overall: ${overall}`);
+    for (const c of result.checks ?? []) {
+      console.log(`  ${healthGlyph(c.status)} ${c.id.padEnd(13)} ${c.label}`);
+      if (c.detail && c.detail !== c.label) {
+        console.log(`      ${c.detail}`);
+      }
+    }
+  }
+  process.exit(result.overall === 'fail' ? 1 : 0);
 }
 
 async function runConfig(args) {
