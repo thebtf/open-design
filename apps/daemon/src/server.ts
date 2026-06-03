@@ -6320,8 +6320,25 @@ export async function startServer({
       res.status(400).json({ error: 'invalid_amr_entry_analytics' });
       return;
     }
+    // Consent gate. The web fetch wrapper attaches `x-od-analytics-*` headers
+    // only when Privacy → metrics is on (apps/web/src/analytics/provider.tsx),
+    // so a null context means the user is opted out — never forward the click
+    // to the external AMR endpoint. Mirrors the analytics-capture invariant.
+    const analyticsContext = readAnalyticsContext(req);
+    if (!analyticsContext) {
+      res.status(202).json({ mirrored: false });
+      return;
+    }
+    // Defense in depth: re-read telemetry.metrics from app-config so a stale
+    // header leak after opt-out still cannot ship behavior to AMR, matching
+    // createAnalyticsService.capture (apps/daemon/src/analytics.ts).
+    const appConfig = await readAppConfig(RUNTIME_DATA_DIR);
+    if (appConfig.telemetry?.metrics !== true) {
+      res.status(202).json({ mirrored: false });
+      return;
+    }
     const result = await mirrorAmrEntryAnalytics(payload, {
-      analyticsContext: readAnalyticsContext(req),
+      analyticsContext,
       env: process.env,
     });
     res.status(202).json(result);
