@@ -50,6 +50,7 @@ const CONNECTOR: ConnectorDetail = {
   provider: 'Composio',
   category: 'Communication',
   status: 'connected',
+  tools: [],
 };
 
 function makePlugin(id: string, title: string): InstalledPluginRecord {

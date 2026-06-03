@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AvatarMenu } from '../../src/components/AvatarMenu';
-import type { AgentInfo, AppConfig } from '../../src/types';
+import type { AgentInfo, AppConfig, ExecMode } from '../../src/types';
 
 vi.mock('../../src/i18n', () => ({
   useT: () => (key: string) => key,
@@ -54,24 +54,32 @@ const baseConfig: AppConfig = {
   agentCliEnv: {},
 };
 
+type ModeChangeHandler = (mode: ExecMode) => void;
+type AgentChangeHandler = (id: string) => void;
+type AgentModelChangeHandler = (
+  id: string,
+  choice: { model?: string; reasoning?: string },
+) => void;
+type VoidHandler = () => void;
+
 function renderMenu({
   config = baseConfig,
   agents = [codexAgent, claudeAgent],
   daemonLive = true,
-  onModeChange = vi.fn(),
-  onAgentChange = vi.fn(),
-  onAgentModelChange = vi.fn(),
-  onOpenSettings = vi.fn(),
-  onRefreshAgents = vi.fn(),
+  onModeChange = vi.fn<ModeChangeHandler>(),
+  onAgentChange = vi.fn<AgentChangeHandler>(),
+  onAgentModelChange = vi.fn<AgentModelChangeHandler>(),
+  onOpenSettings = vi.fn<VoidHandler>(),
+  onRefreshAgents = vi.fn<VoidHandler>(),
 }: {
   config?: AppConfig;
   agents?: AgentInfo[];
   daemonLive?: boolean;
-  onModeChange?: ReturnType<typeof vi.fn>;
-  onAgentChange?: ReturnType<typeof vi.fn>;
-  onAgentModelChange?: ReturnType<typeof vi.fn>;
-  onOpenSettings?: ReturnType<typeof vi.fn>;
-  onRefreshAgents?: ReturnType<typeof vi.fn>;
+  onModeChange?: ReturnType<typeof vi.fn<ModeChangeHandler>>;
+  onAgentChange?: ReturnType<typeof vi.fn<AgentChangeHandler>>;
+  onAgentModelChange?: ReturnType<typeof vi.fn<AgentModelChangeHandler>>;
+  onOpenSettings?: ReturnType<typeof vi.fn<VoidHandler>>;
+  onRefreshAgents?: ReturnType<typeof vi.fn<VoidHandler>>;
 } = {}) {
   render(
     <AvatarMenu

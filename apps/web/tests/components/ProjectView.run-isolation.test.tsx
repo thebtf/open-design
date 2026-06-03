@@ -184,7 +184,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
         <button
           type="button"
           data-testid="workspace-retry"
-          onClick={() => onRetry(failedAssistant)}
+          onClick={() => {
+            if (failedAssistant && onRetry) onRetry(failedAssistant);
+          }}
         >
           retry
         </button>
@@ -193,7 +195,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
         <button
           type="button"
           data-testid="workspace-authorize"
-          onClick={() => onAuthorizeAndRetry(failedAssistant)}
+          onClick={() => {
+            if (failedAssistant) onAuthorizeAndRetry(failedAssistant);
+          }}
         >
           authorize
         </button>
@@ -202,7 +206,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
         <button
           type="button"
           data-testid="workspace-switch-amr"
-          onClick={() => onAuthorizeAndRetry(failedAssistant)}
+          onClick={() => {
+            if (failedAssistant) onAuthorizeAndRetry(failedAssistant);
+          }}
         >
           switch to amr
         </button>
