@@ -5,6 +5,7 @@ import { dirname, join, relative } from "node:path";
 import { hashJson, hashPath, ToolPackCache } from "./cache.js";
 import type { ToolPackConfig } from "./config.js";
 import { hashPackageSourcePath } from "./package-source-hash.js";
+import { readRuntimeAppVersion, versionFamilyForAppVersion } from "./versions.js";
 
 const WORKSPACE_BUILD_PACKAGES = [
   { directory: "packages/components", name: "@open-design/components" },
@@ -53,6 +54,12 @@ type WorkspaceBuildArtifact = {
   requiredPathGroups: string[][];
   workspacePath: string;
 };
+
+async function resolveWorkspaceBuildVersionFamily(config: ToolPackConfig): Promise<string | null> {
+  if (config.platform !== "win") return null;
+  const appVersion = await readRuntimeAppVersion(config).catch(() => null);
+  return appVersion == null ? null : versionFamilyForAppVersion(appVersion);
+}
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -286,13 +293,27 @@ export async function ensureWorkspaceBuildArtifacts(
   const key = await createWorkspaceBuildCacheKey(config);
   const nodeId = `${config.platform}.workspace-build`;
   const artifacts = workspaceBuildArtifacts(config);
+  const versionFamily = await resolveWorkspaceBuildVersionFamily(config);
+  const versionFamilyAlias = versionFamily == null
+    ? null
+    : hashJson({
+        node: nodeId,
+        nodeVersion: process.version,
+        platform: config.platform,
+        schemaVersion: 1,
+        scope: "version-family",
+        versionFamily,
+        webOutputMode: config.webOutputMode,
+      });
+  const materialize = artifacts.map((artifact) => ({
+    from: artifact.cachePath,
+    reuse: true,
+    reuseRequiredPaths: artifact.requiredPathGroups,
+    to: join(config.workspaceRoot, artifact.workspacePath),
+  }));
   await cache.acquire<WorkspaceBuildMetadata>({
-    materialize: artifacts.map((artifact) => ({
-      from: artifact.cachePath,
-      reuse: true,
-      reuseRequiredPaths: artifact.requiredPathGroups,
-      to: join(config.workspaceRoot, artifact.workspacePath),
-    })),
+    aliases: versionFamilyAlias == null ? [] : [versionFamilyAlias],
+    materialize,
     node: {
       id: nodeId,
       key,
@@ -324,5 +345,6 @@ export async function ensureWorkspaceBuildArtifacts(
         return { builtAt: new Date().toISOString(), outputFiles };
       },
     },
+    seedFrom: versionFamilyAlias == null ? [] : [{ aliasKey: versionFamilyAlias, materialize }],
   });
 }
