@@ -19,9 +19,11 @@ describe("probeWebuiStatus", () => {
     expect(await probeWebuiStatus("/x.sock", rejectWith("refused", "ECONNREFUSED"))).toBeNull();
   });
 
-  it("returns null for a reply that carries no url", async () => {
-    expect(await probeWebuiStatus("/x.sock", async () => ({}))).toBeNull();
-    expect(await probeWebuiStatus("/x.sock", async () => ({ url: "" }))).toBeNull();
+  it("RETHROWS a connected reply with no url (live socket → protocol failure, not not-running)", async () => {
+    // Once request() resolves the socket is live, so an empty/missing url is a
+    // wedged/regressed worker, not a free namespace — must not look like null.
+    await expect(probeWebuiStatus("/x.sock", async () => ({}))).rejects.toThrow("invalid STATUS reply");
+    await expect(probeWebuiStatus("/x.sock", async () => ({ url: "" }))).rejects.toThrow("invalid STATUS reply");
   });
 
   it("RETHROWS a timed-out probe so start cannot race into a duplicate launch", async () => {

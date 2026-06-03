@@ -58,20 +58,29 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build WebUI package
+        id: build
         shell: bash
         run: |
           set -euo pipefail
+          log="${{ runner.temp }}/webui-build-${{ matrix.name }}.json"
           pnpm exec tools-pack webui build \
             --platform "${{ matrix.platform }}" \
             --arch "${{ matrix.arch }}" \
             --dir "${{ runner.temp }}/tools-pack" \
-            --json | tee "${{ runner.temp }}/webui-build-${{ matrix.name }}.json"
+            --json | tee "$log"
+          # Publish exactly the one archive this matrix entry produced — read its
+          # absolute path from the build JSON's `archivePath`. A recursive glob
+          # over the tools-pack tree would risk sweeping in internal staging
+          # files (e.g. stage/open-design-webui.desktop) as release assets.
+          archive="$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).archivePath)" "$log")"
+          test -f "$archive"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload WebUI archive
         uses: actions/upload-artifact@v7
         with:
           name: open-design-webui-${{ matrix.name }}
-          path: ${{ runner.temp }}/tools-pack/**/open-design-webui-*
+          path: ${{ steps.build.outputs.archive }}
           if-no-files-found: error
 
       - name: Upload build log

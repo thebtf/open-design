@@ -22,17 +22,20 @@ export async function probeWebuiStatus(
   ipcPath: string,
   request: WebuiIpcRequester = requestJsonIpc,
 ): Promise<{ url: string; daemonUrl: string | null } | null> {
+  let reply: { url?: string; daemonUrl?: string | null };
   try {
-    const reply = (await request(ipcPath, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 800 })) as {
-      url?: string;
-      daemonUrl?: string | null;
-    };
-    if (reply?.url != null && reply.url.length > 0) {
-      return { url: reply.url, daemonUrl: reply.daemonUrl ?? null };
-    }
-    return null;
+    reply = (await request(ipcPath, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 800 })) as typeof reply;
   } catch (error) {
     if (isNotRunningIpcError(error)) return null;
     throw error;
   }
+  // request() resolved → the socket is live, so the STATUS reply shape is now the
+  // invariant. A missing/empty url is a protocol failure (wedged or regressed
+  // worker), NOT a not-running state — returning null here would let callers
+  // treat the namespace as free (duplicate launch) or keep polling (hidden
+  // error), the exact bugs this helper exists to prevent. So throw instead.
+  if (reply?.url == null || reply.url.length === 0) {
+    throw new Error(`invalid STATUS reply from ${ipcPath}: missing url`);
+  }
+  return { url: reply.url, daemonUrl: reply.daemonUrl ?? null };
 }
