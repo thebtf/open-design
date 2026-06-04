@@ -1810,8 +1810,11 @@ function FooterSelectOption({
           {groupedOptions.length === 0 ? (
             <div className="home-hero__footer-select-empty">{t('homeHero.footer.noMatches')}</div>
           ) : (
-            groupedOptions.map((group) => (
-              <div className="home-hero__footer-select-group" key={group.label ?? 'ungrouped'}>
+            groupedOptions.map((group, index) => (
+              <div
+                className="home-hero__footer-select-group"
+                key={`${group.label ?? 'ungrouped'}:${group.options[0]?.value ?? index}`}
+              >
                 {group.label ? (
                   <div className="home-hero__footer-select-group-label">{group.label}</div>
                 ) : null}
