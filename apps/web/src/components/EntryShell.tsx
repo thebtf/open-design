@@ -648,6 +648,7 @@ export function EntryShell({
                 config={config}
                 agents={agents}
                 providerModelsCache={activeProviderModelsCache}
+                onProviderModelsCacheChange={activeSetProviderModelsCache}
                 daemonLive={daemonLive}
                 onModeChange={onModeChange}
                 onAgentChange={onAgentChange}

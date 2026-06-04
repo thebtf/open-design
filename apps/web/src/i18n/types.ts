@@ -295,6 +295,7 @@ export interface Dict {
   'settings.apiKeyInvalid': string;
   'settings.apiKeyCleaned': string;
   'settings.modelsLoadedFromAccount': string;
+  'settings.modelsLoadedCount': string;
   'settings.modelSourceAccount': string;
   'settings.modelSourceSuggested': string;
   'settings.fetchModels': string;
@@ -323,6 +324,11 @@ export interface Dict {
   'settings.azureModelFetchHint': string;
   'settings.apiVersion': string;
   'settings.byokImageModel': string;
+  'settings.byokVideoModel': string;
+  'settings.byokVideoI2vHint': string;
+  'settings.byokSpeechModel': string;
+  'settings.byokSpeechVoice': string;
+  'settings.byokModelDefaultOption': string;
   'settings.apiHint': string;
   'settings.skipForNow': string;
   'settings.getStarted': string;

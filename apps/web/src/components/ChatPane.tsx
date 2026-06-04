@@ -360,6 +360,12 @@ interface Props {
   byokApiProtocol?: AppConfig['apiProtocol'];
   byokImageModel?: string;
   onChangeByokImageModel?: (model: string) => void;
+  byokVideoModel?: string;
+  onChangeByokVideoModel?: (model: string) => void;
+  byokSpeechModel?: string;
+  onChangeByokSpeechModel?: (model: string) => void;
+  byokSpeechVoice?: string;
+  onChangeByokSpeechVoice?: (voice: string) => void;
   composerFooterAccessory?: ReactNode;
   // Forwarded straight to the chat composer's mid-chat design-system
   // switcher. ProjectView owns the project record so the parent is the
@@ -485,6 +491,12 @@ export function ChatPane({
   byokApiProtocol,
   byokImageModel,
   onChangeByokImageModel,
+  byokVideoModel,
+  onChangeByokVideoModel,
+  byokSpeechModel,
+  onChangeByokSpeechModel,
+  byokSpeechVoice,
+  onChangeByokSpeechVoice,
   composerFooterAccessory,
   currentDesignSystemId,
   onActiveDesignSystemChange,
@@ -1651,6 +1663,12 @@ export function ChatPane({
             byokApiProtocol={byokApiProtocol}
             byokImageModel={byokImageModel}
             onChangeByokImageModel={onChangeByokImageModel}
+            byokVideoModel={byokVideoModel}
+            onChangeByokVideoModel={onChangeByokVideoModel}
+            byokSpeechModel={byokSpeechModel}
+            onChangeByokSpeechModel={onChangeByokSpeechModel}
+            byokSpeechVoice={byokSpeechVoice}
+            onChangeByokSpeechVoice={onChangeByokSpeechVoice}
             currentSkillId={currentSkillId}
             onProjectSkillChange={onProjectSkillChange}
             pinnedPluginId={activePluginSnapshot?.pluginId ?? null}
