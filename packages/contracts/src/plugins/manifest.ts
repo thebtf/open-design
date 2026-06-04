@@ -136,6 +136,21 @@ export const PluginConnectorRefSchema = z.object({
 
 export type PluginConnectorRef = z.infer<typeof PluginConnectorRefSchema>;
 
+export const BundleChildSchema = z.object({
+  id:   z.string().min(1).regex(/^[a-z0-9][a-z0-9._-]*$/),
+  path: z.string().min(1),
+}).passthrough();
+
+export type BundleChild = z.infer<typeof BundleChildSchema>;
+
+export const PluginBundleSchema = z.object({
+  skills:        z.array(BundleChildSchema).optional(),
+  designSystems: z.array(BundleChildSchema).optional(),
+  craft:         z.array(BundleChildSchema).optional(),
+}).passthrough();
+
+export type PluginBundle = z.infer<typeof PluginBundleSchema>;
+
 export const PluginManifestSchema = z.object({
   $schema:     z.string().optional(),
   specVersion: OpenDesignSpecVersionSchema.optional(),
@@ -200,6 +215,7 @@ export const PluginManifestSchema = z.object({
       required: z.array(PluginConnectorRefSchema).optional(),
       optional: z.array(PluginConnectorRefSchema).optional(),
     }).passthrough().optional(),
+    bundle: PluginBundleSchema.optional(),
     inputs: z.array(InputFieldSchema).optional(),
     capabilities: z.array(z.string()).optional(),
   }).passthrough().optional(),

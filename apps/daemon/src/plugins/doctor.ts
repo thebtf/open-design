@@ -21,6 +21,7 @@ import { findAtom, isImplementedAtom, isKnownAtom } from './atoms.js';
 import { validateConnectorRefs, type ConnectorProbe } from './connector-gate.js';
 import { isParseableUntil } from './until.js';
 import { listSnapshotsForProject, markSnapshotStale } from './snapshots.js';
+import { buildBundleRegistryOverlay, buildBundleRegistryOverlayForPlugin } from './bundle.js';
 
 type SqliteDb = Database.Database;
 
@@ -50,6 +51,7 @@ export function doctorPlugin(
 ): DoctorReport {
   const issues: Diagnostic[] = [];
   const manifest = plugin.manifest;
+  const expandedRegistry = buildBundleRegistryOverlayForPlugin(plugin, registry);
 
   const validation = validateSafe(manifest);
   for (const err of validation.errors) {
@@ -144,7 +146,7 @@ export function doctorPlugin(
   }
 
   const resolved = resolveContext(manifest, {
-    registry,
+    registry: expandedRegistry,
     warnOnMissing: options?.warnOnMissingRefs ?? true,
   });
   for (const warn of resolved.warnings) {
@@ -204,9 +206,11 @@ export function summarizeDoctor(report: DoctorReport): string {
   return parts.join('\n');
 }
 
-export function buildRegistryViewFromManifest(_manifest: PluginManifest, fallback: RegistryView): RegistryView {
-  // Phase 1 stub — returns the fallback unchanged. Phase 2A will overlay
-  // bundled-plugin-specific catalogs when the plugin ships its own skills /
-  // design systems within `<plugin>/skills/` etc.
-  return fallback;
+export function buildRegistryViewFromManifest(
+  manifest: PluginManifest,
+  fallback: RegistryView,
+  bundleRoot?: string,
+  namespace = manifest.name,
+): RegistryView {
+  return buildBundleRegistryOverlay(manifest, fallback, bundleRoot, namespace);
 }

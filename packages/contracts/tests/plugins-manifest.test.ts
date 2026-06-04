@@ -85,6 +85,25 @@ describe('plugin manifest localized text', () => {
     expect(resolveLocalizedText(entry.description_i18n, 'zh-CN')).toBe('中文描述。');
   });
 
+  it('accepts declared bundle children', () => {
+    const manifest = PluginManifestSchema.parse({
+      name: 'deck-bundle',
+      version: '1.0.0',
+      od: {
+        kind: 'bundle',
+        bundle: {
+          skills: [{ id: 'deck-skeleton', path: 'skills/deck-skeleton' }],
+          designSystems: [{ id: 'linear-clone', path: 'design-systems/linear-clone' }],
+          craft: [{ id: 'deck-pacing', path: 'craft/deck-pacing.md' }],
+        },
+      },
+    });
+
+    expect(manifest.od?.bundle?.skills?.[0]?.id).toBe('deck-skeleton');
+    expect(manifest.od?.bundle?.designSystems?.[0]?.path).toBe('design-systems/linear-clone');
+    expect(manifest.od?.bundle?.craft?.[0]?.id).toBe('deck-pacing');
+  });
+
   it('falls back from exact locale to base language, English, then first value', () => {
     expect(resolveLocalizedText({ en: 'English', zh: '中文' }, 'zh-CN')).toBe('中文');
     expect(resolveLocalizedText({ 'zh-CN': '中文' }, 'fr')).toBe('中文');

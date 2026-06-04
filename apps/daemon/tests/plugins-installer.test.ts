@@ -13,6 +13,7 @@ import { installFromLocalFolder, installPlugin, uninstallPlugin } from '../src/p
 import { listInstalledPlugins } from '../src/plugins/registry.js';
 import { addMarketplace, resolvePluginInMarketplaces } from '../src/plugins/marketplaces.js';
 import type { InstalledPluginRecord } from '@open-design/contracts';
+import { doctorPlugin } from '../src/plugins/doctor.js';
 
 let tmpRoot: string;
 let pluginsRoot: string;
@@ -233,4 +234,125 @@ describe('installFromLocalFolder', () => {
     expect(row?.marketplaceTrust).toBe('restricted');
     expect(row?.trust).toBe('restricted');
   });
+
+  it('registers every declared local bundle child under the bundle namespace', async () => {
+    const bundleRoot = await writeBundleFixture('my-bundle');
+
+    const successIds: string[] = [];
+    for await (const ev of installFromLocalFolder(db, {
+      source: bundleRoot,
+      roots: { userPluginsRoot: pluginsRoot },
+    })) {
+      if (ev.kind === 'success') successIds.push(ev.plugin.id);
+      if (ev.kind === 'error') throw new Error(ev.message);
+    }
+
+    expect(successIds).toEqual([
+      'my-bundle/deck-skeleton',
+      'my-bundle/linear-clone',
+      'my-bundle/deck-pacing',
+    ]);
+    const rows = listInstalledPlugins(db);
+    expect(rows.map((row) => row.id).sort()).toEqual([
+      'my-bundle/deck-pacing',
+      'my-bundle/deck-skeleton',
+      'my-bundle/linear-clone',
+    ]);
+    expect(rows.every((row) => row.sourceKind === 'local')).toBe(true);
+    expect(rows.find((row) => row.id === 'my-bundle/deck-skeleton')?.fsPath)
+      .toBe(path.join(pluginsRoot, 'my-bundle', 'skills', 'deck-skeleton'));
+  });
+
+  it('rejects unsafe bundle child paths without leaving registry rows', async () => {
+    const bundleRoot = await writeBundleFixture('unsafe-bundle', {
+      skills: [{ id: 'deck-skeleton', path: '../deck-skeleton' }],
+    });
+
+    let errorMessage = '';
+    for await (const ev of installFromLocalFolder(db, {
+      source: bundleRoot,
+      roots: { userPluginsRoot: pluginsRoot },
+    })) {
+      if (ev.kind === 'error') errorMessage = ev.message;
+    }
+
+    expect(errorMessage).toContain('unsafe path');
+    expect(listInstalledPlugins(db)).toHaveLength(0);
+  });
+
+  it('doctor resolves bundle-local skill, design-system, and craft references', async () => {
+    const bundleRoot = await writeBundleFixture('doctor-bundle', {
+      skillContext: true,
+    });
+
+    for await (const ev of installFromLocalFolder(db, {
+      source: bundleRoot,
+      roots: { userPluginsRoot: pluginsRoot },
+    })) {
+      if (ev.kind === 'error') throw new Error(ev.message);
+    }
+
+    const skill = listInstalledPlugins(db).find((row) => row.id === 'doctor-bundle/deck-skeleton');
+    expect(skill).toBeTruthy();
+
+    const report = doctorPlugin(skill!, {
+      skills: [],
+      designSystems: [],
+      craft: [],
+      atoms: [],
+    });
+    expect(report.issues.filter((issue) => issue.code === 'context.unresolved')).toEqual([]);
+  });
 });
+
+async function writeBundleFixture(
+  id: string,
+  overrides: {
+    skills?: Array<{ id: string; path: string }>;
+    skillContext?: boolean;
+  } = {},
+): Promise<string> {
+  const bundleRoot = path.join(tmpRoot, id);
+  await mkdir(path.join(bundleRoot, 'skills', 'deck-skeleton'), { recursive: true });
+  await mkdir(path.join(bundleRoot, 'design-systems', 'linear-clone'), { recursive: true });
+  await mkdir(path.join(bundleRoot, 'craft'), { recursive: true });
+  await writeFile(path.join(bundleRoot, 'SKILL.md'), `# ${id}\n`);
+  await writeFile(path.join(bundleRoot, 'open-design.json'), JSON.stringify({
+    name: id,
+    version: '1.0.0',
+    title: 'Deck Bundle',
+    od: {
+      kind: 'bundle',
+      bundle: {
+        skills: overrides.skills ?? [{ id: 'deck-skeleton', path: 'skills/deck-skeleton' }],
+        designSystems: [{ id: 'linear-clone', path: 'design-systems/linear-clone' }],
+        craft: [{ id: 'deck-pacing', path: 'craft/deck-pacing.md' }],
+      },
+    },
+  }, null, 2));
+  await writeFile(path.join(bundleRoot, 'skills', 'deck-skeleton', 'SKILL.md'), [
+    '---',
+    'name: deck-skeleton',
+    'description: Deck skeleton skill',
+    '---',
+    '# Deck Skeleton',
+  ].join('\n'));
+  await writeFile(path.join(bundleRoot, 'skills', 'deck-skeleton', 'open-design.json'), JSON.stringify({
+    name: 'deck-skeleton',
+    version: '1.0.0',
+    title: 'Deck Skeleton',
+    ...(overrides.skillContext ? {
+      od: {
+        kind: 'skill',
+        context: {
+          skills: [{ ref: 'deck-skeleton' }],
+          designSystem: { ref: 'linear-clone' },
+          craft: ['deck-pacing'],
+        },
+      },
+    } : { od: { kind: 'skill' } }),
+  }, null, 2));
+  await writeFile(path.join(bundleRoot, 'design-systems', 'linear-clone', 'DESIGN.md'), '# Linear Clone\n');
+  await writeFile(path.join(bundleRoot, 'craft', 'deck-pacing.md'), '# Deck Pacing\n');
+  return bundleRoot;
+}

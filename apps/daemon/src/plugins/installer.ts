@@ -25,6 +25,7 @@ import { x as tarExtract } from 'tar';
 import {
   defaultRegistryRoots,
   deleteInstalledPlugin,
+  listInstalledPlugins,
   resolvePluginFolder,
   upsertInstalledPlugin,
   type ResolveOptions,
@@ -39,6 +40,12 @@ import type {
 import type Database from 'better-sqlite3';
 import { recordPluginEvent } from './events.js';
 import { upsertPluginLockfileEntry } from './lockfile.js';
+import {
+  bundleNamespaceForRecord,
+  isBundleManifest,
+  resolveBundleChildRecords,
+  type BundleChildRecord,
+} from './bundle.js';
 
 type SqliteDb = Database.Database;
 
@@ -739,32 +746,50 @@ export async function* installFromLocalFolder(
   }
   warnings.push(...parsed.warnings);
 
+  if (isBundleManifest(parsed.record.manifest)) {
+    const namespace = bundleNamespaceForRecord(parsed.record);
+    const bundleChildren = await resolveBundleChildRecords({
+      bundleRoot: destFolder,
+      bundleRecord: parsed.record,
+      namespace,
+      sourceKind: recordedSourceKind,
+      source: recordedSource,
+      resolveOptions: buildResolveOptions({}, opts),
+    });
+    if (!bundleChildren.ok) {
+      await fsp.rm(destFolder, { recursive: true, force: true }).catch(() => undefined);
+      yield {
+        kind: 'error',
+        message: bundleChildren.errors.join('; '),
+        warnings: [...warnings, ...bundleChildren.warnings],
+      };
+      return;
+    }
+    warnings.push(...bundleChildren.warnings);
+
+    yield { kind: 'progress', phase: 'persisting', message: 'Writing installed_plugins rows' };
+    persistBundleChildren(db, namespace, bundleChildren.records);
+    if (opts.lockfilePath) {
+      for (const child of bundleChildren.records) {
+        await upsertPluginLockfileEntry(opts.lockfilePath, child.record);
+      }
+    }
+    for (const child of bundleChildren.records) {
+      recordInstallEvent(opts, child.record, warnings);
+    }
+    for (const child of bundleChildren.records) {
+      yield { kind: 'success', plugin: child.record, warnings };
+    }
+    return;
+  }
+
   yield { kind: 'progress', phase: 'persisting', message: 'Writing installed_plugins row' };
   upsertInstalledPlugin(db, parsed.record);
   if (opts.lockfilePath) {
     await upsertPluginLockfileEntry(opts.lockfilePath, parsed.record);
   }
 
-  // Plan §3.II1 / §3.JJ1 — emit 'plugin.installed' OR
-  // 'plugin.upgraded' (per opts.eventKind) so ops dashboards +
-  // `od plugin events tail` see the operation land in the in-
-  // memory ring buffer. Best-effort; recordPluginEvent never
-  // throws.
-  recordPluginEvent({
-    kind:     opts.eventKind === 'upgraded' ? 'plugin.upgraded' : 'plugin.installed',
-    pluginId: parsed.record.id,
-    details:  {
-      version:    parsed.record.version,
-      sourceKind: parsed.record.sourceKind,
-      source:     parsed.record.source,
-      sourceMarketplaceId: parsed.record.sourceMarketplaceId,
-      sourceMarketplaceEntryName: parsed.record.sourceMarketplaceEntryName,
-      sourceMarketplaceEntryVersion: parsed.record.sourceMarketplaceEntryVersion,
-      marketplaceTrust: parsed.record.marketplaceTrust,
-      trust:      parsed.record.trust,
-      warnings:   warnings.length,
-    },
-  });
+  recordInstallEvent(opts, parsed.record, warnings);
 
   yield { kind: 'success', plugin: parsed.record, warnings };
 }
@@ -849,10 +874,10 @@ function isSafeBasename(name: string): boolean {
 }
 
 function buildResolveOptions(
-  base: Pick<ResolveOptions, 'folder' | 'folderId' | 'sourceKind' | 'source'>,
+  base: Partial<Pick<ResolveOptions, 'folder' | 'folderId' | 'sourceKind' | 'source'>>,
   opts: InstallOptions,
 ): ResolveOptions {
-  const resolveOptions: ResolveOptions = { ...base };
+  const resolveOptions: ResolveOptions = { ...base } as ResolveOptions;
   if (opts.sourceMarketplaceId) resolveOptions.sourceMarketplaceId = opts.sourceMarketplaceId;
   if (opts.sourceMarketplaceEntryName) resolveOptions.sourceMarketplaceEntryName = opts.sourceMarketplaceEntryName;
   if (opts.sourceMarketplaceEntryVersion) resolveOptions.sourceMarketplaceEntryVersion = opts.sourceMarketplaceEntryVersion;
@@ -869,6 +894,43 @@ function buildResolveOptions(
 
 function installedTrustFromMarketplace(trust: MarketplaceTrust): TrustTier {
   return trust === 'restricted' ? 'restricted' : 'trusted';
+}
+
+function persistBundleChildren(db: SqliteDb, namespace: string, children: BundleChildRecord[]): void {
+  const replaceNamespace = db.transaction(() => {
+    for (const existing of listInstalledPlugins(db)) {
+      if (existing.id.startsWith(`${namespace}/`)) {
+        deleteInstalledPlugin(db, existing.id);
+      }
+    }
+    for (const child of children) {
+      upsertInstalledPlugin(db, child.record);
+    }
+  });
+  replaceNamespace();
+}
+
+function recordInstallEvent(opts: InstallOptions, record: InstalledPluginRecord, warnings: string[]): void {
+  // Plan §3.II1 / §3.JJ1 — emit 'plugin.installed' OR
+  // 'plugin.upgraded' (per opts.eventKind) so ops dashboards +
+  // `od plugin events tail` see the operation land in the in-
+  // memory ring buffer. Best-effort; recordPluginEvent never
+  // throws.
+  recordPluginEvent({
+    kind:     opts.eventKind === 'upgraded' ? 'plugin.upgraded' : 'plugin.installed',
+    pluginId: record.id,
+    details:  {
+      version:    record.version,
+      sourceKind: record.sourceKind,
+      source:     record.source,
+      sourceMarketplaceId: record.sourceMarketplaceId,
+      sourceMarketplaceEntryName: record.sourceMarketplaceEntryName,
+      sourceMarketplaceEntryVersion: record.sourceMarketplaceEntryVersion,
+      marketplaceTrust: record.marketplaceTrust,
+      trust:      record.trust,
+      warnings:   warnings.length,
+    },
+  });
 }
 
 export type { PluginSourceKind };
