@@ -881,6 +881,10 @@ export function ProjectView({
   // include a nonce so re-clicking the same name after the user closed the
   // tab still focuses it.
   const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null);
+  // Like `openRequest`, but additionally asks the preview workspace to open the
+  // file's Share/Export menu. Drives the "Share" next-step action: it reuses the
+  // existing export/deploy surface rather than introducing a new share backend.
+  const [shareRequest, setShareRequest] = useState<{ name: string; nonce: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<AbortController | null>(null);
   const streamingConversationIdRef = useRef<string | null>(null);
@@ -4519,6 +4523,24 @@ export function ProjectView({
     }
   }, [githubConnected, onOpenSettings, designSystemProject, projectFiles]);
 
+  // "Next step" affordance handlers (shown under the last assistant message
+  // once it produced a previewable HTML artifact). Recommended-direction chips
+  // prefill the composer (not auto-send) so the user reviews before sending;
+  // Share reuses the preview workspace's existing Share/Export menu. There is
+  // deliberately no generic "continue editing" / "optimize visuals" action —
+  // free-form follow-ups belong in the composer and the visual directions are
+  // already covered by the concrete chips, so vague catch-alls only added noise.
+  const handleArtifactChip = useCallback((_fileName: string, prompt: string) => {
+    setComposerDraftSignal({ text: prompt, nonce: Date.now() });
+  }, []);
+  const handleArtifactShare = useCallback(
+    (fileName: string) => {
+      requestOpenFile(fileName);
+      setShareRequest({ name: fileName, nonce: Date.now() });
+    },
+    [requestOpenFile],
+  );
+
   const handleBrowserUsePrompt = useCallback((text: string) => {
     setWorkspaceFocused(false);
     setComposerDraftSignal({
@@ -5079,6 +5101,8 @@ export function ProjectView({
               onOpenQuestions={openQuestionsTab}
               onContinueRemainingTasks={handleContinueRemainingTasks}
               onAssistantFeedback={handleAssistantFeedback}
+              onArtifactShare={handleArtifactShare}
+              onArtifactChip={handleArtifactChip}
               onForkFromMessage={handleForkFromMessage}
               forkingMessageId={forkingMessageId}
               onNewConversation={handleNewConversation}
@@ -5208,6 +5232,7 @@ export function ProjectView({
           commentQueueOnSend={commentQueueOnSend}
           commentSendDisabled={currentConversationQueueDisabled}
           openRequest={openRequest}
+          shareRequest={shareRequest}
           liveArtifactEvents={liveArtifactEvents}
           designSystemActivityEvents={designSystemActivityEvents}
           tabsState={openTabsState}

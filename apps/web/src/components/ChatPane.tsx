@@ -290,6 +290,9 @@ interface Props {
   onOpenQuestions?: () => void;
   onContinueRemainingTasks?: (assistantMessage: ChatMessage, todos: TodoItem[]) => void;
   onAssistantFeedback?: (assistantMessage: ChatMessage, change: ChatMessageFeedbackChange) => void;
+  // "Next step" affordance handlers forwarded to the last assistant message.
+  onArtifactShare?: (fileName: string) => void;
+  onArtifactChip?: (fileName: string, prompt: string) => void;
   onForkFromMessage?: (assistantMessage: ChatMessage) => void;
   forkingMessageId?: string | null;
   // Header "+" button — kicks off ProjectView's create-conversation flow.
@@ -454,6 +457,8 @@ export function ChatPane({
   onOpenQuestions,
   onContinueRemainingTasks,
   onAssistantFeedback,
+  onArtifactShare,
+  onArtifactChip,
   onForkFromMessage,
   forkingMessageId = null,
   onNewConversation,
@@ -527,7 +532,7 @@ export function ChatPane({
   const anchorActiveRef = useRef(false);
   const tailSpacerRef = useRef<HTMLDivElement | null>(null);
   const prevLastUserIdRef = useRef<string | undefined>(undefined);
-  // AssistantMessage's four interaction callbacks are re-created per render and
+  // AssistantMessage's interaction callbacks are re-created per render and
   // excluded from its memo comparison (so streaming doesn't re-render every
   // message). Route them through this ref so a memoized message still calls the
   // LATEST handler. See areAssistantMessagePropsEqual in AssistantMessage.tsx.
@@ -535,12 +540,16 @@ export function ChatPane({
     onSubmitForm,
     onContinueRemainingTasks,
     onAssistantFeedback,
+    onArtifactShare,
+    onArtifactChip,
     onForkFromMessage,
   });
   assistantCallbacksRef.current = {
     onSubmitForm,
     onContinueRemainingTasks,
     onAssistantFeedback,
+    onArtifactShare,
+    onArtifactChip,
     onForkFromMessage,
   };
   const [tab, setTab] = useState<Tab>('chat');
@@ -1469,6 +1478,8 @@ export function ChatPane({
                 nextUserContentByAssistantId={nextUserContentByAssistantId}
                 assistantCallbacksRef={assistantCallbacksRef}
                 onContinueRemainingTasks={onContinueRemainingTasks}
+                onArtifactShare={onArtifactShare}
+                onArtifactChip={onArtifactChip}
                 onForkFromMessage={onForkFromMessage}
                 onAssistantFeedback={onAssistantFeedback}
                 forkingMessageId={forkingMessageId}
@@ -1701,6 +1712,8 @@ interface AssistantCallbacks {
   onAssistantFeedback:
     | ((message: ChatMessage, change: ChatMessageFeedbackChange) => void)
     | undefined;
+  onArtifactShare: ((fileName: string) => void) | undefined;
+  onArtifactChip: ((fileName: string, prompt: string) => void) | undefined;
   onForkFromMessage: ((message: ChatMessage) => void) | undefined;
 }
 
@@ -1760,6 +1773,8 @@ function ChatRows({
   nextUserContentByAssistantId,
   assistantCallbacksRef,
   onContinueRemainingTasks,
+  onArtifactShare,
+  onArtifactChip,
   onForkFromMessage,
   onAssistantFeedback,
   forkingMessageId,
@@ -1793,6 +1808,8 @@ function ChatRows({
   nextUserContentByAssistantId: Map<string, string>;
   assistantCallbacksRef: MutableRefObject<AssistantCallbacks>;
   onContinueRemainingTasks?: (assistantMessage: ChatMessage, todos: TodoItem[]) => void;
+  onArtifactShare?: (fileName: string) => void;
+  onArtifactChip?: (fileName: string, prompt: string) => void;
   onForkFromMessage?: (message: ChatMessage) => void;
   onAssistantFeedback?: (message: ChatMessage, change: ChatMessageFeedbackChange) => void;
   forkingMessageId?: string | null;
@@ -1887,6 +1904,16 @@ function ChatRows({
         onFeedback={
           onAssistantFeedback
             ? (rating) => assistantCallbacksRef.current.onAssistantFeedback?.(m, rating)
+            : undefined
+        }
+        onArtifactShare={
+          onArtifactShare
+            ? (fileName) => assistantCallbacksRef.current.onArtifactShare?.(fileName)
+            : undefined
+        }
+        onArtifactChip={
+          onArtifactChip
+            ? (fileName, prompt) => assistantCallbacksRef.current.onArtifactChip?.(fileName, prompt)
             : undefined
         }
       />

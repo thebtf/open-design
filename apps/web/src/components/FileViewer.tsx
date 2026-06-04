@@ -953,6 +953,9 @@ interface Props {
   onOpenFileReplacing?: (openName: string, closeName: string) => void;
   commentPortalId?: string;
   onCommentModeChange?: (active: boolean) => void;
+  // Bumped nonce asking this viewer to open its Share/Export menu (chat-side
+  // "Share" next-step action). Only HTML artifacts expose a Share menu.
+  shareRequest?: { nonce: number } | null;
 }
 
 export function FileViewer({
@@ -974,6 +977,7 @@ export function FileViewer({
   onOpenFileReplacing,
   commentPortalId,
   onCommentModeChange,
+  shareRequest,
 }: Props) {
   const rendererMatch = artifactRendererRegistry.resolve({
     file,
@@ -1015,6 +1019,7 @@ export function FileViewer({
         onFileSaved={onFileSaved}
         commentPortalId={commentPortalId}
         onCommentModeChange={onCommentModeChange}
+        shareRequest={shareRequest}
       />
     );
   }
@@ -4385,6 +4390,7 @@ function HtmlViewer({
   onFileSaved,
   commentPortalId,
   onCommentModeChange,
+  shareRequest,
 }: {
   projectId: string;
   projectKind: TrackingProjectKind;
@@ -4403,6 +4409,7 @@ function HtmlViewer({
   onFileSaved?: () => Promise<void> | void;
   commentPortalId?: string;
   onCommentModeChange?: (active: boolean) => void;
+  shareRequest?: { nonce: number } | null;
 }) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
@@ -7091,6 +7098,27 @@ function HtmlViewer({
     const timeout = window.setTimeout(() => setExportReadyNudge(false), 1800);
     return () => window.clearTimeout(timeout);
   }, [canShare, file.name, projectId]);
+
+  // Chat-side "Share" next-step action: when a new share request arrives, open
+  // the share menu (the toolbar's "Share" button → deploy menu, which holds the
+  // share-link items AND the "publish online" providers). This is the right
+  // surface for "share" — publishing is the prerequisite for a shareable link,
+  // and that publish step lives here; the download menu is export-to-disk, a
+  // different intent. The artifact source may still be loading when the request
+  // lands (the file was just auto-opened), so we defer until `canShare` flips
+  // true and only consume each nonce once.
+  const consumedShareNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    const nonce = shareRequest?.nonce;
+    if (nonce == null) return;
+    if (consumedShareNonceRef.current === nonce) return;
+    if (!canShare) return;
+    consumedShareNonceRef.current = nonce;
+    setExportReadyNudge(false);
+    markExportReadyNudgeSeen(projectId, file.name);
+    setDownloadMenuOpen(false);
+    setDeployMenuOpen(true);
+  }, [shareRequest?.nonce, canShare, projectId, file.name]);
 
   const openDownloadMenu = () => {
     fireArtifactHeaderClick('share_dropdown');
