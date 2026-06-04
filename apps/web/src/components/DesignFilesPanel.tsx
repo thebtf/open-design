@@ -41,6 +41,10 @@ interface Props {
   onUploadFiles: (files: File[]) => void;
   onPaste: () => void;
   onNewSketch: () => void;
+  // Reports the folder the panel is currently viewing so the parent can create
+  // new files (upload / paste / new sketch / dropped files) under it instead
+  // of the project root. Fires whenever the user navigates folders.
+  onCurrentDirChange?: (dir: string) => void;
   uploadError?: string | null;
   onClearUploadError?: () => void;
   onPluginFolderAgentAction?: (
@@ -156,6 +160,7 @@ export function DesignFilesPanel({
   onNewSketch,
   uploadError = null,
   onClearUploadError,
+  onCurrentDirChange,
   onPluginFolderAgentAction,
   activePluginActionPaths = new Set(),
   hiddenPluginActionPaths = new Set(),
@@ -178,6 +183,13 @@ export function DesignFilesPanel({
   const [installNotice, setInstallNotice] = useState<ActionNotice | null>(null);
   const [renaming, setRenaming] = useState<{ name: string; draft: string; saving: boolean } | null>(null);
   const [currentDir, setCurrentDir] = useState<string>('');
+
+  // Keep the parent's create-target in sync with the folder being viewed, so
+  // uploads / pastes / new sketches / dropped files land in the open folder
+  // rather than the project root.
+  useEffect(() => {
+    onCurrentDirChange?.(currentDir);
+  }, [currentDir, onCurrentDirChange]);
 
   // Derive immediate subdirectories and files at the current directory level
   // from the flat files list. Files with names like "a/b/c.html" contribute

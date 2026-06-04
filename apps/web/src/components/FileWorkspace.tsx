@@ -2054,6 +2054,7 @@ export function FileWorkspace({
             files={visibleFiles}
             liveArtifacts={liveArtifactEntries}
             onRefreshFiles={onRefreshFiles}
+            onCurrentDirChange={setUploadDir}
             onOpenFile={openFile}
             onOpenLiveArtifact={(tabId) => openFile(tabId)}
             onRenameFile={handleRename}
