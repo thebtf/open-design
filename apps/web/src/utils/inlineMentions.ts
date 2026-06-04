@@ -203,3 +203,26 @@ interface MentionMatch {
   token: string;
   entity: InlineMentionEntity;
 }
+
+/**
+ * Whether `@label` appears in `text` as a standalone inline mention (proper
+ * left/right boundaries, not a substring of a longer word). Used to reconcile
+ * selected context (plugins/MCP/connectors) against the prompt at submit time:
+ * a context whose mention pill the user deleted should not be sent to the agent.
+ */
+export function mentionTokenPresent(text: string, label: string): boolean {
+  const token = inlineMentionToken(label);
+  let from = 0;
+  let start = text.indexOf(token, from);
+  while (start !== -1) {
+    if (
+      isMentionBoundary(text, start) &&
+      isMentionRightBoundary(text, start + token.length)
+    ) {
+      return true;
+    }
+    from = start + 1;
+    start = text.indexOf(token, from);
+  }
+  return false;
+}

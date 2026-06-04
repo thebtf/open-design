@@ -52,7 +52,7 @@ import type {
   PromptTemplateSummary,
   SkillSummary,
 } from '../types';
-import { inlineMentionToken } from '../utils/inlineMentions';
+import { inlineMentionToken, mentionTokenPresent } from '../utils/inlineMentions';
 import { HomeHero, type ExamplePromptInfo, type HomeHeroHandle } from './HomeHero';
 import { findChip, HOME_HERO_CHIPS, type HomeHeroChip } from './home-hero/chips';
 import {
@@ -1283,28 +1283,38 @@ export function HomeView({
       submittedActive = { ...submittedActive, result, inputs: submittedPluginInputs };
       setActive(submittedActive);
     }
-    const contextPlugins = selectedPluginContexts.map((item) => ({
-      id: item.record.id,
-      title: item.record.title,
-      ...(item.record.manifest?.description
-        ? { description: item.record.manifest.description }
-        : {}),
-    }));
-    const contextMcpServers = selectedMcpContexts.map((item) => ({
-      id: item.server.id,
-      ...(item.server.label ? { label: item.server.label } : {}),
-      ...(item.server.transport ? { transport: item.server.transport } : {}),
-      ...(item.server.url ? { url: item.server.url } : {}),
-      ...(item.server.command ? { command: item.server.command } : {}),
-    }));
-    const contextConnectors = selectedConnectorContexts.map((item) => ({
-      id: item.connector.id,
-      name: item.connector.name,
-      provider: item.connector.provider,
-      category: item.connector.category,
-      status: item.connector.status,
-      ...(item.connector.accountLabel ? { accountLabel: item.connector.accountLabel } : {}),
-    }));
+    // Only forward a context whose @mention pill still survives in the prompt.
+    // The Lexical composer lets users delete a mention pill (backspace, edit);
+    // when they do, that plugin/MCP/connector should stop being sent to the
+    // agent. Reconcile each selected context against the serialized prompt text.
+    const contextPlugins = selectedPluginContexts
+      .filter((item) => mentionTokenPresent(trimmed, item.record.title))
+      .map((item) => ({
+        id: item.record.id,
+        title: item.record.title,
+        ...(item.record.manifest?.description
+          ? { description: item.record.manifest.description }
+          : {}),
+      }));
+    const contextMcpServers = selectedMcpContexts
+      .filter((item) => mentionTokenPresent(trimmed, item.server.label || item.server.id))
+      .map((item) => ({
+        id: item.server.id,
+        ...(item.server.label ? { label: item.server.label } : {}),
+        ...(item.server.transport ? { transport: item.server.transport } : {}),
+        ...(item.server.url ? { url: item.server.url } : {}),
+        ...(item.server.command ? { command: item.server.command } : {}),
+      }));
+    const contextConnectors = selectedConnectorContexts
+      .filter((item) => mentionTokenPresent(trimmed, item.connector.name))
+      .map((item) => ({
+        id: item.connector.id,
+        name: item.connector.name,
+        provider: item.connector.provider,
+        category: item.connector.category,
+        status: item.connector.status,
+        ...(item.connector.accountLabel ? { accountLabel: item.connector.accountLabel } : {}),
+      }));
     const submittedProjectKind =
       submittedActive?.projectKind ?? fallbackProjectKind ?? projectKindForSkill(activeSkill) ?? 'other';
     const submittedProjectMetadata = submittedActive?.mediaSurface

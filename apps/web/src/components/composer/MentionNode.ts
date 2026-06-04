@@ -7,6 +7,7 @@ import {
   type Spread,
 } from 'lexical';
 import type { InlineMentionEntity, InlineMentionKind } from '../../utils/inlineMentions';
+import { connectorBrandColor } from '../../utils/connectorBrandColor';
 
 // The atomic @mention node. It extends TextNode so the node's *text* remains
 // the literal `@token` and serialization back to the wire format is free:
@@ -98,6 +99,7 @@ export class MentionNode extends TextNode {
     dom.setAttribute('data-mention-id', this.__mentionId);
     dom.setAttribute('data-mention-kind', this.__mentionKind);
     if (this.__title) dom.setAttribute('title', this.__title);
+    this.applyBrandHue(dom);
     return dom;
   }
 
@@ -110,12 +112,27 @@ export class MentionNode extends TextNode {
     if (prev.__mentionKind !== this.__mentionKind) {
       dom.className = `composer-inline-mention composer-inline-mention--${this.__mentionKind}`;
       dom.setAttribute('data-mention-kind', this.__mentionKind);
+      this.applyBrandHue(dom);
+    } else if (prev.__label !== this.__label || prev.__mentionId !== this.__mentionId) {
+      this.applyBrandHue(dom);
     }
     if (prev.__title !== this.__title) {
       if (this.__title) dom.setAttribute('title', this.__title);
       else dom.removeAttribute('title');
     }
     return updated;
+  }
+
+  // Connector pills get a per-connector brand color instead of the shared
+  // green `--m-hue`, so e.g. Notion reads black and Figma purple. Other kinds
+  // keep their CSS-driven hue (we clear any stale inline value).
+  private applyBrandHue(dom: HTMLElement): void {
+    if (this.__mentionKind === 'connector') {
+      const hue = connectorBrandColor({ id: this.__mentionId, name: this.__label });
+      dom.style.setProperty('--m-hue', hue);
+    } else {
+      dom.style.removeProperty('--m-hue');
+    }
   }
 
   // Nothing may merge into or split a mention — keeps the token indivisible.
