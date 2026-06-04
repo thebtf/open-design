@@ -33,6 +33,7 @@ import {
 } from '../providers/registry';
 import { deriveFileOps, type FileOpEntry } from '../runtime/file-ops';
 import { latestTodosFromEvents, type TodoItem } from '../runtime/todos';
+import { deliverableSlideNavForActiveFile, isSlideNavDeliverableNow } from '../runtime/slide-nav';
 import {
   type AgentEvent,
   type AgentInfo,
@@ -777,15 +778,19 @@ export function FileWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareRequest]);
 
-  // Slide-nav request: if the named deck is an open tab, bring it forward so the
-  // matching FileViewer below is mounted and can consume the nonce. We do not
-  // open a closed file — auto-flipping a slide is a follow-along, not a reason
-  // to yank the user into a tab they never opened.
+  // Slide-nav request: decide deliverability once, at fire time. Only if the
+  // named deck is already an open tab do we mark this nonce deliverable and
+  // bring it forward so the matching FileViewer is mounted and flips. We never
+  // open a closed file — auto-flipping is a follow-along, not a reason to yank
+  // the user into a tab they never opened. Recording the deliverable nonce in
+  // state (not a ref) also means a request for a closed deck stays undeliverable
+  // forever: opening that file later matches the name but not the nonce, so the
+  // stale request can't resurface and jump the preview.
+  const [slideNavDeliverableNonce, setSlideNavDeliverableNonce] = useState<number | null>(null);
   useEffect(() => {
-    if (!slideNavRequest) return;
-    const name = slideNavRequest.name;
-    if (!name || !persistedTabs.includes(name)) return;
-    setActiveTab(name);
+    if (!isSlideNavDeliverableNow(slideNavRequest, persistedTabs)) return;
+    setSlideNavDeliverableNonce(slideNavRequest!.nonce);
+    setActiveTab(slideNavRequest!.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideNavRequest]);
 
@@ -2256,11 +2261,11 @@ export function FileWorkspace({
                 ? { nonce: shareRequest.nonce }
                 : null
             }
-            slideNavRequest={
-              slideNavRequest && slideNavRequest.name === activeFile.name
-                ? { slideIndex: slideNavRequest.slideIndex, nonce: slideNavRequest.nonce }
-                : null
-            }
+            slideNavRequest={deliverableSlideNavForActiveFile(
+              slideNavRequest,
+              activeFile.name,
+              slideNavDeliverableNonce,
+            )}
           />
         ) : (
           <div className="viewer-empty">
