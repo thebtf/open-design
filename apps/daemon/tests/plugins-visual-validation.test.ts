@@ -484,6 +484,36 @@ describe('visual validation atom runner', () => {
     }
   });
 
+  it('does not treat substring directory names as reference-image segments', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'od-visual-segment-match-'));
+    try {
+      await writeFile(path.join(cwd, 'index.html'), '<!doctype html><html><body>ok</body></html>', 'utf8');
+      await mkdir(path.join(cwd, 'assets', 'aspect'), { recursive: true });
+      await mkdir(path.join(cwd, 'preferences'), { recursive: true });
+      await writeFile(
+        path.join(cwd, 'assets', 'aspect', 'hero.png'),
+        PNG.sync.write(createFilledPng(200, 120, [255, 255, 255, 255])),
+      );
+      await writeFile(
+        path.join(cwd, 'preferences', 'panel.png'),
+        PNG.sync.write(createFilledPng(200, 120, [255, 255, 255, 255])),
+      );
+
+      const result = await runVisualValidation({
+        cwd,
+        captureScreenshot: async () => {
+          throw new Error('visual validation should skip when no reference images are present');
+        },
+      });
+
+      expect(result.report.status).toBe('skipped');
+      expect(result.report.message).toContain('no reference screenshot');
+      expect(result.signals).toEqual({});
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('scores from the worst reference match instead of the best one', async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), 'od-visual-worst-reference-'));
     try {

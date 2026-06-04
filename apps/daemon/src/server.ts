@@ -10793,10 +10793,13 @@ export async function startServer({
   // back to the canned v1 stub for diagnostic bisection or replay
   // of pre-Stage-D runs. Errors are swallowed (logged) so a bad
   // pipeline never blocks the agent run.
-  const firePipelineForRun = (args) => {
+  const executePipelineForRun = async (args) => {
     const { run, snapshot, runs, db: dbHandle } = args;
-    if (!snapshot?.pipeline?.stages?.length) return;
+    if (!snapshot?.pipeline?.stages?.length) {
+      return { outcomes: [], lastSignalsByStage: new Map() };
+    }
     const env = { maxIterations: readPluginEnvKnobs().maxDevloopIterations };
+    const lastSignalsByStage = new Map();
     const emitPipeline = (evt) => {
       try { runs.emit(run, evt.kind, evt); } catch {/* ignore */}
     };
@@ -10811,13 +10814,17 @@ export async function startServer({
       : 'registry';
     let runStage;
     if (runnerMode === 'stub') {
-      runStage = ({ iteration }) => ({
-        signals: {
-          'critique.score':  iteration >= 0 ? 4 : 0,
-          'preview.ok':      true,
-          'user.confirmed':  true,
-        },
-      });
+      runStage = ({ stage, iteration }) => {
+        const outcome = {
+          signals: {
+            'critique.score':  iteration >= 0 ? 4 : 0,
+            'preview.ok':      true,
+            'user.confirmed':  true,
+          },
+        };
+        lastSignalsByStage.set(stage.id, outcome.signals);
+        return outcome;
+      };
     } else {
       registerBuiltInAtomWorkers();
       runStage = async ({ stage, iteration, snapshot: stageSnapshot }) => {
@@ -10840,13 +10847,14 @@ export async function startServer({
           iteration,
           snapshot:       stageSnapshot,
         });
+        lastSignalsByStage.set(stage.id, outcome.signals ?? {});
         return {
           signals:         outcome.signals,
           critiqueSummary: outcome.critiqueSummary,
         };
       };
     }
-    void runPipelineForRun({
+    const outcomes = await runPipelineForRun({
       db: dbHandle,
       runId:           run.id,
       projectId:       projectIdForRun,
@@ -10857,7 +10865,13 @@ export async function startServer({
       runStage,
       emitPipeline,
       emitGenui,
-    }).catch((err) => {
+    });
+    return { outcomes, lastSignalsByStage };
+  };
+
+  const firePipelineForRun = (args) => {
+    const { run, snapshot, runs } = args;
+    void executePipelineForRun(args).catch((err) => {
       try {
         runs.emit(run, 'pipeline_stage_failed', {
           runId:      run.id,
@@ -13306,10 +13320,52 @@ export async function startServer({
       for (const chunk of plaintextStdoutBuffer) {
         send('stdout', { chunk });
       }
-      if (status === 'succeeded') {
+      let finalStatus = status;
+      if (
+        finalStatus === 'succeeded'
+        && run.postRunPipelineSnapshot?.pipeline?.stages?.length
+      ) {
+        try {
+          const { outcomes, lastSignalsByStage } = await executePipelineForRun({
+            run,
+            snapshot: run.postRunPipelineSnapshot,
+            runs: design.runs,
+            db,
+          });
+          const failedStage = outcomes.find((outcome) => {
+            if (!outcome.converged) return true;
+            const stage = run.postRunPipelineSnapshot.pipeline.stages.find(
+              (candidate) => candidate.id === outcome.stageId,
+            );
+            if (!stage?.atoms.includes('visual-validation')) return false;
+            const signals = lastSignalsByStage.get(outcome.stageId) ?? {};
+            if (signals['preview.ok'] === false) return true;
+            return typeof signals['critique.score'] === 'number'
+              && signals['critique.score'] < 4;
+          });
+          if (failedStage) {
+            const failedSignals = lastSignalsByStage.get(failedStage.stageId) ?? {};
+            const failedScore = failedSignals['critique.score'];
+            send('error', createSseErrorPayload(
+              'PLUGIN_PIPELINE_FAILED',
+              typeof failedScore === 'number'
+                ? `Post-run visual validation scored ${failedScore}, so the run cannot finish successfully.`
+                : `Post-run pipeline stage "${failedStage.stageId}" did not finish successfully.`,
+            ));
+            finalStatus = 'failed';
+          }
+        } catch (err) {
+          send('error', createSseErrorPayload(
+            'PLUGIN_PIPELINE_FAILED',
+            err instanceof Error ? err.message : String(err),
+          ));
+          finalStatus = 'failed';
+        }
+      }
+      if (finalStatus === 'succeeded') {
         persistDeliveredAgentSessionState();
       }
-      finishWithRetryDecision(status, code, signal);
+      finishWithRetryDecision(finalStatus, code, signal);
       } finally {
         // Best-effort cleanup of the per-run agy log file on every close
         // path — successful, failed, cancelled, or non-zero exit — so
@@ -13808,25 +13864,13 @@ export async function startServer({
         console.warn('[plugins] skill candidate hook setup failed', err);
       }
     }
+    run.postRunPipelineSnapshot = resolvedSnapshot?.ok && pipelineSchedule.postRun
+      ? {
+          ...resolvedSnapshot.snapshot,
+          pipeline: pipelineSchedule.postRun,
+        }
+      : null;
     design.runs.start(run, () => startChatRun(meta, run));
-    if (resolvedSnapshot?.ok && pipelineSchedule.postRun) {
-      void design.runs.wait(run)
-        .then((finalStatus) => {
-          if (finalStatus.status !== 'succeeded') return;
-          firePipelineForRun({
-            run,
-            snapshot: {
-              ...resolvedSnapshot.snapshot,
-              pipeline: pipelineSchedule.postRun,
-            },
-            runs: design.runs,
-            db,
-          });
-        })
-        .catch((err) => {
-          console.warn('[plugins] post-run pipeline scheduling failed', err);
-        });
-    }
 
     // Analytics v2: emit run_created (daemon-side authoritative) and
     // schedule run_finished on terminal state. The matching `chat-routes.ts`

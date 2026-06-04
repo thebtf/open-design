@@ -383,11 +383,13 @@ async function resolveReferenceImages(
 
 function isAutoDiscoveredReferenceImage(relPath: string): boolean {
   const name = path.basename(relPath);
-  const dir = path.dirname(relPath);
+  const dirSegments = path.dirname(relPath)
+    .split(/[\\/]+/)
+    .filter((segment) => segment !== '.' && segment.length > 0);
   return isNamedReferenceImage(name)
-    || dir.includes('references')
-    || dir.includes('reference')
-    || dir.includes('spec');
+    || dirSegments.includes('references')
+    || dirSegments.includes('reference')
+    || dirSegments.includes('spec');
 }
 
 function isNamedReferenceImage(name: string): boolean {
