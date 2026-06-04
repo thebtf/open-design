@@ -428,3 +428,24 @@ describe('DesignFilesPanel directory navigation', () => {
     expect(screen.getByTestId('design-file-row-top.html')).toBeTruthy();
   });
 });
+
+describe('DesignFilesPanel current-directory sync', () => {
+  afterEach(() => cleanup());
+
+  it('reports the active folder so new files are created under it, not the root', () => {
+    const onCurrentDirChange = vi.fn();
+    renderPanel(
+      [
+        file({ name: 'top.html', kind: 'html' }),
+        file({ name: 'assets/logo.png', kind: 'image' }),
+      ],
+      { onCurrentDirChange },
+    );
+    // Mounts at the root.
+    expect(onCurrentDirChange).toHaveBeenLastCalledWith('');
+    // Navigate into the folder — the parent must learn the new target dir, or
+    // upload / paste / new-sketch would create at the project root (#3358 regression).
+    fireEvent.click(document.querySelector('.df-dir-row .df-row-name-btn')!);
+    expect(onCurrentDirChange).toHaveBeenLastCalledWith('assets');
+  });
+});
