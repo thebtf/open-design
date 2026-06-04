@@ -108,8 +108,8 @@ export function ToolCard({
   if (name === 'Bash') return <BashCard input={use.input} result={result} runStreaming={isStreaming} runSucceeded={isSucceeded} />;
   if (name === 'Glob' || name === 'list_files') return <GlobCard input={use.input} result={result} runStreaming={isStreaming} runSucceeded={isSucceeded} />;
   if (name === 'Grep') return <GrepCard input={use.input} result={result} runStreaming={isStreaming} runSucceeded={isSucceeded} />;
-  if (name === 'WebFetch' || name === 'web_fetch') return <WebFetchCard input={use.input} />;
-  if (name === 'WebSearch' || name === 'web_search') return <WebSearchCard input={use.input} />;
+  if (name === 'WebFetch' || name === 'web_fetch') return <WebFetchCard input={use.input} result={result} runStreaming={isStreaming} runSucceeded={isSucceeded} />;
+  if (name === 'WebSearch' || name === 'web_search') return <WebSearchCard input={use.input} result={result} runStreaming={isStreaming} runSucceeded={isSucceeded} />;
   return <GenericCard name={name} input={use.input} result={result} runStreaming={isStreaming} runSucceeded={isSucceeded} />;
 }
 
@@ -698,13 +698,13 @@ function GrepCard({ input, result, runStreaming, runSucceeded }: { input: unknow
   );
 }
 
-function WebFetchCard({ input }: { input: unknown }) {
+function WebFetchCard({ input, result, runStreaming, runSucceeded }: { input: unknown; result?: Props['result']; runStreaming: boolean; runSucceeded: boolean }) {
   const t = useT();
   const obj = (input ?? {}) as { url?: string };
   return (
     <div className="op-card op-web">
       <div className="op-card-head">
-        <span className="op-status op-status-ok"><Icon name="check" size={14} /></span>
+        <ResultBadge result={result} runStreaming={runStreaming} runSucceeded={runSucceeded} />
         <span className="op-title">{t('tool.fetch')}</span>
         <span className="op-meta">{obj.url ?? ''}</span>
       </div>
@@ -712,13 +712,13 @@ function WebFetchCard({ input }: { input: unknown }) {
   );
 }
 
-function WebSearchCard({ input }: { input: unknown }) {
+function WebSearchCard({ input, result, runStreaming, runSucceeded }: { input: unknown; result?: Props['result']; runStreaming: boolean; runSucceeded: boolean }) {
   const t = useT();
   const obj = (input ?? {}) as { query?: string };
   return (
     <div className="op-card op-web">
       <div className="op-card-head">
-        <span className="op-status op-status-ok"><Icon name="check" size={14} /></span>
+        <ResultBadge result={result} runStreaming={runStreaming} runSucceeded={runSucceeded} />
         <span className="op-title">{t('tool.search')}</span>
         <span className="op-meta">{obj.query ?? ''}</span>
       </div>
