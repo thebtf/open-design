@@ -31,7 +31,7 @@ import type { IntegrationTab } from './IntegrationsView';
 import type { CreateInput, ImportClaudeDesignOutcome } from './NewProjectPanel';
 import {
   CONNECTOR_CALLBACK_MESSAGE_TYPE,
-  CONNECTORS_CHANGED_EVENT,
+  listenForConnectorsChanged,
 } from './connectors-events';
 import { fetchConnectorCatalogSnapshot } from './connectors-state';
 import type {
@@ -310,8 +310,7 @@ export function EntryView({
     function onConnectorsChanged() {
       void reloadConnectorCatalog({ refreshDiscovery: true });
     }
-    window.addEventListener(CONNECTORS_CHANGED_EVENT, onConnectorsChanged);
-    return () => window.removeEventListener(CONNECTORS_CHANGED_EVENT, onConnectorsChanged);
+    return listenForConnectorsChanged(onConnectorsChanged);
   }, [reloadConnectorCatalog]);
 
   // When the OAuth flow is handed off to the user's system browser (desktop

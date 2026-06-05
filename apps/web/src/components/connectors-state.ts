@@ -5,6 +5,29 @@ import {
   fetchConnectorStatuses,
 } from '../providers/registry';
 
+export type ConnectorAuthSnapshot = Pick<ConnectorDetail, 'status'> &
+  Partial<Pick<ConnectorDetail, 'accountLabel' | 'lastError'>>;
+
+export function connectorAuthSnapshotChanged(
+  current: ConnectorAuthSnapshot | null | undefined,
+  next: ConnectorAuthSnapshot | null | undefined,
+): boolean {
+  if (current == null && next == null) return false;
+  if (current == null || next == null) return true;
+  return (
+    next.status !== current.status ||
+    next.accountLabel !== current.accountLabel ||
+    next.lastError !== current.lastError
+  );
+}
+
+export function hasConnectorStatusChanges(
+  current: ConnectorDetail[],
+  statuses: ConnectorStatusResponse['statuses'],
+): boolean {
+  return current.some((connector) => connectorAuthSnapshotChanged(connector, statuses[connector.id]));
+}
+
 export function mergeConnectorCatalog(
   current: ConnectorDetail[],
   incoming: ConnectorDetail[],

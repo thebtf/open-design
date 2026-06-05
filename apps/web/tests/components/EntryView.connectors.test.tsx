@@ -132,10 +132,12 @@ describe('EntryView connector refresh', () => {
     expect(screen.getByTestId('entry-connectors').textContent).not.toContain('Gmail');
 
     window.dispatchEvent(new Event(CONNECTORS_CHANGED_EVENT));
+    window.dispatchEvent(new Event(CONNECTORS_CHANGED_EVENT));
 
     await waitFor(() => {
       expect(screen.getByTestId('entry-connectors').textContent).toContain('Gmail:connected');
     });
     expect(fetchConnectorDiscovery).toHaveBeenCalledWith({ refresh: true });
+    expect(fetchConnectorDiscovery).toHaveBeenCalledTimes(1);
   });
 });

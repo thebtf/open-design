@@ -59,7 +59,7 @@ import {
 import { CaretFloatingLayer } from './composer/CaretFloatingLayer';
 import { ANNOTATION_EVENT, type AnnotationEventDetail } from "./PreviewDrawOverlay";
 import { DesignSystemSwitchPicker } from "./DesignSystemSwitchPicker";
-import { CONNECTORS_CHANGED_EVENT } from './connectors-events';
+import { listenForConnectorsChanged } from './connectors-events';
 import { fetchConnectorCatalogSnapshot } from './connectors-state';
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
@@ -595,10 +595,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         if (cancelled) return;
         setConnectors(rows.filter((connector) => connector.status === 'connected'));
       }
-      window.addEventListener(CONNECTORS_CHANGED_EVENT, refreshConnectors);
+      const stopListening = listenForConnectorsChanged(() => void refreshConnectors());
       return () => {
         cancelled = true;
-        window.removeEventListener(CONNECTORS_CHANGED_EVENT, refreshConnectors);
+        stopListening();
       };
     }, [composerEngaged]);
 

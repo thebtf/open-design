@@ -29,6 +29,7 @@ import {
   CONNECTOR_CALLBACK_MESSAGE_TYPE,
   notifyConnectorsChanged,
 } from './connectors-events';
+import { hasConnectorStatusChanges } from './connectors-state';
 import { ConnectorLogo, useResolvedTheme } from './ConnectorLogo';
 import { Icon } from './Icon';
 import { CenteredLoader } from './Loading';
@@ -463,14 +464,7 @@ export function ConnectorsBrowser({
 
   const reloadConnectorStatuses = useCallback(async () => {
     const statuses = await fetchConnectorStatuses();
-    const statusChanged = connectorsRef.current.some((connector) => {
-      const next = statuses[connector.id];
-      return next !== undefined && (
-        next.status !== connector.status ||
-        next.accountLabel !== connector.accountLabel ||
-        next.lastError !== connector.lastError
-      );
-    });
+    const statusChanged = hasConnectorStatusChanges(connectorsRef.current, statuses);
     setConnectors((curr) => applyConnectorStatuses(curr, statuses));
     setConnectorAuthorizationPending((curr) => updateConnectorAuthorizationPendingFromStatuses(curr, statuses));
     setConnectorAuthorizationError((curr) => clearConnectorAuthorizationErrorsForConnected(curr, statuses));
