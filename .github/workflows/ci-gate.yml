@@ -101,6 +101,7 @@ jobs:
           provided_count="$(jq -s 'length' "$results")"
 
           if [ "$POLICY" = "any-success" ]; then
+            echo "OD_CI_GATE_RESULT policy=$POLICY provided=$provided_count success=$success_count"
             if [ "$success_count" -ge 1 ]; then
               echo "CI gate accepted: at least one provided path succeeded."
               exit 0
@@ -110,6 +111,7 @@ jobs:
           fi
 
           if [ "$POLICY" = "both-success" ]; then
+            echo "OD_CI_GATE_RESULT policy=$POLICY provided=$provided_count success=$success_count"
             if [ "$success_count" -eq "$provided_count" ]; then
               echo "CI gate accepted: all provided paths succeeded."
               exit 0
