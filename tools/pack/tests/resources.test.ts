@@ -10,9 +10,8 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import process from "node:process";
 
 import {
@@ -20,6 +19,7 @@ import {
   copyBundledResourceTrees,
 } from "../src/resources.js";
 import { copyOptionalVelaCliBinary, resolveOptionalVelaCliBinary } from "../src/vela-cli.js";
+import { ensureDaemonPlaywrightFixture } from "./playwright-fixture.js";
 
 async function writeFakeOpenCodeCompanion(
   source: string,
@@ -405,38 +405,38 @@ describe("copyBundledPlaywrightChromium", () => {
     }
   });
 
-  it("copies a Playwright cache that chromium.launch() can use in headless mode", async () => {
+  it("copies the daemon-resolved Playwright revision trees into packaged resources", async () => {
     const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-playwright-launch-"));
     const resourceRoot = join(root, "resources", "open-design");
     const workspaceRoot = process.cwd();
-    const daemonRequire = createRequire(join(workspaceRoot, "apps", "daemon", "package.json"));
-    const { chromium } = daemonRequire("playwright") as {
-      chromium: { launch: () => Promise<{ close: () => Promise<void> }> };
-    };
-    const originalBrowsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+    const playwrightFixture = await ensureDaemonPlaywrightFixture(workspaceRoot);
 
     try {
       const copied = await copyBundledPlaywrightChromium({
         workspaceRoot,
         resourceRoot,
       });
-      process.env.PLAYWRIGHT_BROWSERS_PATH = join(resourceRoot, "ms-playwright");
 
-      const browser = await chromium.launch();
-      await browser.close();
-
-      expect(copied.sourceRoots.some((rootPath) => /chromium_headless_shell-\d+$/i.test(rootPath))).toBe(true);
+      expect(copied.sourceRoots).toEqual([
+        playwrightFixture.headedRoot,
+        playwrightFixture.headlessRoot,
+      ]);
+      expect(copied.targetRoots).toEqual([
+        join(resourceRoot, "ms-playwright", basename(playwrightFixture.headedRoot)),
+        join(resourceRoot, "ms-playwright", basename(playwrightFixture.headlessRoot)),
+      ]);
       await expect(
         access(
-          copied.targetRoots.find((rootPath) => /chromium_headless_shell-\d+$/i.test(rootPath))!,
+          join(
+            resourceRoot,
+            "ms-playwright",
+            basename(playwrightFixture.headlessRoot),
+            basename(playwrightFixture.headlessSentinel),
+          ),
         ),
       ).resolves.toBeUndefined();
     } finally {
-      if (originalBrowsersPath == null) {
-        delete process.env.PLAYWRIGHT_BROWSERS_PATH;
-      } else {
-        process.env.PLAYWRIGHT_BROWSERS_PATH = originalBrowsersPath;
-      }
+      await playwrightFixture.cleanup();
       await rm(root, { force: true, recursive: true });
     }
   });

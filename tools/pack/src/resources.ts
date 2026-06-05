@@ -90,9 +90,10 @@ export async function copyBundledPlaywrightChromium({
   sourceExecutablePath?: string;
   workspaceRoot: string;
 }): Promise<{ sourceRoots: string[]; targetRoots: string[] }> {
-  const executablePath = sourceExecutablePath ?? resolveDaemonPlaywrightChromiumExecutablePath(workspaceRoot);
-  await access(executablePath);
-  const sourceRoots = await resolveChromiumBundleRoots(executablePath);
+  const { sourceRoots } = await resolveBundledPlaywrightChromiumSourceRoots({
+    sourceExecutablePath,
+    workspaceRoot,
+  });
   const targetRoots: string[] = [];
   for (const sourceRoot of sourceRoots) {
     const targetRoot = join(resourceRoot, "ms-playwright", basename(sourceRoot));
@@ -103,7 +104,7 @@ export async function copyBundledPlaywrightChromium({
   return { sourceRoots, targetRoots };
 }
 
-function resolveDaemonPlaywrightChromiumExecutablePath(workspaceRoot: string): string {
+export function resolveDaemonPlaywrightChromiumExecutablePath(workspaceRoot: string): string {
   const daemonPackagePath = join(workspaceRoot, "apps", "daemon", "package.json");
   const requireFromDaemon = createRequire(daemonPackagePath);
   const playwrightModule = requireFromDaemon("playwright") as {
@@ -128,7 +129,7 @@ function resolveChromiumBundleRoot(executablePath: string): string {
   throw new Error(`tools-pack: unable to locate Chromium bundle root for ${executablePath}`);
 }
 
-async function resolveChromiumBundleRoots(executablePath: string): Promise<string[]> {
+export async function resolveChromiumBundleRoots(executablePath: string): Promise<string[]> {
   const primaryRoot = resolveChromiumBundleRoot(executablePath);
   const match = basename(primaryRoot).match(/^chromium(?:_headless_shell)?-(\d+)$/i);
   if (!match) return [primaryRoot];
@@ -144,4 +145,18 @@ async function resolveChromiumBundleRoots(executablePath: string): Promise<strin
     roots.push(variantRoot);
   }
   return roots;
+}
+
+export async function resolveBundledPlaywrightChromiumSourceRoots({
+  sourceExecutablePath,
+  workspaceRoot,
+}: {
+  sourceExecutablePath?: string;
+  workspaceRoot: string;
+}): Promise<{ executablePath: string; sourceRoots: string[] }> {
+  const executablePath =
+    sourceExecutablePath ?? resolveDaemonPlaywrightChromiumExecutablePath(workspaceRoot);
+  await access(executablePath);
+  const sourceRoots = await resolveChromiumBundleRoots(executablePath);
+  return { executablePath, sourceRoots };
 }
