@@ -80,9 +80,6 @@ const shots = {
   outro:   imageAsset('html-video/frame-logo-outro.png',      { width: 1280, quality: 82 }),
 };
 
-// Hardcoded snapshot — last manually verified. Used as fallback when the
-// GitHub API is unreachable at build time and as the dateline in the card.
-const SNAPSHOT_DATE = '2026-06-05';
 // Numeric fallback for when the GitHub API is unreachable at build time;
 // the at-a-glance card shows this under a "GitHub stars" label, so it must
 // read as a count, not the word "GitHub".
@@ -110,7 +107,6 @@ type HtmlVideoCopy = {
     templates: string;
     engines: string;
     license: string;
-    foot: (date: string) => string;
   };
   whyTitle: string;
   ideas: CopyPair[];
@@ -173,7 +169,6 @@ const HTML_VIDEO_COPY_EN: HtmlVideoCopy = {
     templates: 'Video templates',
     engines: 'Render engine',
     license: 'License',
-    foot: (date) => `Verified ${date} · live stars where the GitHub API is reachable.`,
   },
   whyTitle: 'Why this exists',
   ideas: [
@@ -286,7 +281,6 @@ const HTML_VIDEO_COPY_ZH: HtmlVideoCopy = {
     templates: '视频模板',
     engines: '渲染引擎',
     license: '许可证',
-    foot: (date) => `数据已在 ${date} 校验；GitHub API 可用时使用实时 star 数。`,
   },
   whyTitle: '为什么需要它',
   ideas: [
@@ -523,9 +517,6 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
       <li><span class="num">Hyperframes</span><span class="lbl">{copy.glance.engines}</span></li>
       <li><span class="num">{licenseLabel}</span><span class="lbl">{copy.glance.license}</span></li>
     </ul>
-    <p class="ha-glance-foot">
-      {copy.glance.foot(SNAPSHOT_DATE)}
-    </p>
   </section>
 
   <section class="ha-section" aria-labelledby="hv-why">
@@ -607,14 +598,15 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
     </ul>
   </section>
 
-  <section class="ha-section" aria-labelledby="hv-soundtrack">
-    <h2 id="hv-soundtrack" class="ha-h2">{copy.soundtrackTitle}</h2>
-    <p class="ha-section-lead">{copy.soundtrackLead}</p>
-  </section>
-
-  <section class="ha-section" aria-labelledby="hv-quickstart">
-    <h2 id="hv-quickstart" class="ha-h2">{copy.quickstartTitle}</h2>
-    <p class="ha-section-lead">{copy.quickstartLead}</p>
+  <section class="ha-section ha-duo" aria-label="Soundtrack and Quickstart">
+    <div class="ha-note">
+      <h2 id="hv-soundtrack" class="ha-note-h">{copy.soundtrackTitle}</h2>
+      <p>{copy.soundtrackLead}</p>
+    </div>
+    <div class="ha-note">
+      <h2 id="hv-quickstart" class="ha-note-h">{copy.quickstartTitle}</h2>
+      <p>{copy.quickstartLead}</p>
+    </div>
   </section>
 
   <section class="ha-section" aria-labelledby="hv-roadmap">
@@ -645,48 +637,55 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
 </Layout>
 
 <style>
-  /* Page-local styles. Tokens come from globals.css; layout/typography
-   * follows the Atelier Zero conventions used in sub-pages.css. Mirrors the
-   * HTML Anything page's style block, adapted to this page's class names. */
+  /* Page-local styles. Uses Open Design's global tokens from globals.css
+   * (--serif / --mono / --ink / --coral / --line …) so this page stays in the
+   * same visual system as the HTML Anything and Solutions pages. Spacing
+   * rhythm follows taste-skill: consistent section gaps, tight title→content,
+   * hairline dividers to group instead of large empty gaps. */
 
+  /* ---- CTA buttons ---- */
   .ha-cta {
-    margin-top: 1.25rem;
+    margin-top: 1.5rem;
     display: flex;
-    gap: 0.75rem;
+    gap: 0.6rem;
     flex-wrap: wrap;
   }
   .ha-btn {
     display: inline-flex;
     align-items: center;
-    padding: 0.55rem 1rem;
-    border: 1px solid var(--ink, #1a1a1a);
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--ink);
     border-radius: 999px;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    line-height: 1;
+    white-space: nowrap;
     text-decoration: none;
-    color: inherit;
-    transition: background 120ms ease, color 120ms ease;
+    color: var(--ink);
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
   }
-  .ha-btn:hover { background: var(--ink, #1a1a1a); color: var(--paper, #efe7d2); }
-  .ha-btn-primary { background: var(--ink, #1a1a1a); color: var(--paper, #efe7d2); }
-  .ha-btn-primary:hover { background: transparent; color: inherit; }
+  .ha-btn:hover { background: var(--ink); color: var(--paper); }
+  .ha-btn:active { transform: translateY(1px); }
+  .ha-btn-primary { background: var(--ink); color: var(--paper); }
+  .ha-btn-primary:hover { background: var(--coral); border-color: var(--coral); color: #fff; }
 
+  /* ---- Hero figure (kept restrained per taste-skill hero discipline) ---- */
   .ha-hero-figure {
-    margin: 2rem 0 0 0;
+    margin: 1.25rem 0 0 0;
     padding: 0;
   }
   .ha-hero-figure img {
     display: block;
     width: 100%;
     height: auto;
-    border-radius: 8px;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
+    border: 1px solid var(--line);
   }
 
+  /* ---- At-a-glance stat band ---- */
   .ha-glance {
-    margin: 3rem 0;
-    border-top: 1px solid currentColor;
-    border-bottom: 1px solid currentColor;
+    margin: 2.25rem 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     padding: 1.25rem 0;
   }
   .ha-glance ul {
@@ -694,74 +693,87 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
     padding: 0;
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1.5rem 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1.25rem 1.75rem;
   }
   .ha-glance li {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.2rem;
   }
   .ha-glance .num {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
-    font-size: 2.25rem;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1.9rem;
     line-height: 1;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+    color: var(--ink);
   }
   .ha-glance .lbl {
-    font-size: 0.85rem;
+    font-family: var(--mono);
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    opacity: 0.7;
+    letter-spacing: 0.12em;
+    color: var(--ink-mute);
   }
-  .ha-glance-foot {
-    margin-top: 1rem;
-    font-size: 0.8rem;
-    opacity: 0.6;
-  }
-
-  .ha-section { margin: 4rem 0; }
+  /* ---- Section rhythm: single-edge top margin so adjacent sections sit at a
+     consistent 2.25rem, never a doubled gap ---- */
+  .ha-section { margin: 0; padding-top: 2.25rem; }
   .ha-h2 {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
-    font-size: 2rem;
-    line-height: 1.15;
-    margin: 0 0 1rem 0;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    line-height: 1.1;
+    letter-spacing: -0.018em;
+    color: var(--ink);
+    margin: 0 0 0.75rem 0;
   }
   .ha-section-lead {
-    max-width: 60ch;
-    font-size: 1.05rem;
+    max-width: 62ch;
+    font-size: 1rem;
     line-height: 1.55;
-    opacity: 0.85;
-    margin: 0 0 2rem 0;
+    color: var(--ink-soft);
+    margin: 0 0 1.5rem 0;
   }
 
+  /* ---- Ideas / engines: bordered cards on hairline grid ---- */
   .ha-ideas {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+  .ha-idea {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1.25rem 1.35rem;
+    background: var(--paper-warm);
   }
   .ha-idea h3 {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
-    font-size: 1.25rem;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1.15rem;
+    line-height: 1.25;
+    color: var(--ink);
     margin: 0 0 0.5rem 0;
     display: flex;
     align-items: baseline;
-    gap: 0.6rem;
+    gap: 0.55rem;
     flex-wrap: wrap;
   }
-  .ha-idea p { margin: 0; line-height: 1.55; opacity: 0.85; }
+  .ha-idea p { margin: 0; font-size: 0.95rem; line-height: 1.55; color: var(--ink-soft); }
   .ha-tag {
-    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 0.7rem;
+    font-family: var(--mono);
+    font-size: 0.65rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     padding: 0.15rem 0.5rem;
-    border: 1px solid currentColor;
     border-radius: 999px;
-    opacity: 0.65;
+    background: var(--coral);
+    color: #fff;
     white-space: nowrap;
   }
 
+  /* ---- How-it-works numbered flow ---- */
   .ha-flow {
     list-style: none;
     padding: 0;
@@ -772,37 +784,42 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
   .ha-flow li {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.5rem 1.5rem;
-    padding: 1.5rem 0;
-    border-top: 1px solid currentColor;
+    gap: 0.25rem 1.25rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--line);
   }
-  .ha-flow li:last-child { border-bottom: 1px solid currentColor; }
+  .ha-flow li:last-child { border-bottom: 1px solid var(--line); }
   .step-num {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
-    font-size: 1.5rem;
-    opacity: 0.5;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    color: var(--coral);
+    padding-top: 0.2rem;
   }
-  .step-body { display: grid; gap: 0.5rem; }
+  .step-body { display: grid; gap: 0.3rem; }
   .ha-flow h3 {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
+    font-family: var(--serif);
+    font-weight: 600;
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
+    color: var(--ink);
   }
-  .ha-flow p { margin: 0; line-height: 1.55; opacity: 0.85; max-width: 64ch; }
+  .ha-flow p { margin: 0; font-size: 0.95rem; line-height: 1.55; color: var(--ink-soft); max-width: 70ch; }
 
+  /* ---- Template gallery ---- */
   .ha-showcase {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
   }
   .ha-showcase figure {
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.55rem;
   }
   .ha-showcase img {
     display: block;
@@ -811,43 +828,49 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
     aspect-ratio: 16 / 9;
     object-fit: cover;
     border-radius: 6px;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    background: rgba(0, 0, 0, 0.03);
+    border: 1px solid var(--line);
+    background: var(--paper-warm);
   }
   .ha-showcase figcaption {
-    font-size: 0.85rem;
-    opacity: 0.7;
-    line-height: 1.4;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-mute);
   }
 
+  /* ---- Surfaces (what you can make) ---- */
   .ha-surfaces {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 1rem;
+    gap: 0.85rem;
   }
   .ha-surfaces li {
-    border: 1px solid currentColor;
-    padding: 1rem 1.1rem;
-    border-radius: 4px;
+    border: 1px solid var(--line);
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.3rem;
   }
   .ha-surfaces h3 {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
-    font-size: 1.05rem;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--ink);
     margin: 0;
   }
   .ha-surfaces p {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     line-height: 1.45;
-    opacity: 0.75;
+    color: var(--ink-soft);
     margin: 0;
   }
 
+  /* ---- Agents pills ---- */
   .ha-agents {
     list-style: none;
     padding: 0;
@@ -857,44 +880,77 @@ const showcaseTiles = copy.showcase.map((tile, i) => ({
     gap: 0.5rem;
   }
   .ha-agents li {
-    border: 1px solid currentColor;
+    border: 1px solid var(--line);
     padding: 0.4rem 0.85rem;
     border-radius: 999px;
-    font-size: 0.9rem;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    background: var(--paper-warm);
   }
 
+  /* ---- Lightweight two-up notes (soundtrack / quickstart) ---- */
+  .ha-duo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+  .ha-note {
+    border-left: 2px solid var(--coral);
+    padding: 0.1rem 0 0.1rem 1.1rem;
+  }
+  .ha-note-h {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1.2rem;
+    line-height: 1.2;
+    color: var(--ink);
+    margin: 0 0 0.5rem 0;
+  }
+  .ha-note p {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 56ch;
+  }
+
+  /* ---- Roadmap columns ---- */
   .ha-roadmap {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 2rem;
+    gap: 1.5rem;
   }
   .ha-roadmap-col h3 {
-    font-family: var(--font-display, 'GT Sectra', Georgia, serif);
-    font-size: 1rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin: 0 0 0.75rem 0;
-    opacity: 0.7;
+    letter-spacing: 0.12em;
+    color: var(--coral);
+    margin: 0 0 0.6rem 0;
   }
   .ha-roadmap-col ul {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 0.4rem;
-    font-size: 0.95rem;
-    line-height: 1.5;
+    gap: 0.35rem;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
   }
 
+  /* ---- Open Design tieback ---- */
   .ha-tieback {
-    margin: 5rem 0 3rem 0;
-    padding: 2rem 0;
-    border-top: 1px solid currentColor;
-    border-bottom: 1px solid currentColor;
+    margin: 3rem 0 1rem 0;
+    padding: 1.75rem 0 0 0;
+    border-top: 1px solid var(--line);
   }
   .ha-tieback p {
-    max-width: 60ch;
+    max-width: 62ch;
+    font-size: 1rem;
     line-height: 1.6;
+    color: var(--ink-soft);
     margin: 0 0 1rem 0;
   }
   .ha-tieback .ha-cta {
