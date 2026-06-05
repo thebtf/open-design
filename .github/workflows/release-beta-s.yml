@@ -553,7 +553,7 @@ jobs:
       - name: Prepare self-hosted Windows toolchain
         shell: pwsh
         run: |
-          pnpm install --frozen-lockfile --prefer-offline
+          & "C:\Users\runner\.cargo\bin\fnm.exe" exec --using=24 -- pnpm.cmd install --frozen-lockfile --prefer-offline
 
       - name: Probe Windows signing capability
         id: sign_probe
