@@ -38,6 +38,14 @@
       "types": "./dist/api/research.d.ts",
       "default": "./dist/api/research.mjs"
     },
+    "./design-systems/components-manifest": {
+      "types": "./dist/design-systems/components-manifest.d.ts",
+      "default": "./dist/design-systems/components-manifest.mjs"
+    },
+    "./design-systems/token-schema": {
+      "types": "./dist/design-systems/token-schema.d.ts",
+      "default": "./dist/design-systems/token-schema.mjs"
+    },
     "./critique": {
       "types": "./dist/critique.d.ts",
       "default": "./dist/critique.mjs"
