@@ -13,11 +13,12 @@
     "zh-CN": "暗色高端 3D 创作者作品集落地页：全屏 Hero（渐变标题 + 鼠标磁吸 3D 人像）、随滚动横移的图片 marquee、带四角 3D 装饰与逐字揭示文案的 About、白底 Services 列表，以及滚动缩放堆叠的项目卡片。",
     "en": "Dark, premium 3D-creator portfolio landing page: a full-viewport hero with gradient-text headline and a mouse-following magnetic 3D portrait, a scroll-driven horizontal image marquee, an About section with corner 3D decorations and character-by-character scroll-reveal text, a white Services list, and sticky-stacking project cards."
   },
-  "license": "CC-BY-4.0",
+  "license": "MIT",
   "author": {
-    "name": "Eli"
+    "name": "Open Design",
+    "url": "https://github.com/nexu-io"
   },
-  "homepage": "https://motionsites.ai/sections",
+  "homepage": "https://github.com/nexu-io/open-design/tree/main/plugins/_official/examples/3d-creator-portfolio",
   "tags": [
     "example",
     "first-party",
