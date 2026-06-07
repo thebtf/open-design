@@ -487,6 +487,34 @@ describe("copyBundledPlaywrightChromium", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("fails when only the headless shell bundle is available for a channel launch", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-playwright-shell-only-"));
+    const resourceRoot = join(root, "resources", "open-design");
+    const sourceExecutablePath = join(
+      root,
+      "ms-playwright",
+      "chromium_headless_shell-1234",
+      "chrome-headless-shell-linux64",
+      "headless_shell",
+    );
+
+    try {
+      await mkdir(dirname(sourceExecutablePath), { recursive: true });
+      await writeFile(sourceExecutablePath, "#!/bin/sh\nexit 0\n", "utf8");
+      await chmod(sourceExecutablePath, 0o755);
+
+      await expect(
+        copyBundledPlaywrightChromium({
+          workspaceRoot: root,
+          resourceRoot,
+          sourceExecutablePath,
+        }),
+      ).rejects.toThrow(/missing the chromium-\* bundle required by channel: 'chromium'/);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("resolveOptionalVelaCliBinary", () => {

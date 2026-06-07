@@ -51,6 +51,9 @@ export const linuxResources = {
   desktopTemplate: join(resourcesRoot, "linux", "open-design.desktop.template"),
 } as const;
 
+const CHROMIUM_BUNDLE_ROOT_RE = /^chromium(?:_headless_shell)?-\d+$/i;
+const HEADED_CHROMIUM_BUNDLE_ROOT_RE = /^chromium-\d+$/i;
+
 const BUNDLED_RESOURCE_TREES = [
   { from: "skills", to: "skills" },
   // After the skills/design-templates split (specs/current/skills-and-design-templates.md)
@@ -121,7 +124,7 @@ function resolveChromiumBundleRoot(executablePath: string): string {
   let current = dirname(executablePath);
   while (true) {
     const name = basename(current);
-    if (/^chromium(?:_headless_shell)?-\d+$/i.test(name)) return current;
+    if (CHROMIUM_BUNDLE_ROOT_RE.test(name)) return current;
     const parent = dirname(current);
     if (parent === current) break;
     current = parent;
@@ -149,7 +152,18 @@ export async function resolveChromiumBundleRoots(executablePath: string): Promis
       // packaging the variant that actually backs chromium.launch().
     }
   }
+  assertBundledChromiumRootsSupportChannelLaunch(roots, executablePath);
   return roots;
+}
+
+function assertBundledChromiumRootsSupportChannelLaunch(
+  roots: readonly string[],
+  executablePath: string,
+): void {
+  if (roots.some((root) => HEADED_CHROMIUM_BUNDLE_ROOT_RE.test(basename(root)))) return;
+  throw new Error(
+    `tools-pack: bundled Playwright Chromium for ${executablePath} is missing the chromium-* bundle required by channel: 'chromium'; reinstall Playwright without --only-shell or add the headed Chromium bundle`,
+  );
 }
 
 export async function resolveBundledPlaywrightChromiumSourceRoots({
