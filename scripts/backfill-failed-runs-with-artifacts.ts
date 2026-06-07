@@ -6,9 +6,15 @@
 // forward the daemon classifies these as `succeeded`; this script repairs the
 // rows written before that fix.
 //
-// A row is repaired when its project directory under <dataDir>/projects/<id>/
-// contains any `*.artifact.json` sidecar (the canonical on-disk success
-// signal — there is no artifacts table in sqlite).
+// A row is repaired ONLY when the failed message itself recorded a produced
+// file (messages.produced_files_json) whose `*.artifact.json` sidecar still
+// exists on disk under <dataDir>/projects/<id>/. This correlates the repair to
+// the specific message/run that emitted the artifact — NOT to project-wide
+// artifact existence. Project directories are long-lived and accumulate
+// sidecars from many unrelated conversations/runs, so flipping every failed
+// row in a project on the strength of one unrelated artifact would reclassify
+// genuine failures (an irreversible data-integrity bug). Mirrors the daemon's
+// `artifactProducedThisRun` carve-out: the artifact must belong to THIS run.
 //
 // Usage:
 //   node --experimental-strip-types scripts/backfill-failed-runs-with-artifacts.ts --dry-run
@@ -62,15 +68,53 @@ function parseArgs(argv: string[]): { dataDir: string; dryRun: boolean } {
   return { dataDir: path.resolve(dataDir), dryRun };
 }
 
-function projectHasArtifact(projectsRoot: string, projectId: string): boolean {
-  const dir = path.join(projectsRoot, projectId);
-  let entries: string[];
+// A ProjectFile entry as persisted in messages.produced_files_json. Only the
+// name/path is needed to locate its sidecar; everything else is ignored.
+interface ProducedFileRef {
+  name?: unknown;
+  path?: unknown;
+}
+
+function parseProducedFiles(raw: unknown): ProducedFileRef[] {
+  if (typeof raw !== 'string' || !raw) return [];
   try {
-    entries = fs.readdirSync(dir);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ProducedFileRef[]) : [];
   } catch {
-    return false; // missing/vanished project dir — skip, not fatal
+    return []; // malformed JSON — treat as "no produced files", not fatal
   }
-  return entries.some((name) => name.endsWith('.artifact.json'));
+}
+
+// True when THIS message recorded a produced file whose `<name>.artifact.json`
+// sidecar still exists on disk. Resolved per file relative to the project dir,
+// so a sidecar from an unrelated run in the same project never counts.
+function messageProducedArtifact(
+  projectsRoot: string,
+  projectId: string,
+  producedFilesJson: unknown,
+): boolean {
+  const files = parseProducedFiles(producedFilesJson);
+  if (files.length === 0) return false;
+  const dir = path.join(projectsRoot, projectId);
+  for (const file of files) {
+    const rel = typeof file.path === 'string' && file.path
+      ? file.path
+      : typeof file.name === 'string'
+        ? file.name
+        : undefined;
+    if (!rel) continue;
+    // Reject path traversal / absolute paths; the sidecar must live inside the
+    // project dir next to the produced file.
+    const resolved = path.resolve(dir, `${rel}.artifact.json`);
+    const dirWithSep = dir.endsWith(path.sep) ? dir : dir + path.sep;
+    if (resolved !== dir && !resolved.startsWith(dirWithSep)) continue;
+    try {
+      if (fs.statSync(resolved).isFile()) return true;
+    } catch {
+      // sidecar absent — keep checking the message's other produced files
+    }
+  }
+  return false;
 }
 
 function main() {
@@ -87,17 +131,21 @@ function main() {
   try {
     const rows = db
       .prepare(
-        `SELECT m.id AS messageId, c.project_id AS projectId
+        `SELECT m.id AS messageId,
+                c.project_id AS projectId,
+                m.produced_files_json AS producedFilesJson
            FROM messages m
            JOIN conversations c ON c.id = m.conversation_id
           WHERE m.run_status = 'failed'`,
       )
-      .all() as Array<{ messageId: string; projectId: string }>;
+      .all() as Array<{ messageId: string; projectId: string; producedFilesJson: unknown }>;
 
-    const toFlip = rows.filter((row) => projectHasArtifact(projectsRoot, row.projectId));
+    const toFlip = rows.filter((row) =>
+      messageProducedArtifact(projectsRoot, row.projectId, row.producedFilesJson),
+    );
 
     console.log(
-      `Found ${rows.length} failed run row(s); ${toFlip.length} belong to projects with an artifact on disk.`,
+      `Found ${rows.length} failed run row(s); ${toFlip.length} recorded a produced file with an artifact sidecar on disk.`,
     );
     const byProject = new Map<string, number>();
     for (const row of toFlip) {
