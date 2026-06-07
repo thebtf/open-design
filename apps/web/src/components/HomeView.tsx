@@ -1370,8 +1370,9 @@ export function HomeView({
     );
     // Inputs used to (re)apply the plugin: design-system selection folded in,
     // but the deferred footer/media fields kept so the apply still validates
-    // its required inputs (e.g. od-media-generation needs `subject`). Stripping
-    // them here would change `inputsEqual` and force a needless re-apply.
+    // its required inputs (e.g. od-media-generation needs `subject`, hyperframes
+    // needs `model` to pick its pipeline). Stripping them here would change
+    // `inputsEqual` and force a needless re-apply.
     const submittedApplyInputs = submittedActive
       ? applyHomeDesignSystemSelectionToInputs(
           submittedActive.inputs,
