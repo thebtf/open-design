@@ -500,15 +500,13 @@ describe('ProjectView API empty response handling', () => {
     expect(capturedSystemPrompt).toContain('Use tabs for indentation and keep CTA copy terse.');
   });
 
-  it('portals the project instructions modal above the workspace stacking context', async () => {
+  it('does not expose the project instructions editor from the project header', async () => {
     const view = renderProjectView();
 
-    const addButton = await screen.findByTestId('project-instructions-add');
-    fireEvent.click(addButton);
+    await screen.findByTestId('project-title');
 
-    const backdrop = document.body.querySelector('.project-instructions-modal-backdrop');
-    expect(backdrop).toBeTruthy();
-    expect(backdrop?.parentElement).toBe(document.body);
+    expect(screen.queryByTestId('project-instructions-add')).toBeNull();
+    expect(view.container.querySelector('.project-instructions-chip')).toBeNull();
     expect(view.container.querySelector('.project-instructions-modal-backdrop')).toBeNull();
   });
 
