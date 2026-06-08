@@ -578,6 +578,7 @@ describe('langfuse-bridge.reportRunCompletedFromDaemon', () => {
     });
 
     process.env.OPEN_DESIGN_OBJECT_RELAY_URL = 'https://telemetry.open-design.ai/api/objects/batch';
+    process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL = 'https://telemetry.open-design.ai/api/langfuse';
     process.env.LANGFUSE_PUBLIC_KEY = 'pk';
     process.env.LANGFUSE_SECRET_KEY = 'sk';
     try {
@@ -613,14 +614,17 @@ describe('langfuse-bridge.reportRunCompletedFromDaemon', () => {
       });
     } finally {
       delete process.env.OPEN_DESIGN_OBJECT_RELAY_URL;
+      delete process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL;
       delete process.env.LANGFUSE_PUBLIC_KEY;
       delete process.env.LANGFUSE_SECRET_KEY;
     }
 
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(fetchSpy.mock.calls[0]![0]).toContain('/api/objects/authorize');
-    expect(fetchSpy.mock.calls[1]![0]).toContain('/api/objects/batch');
-    const langfuseInit = fetchSpy.mock.calls[2]![1] as RequestInit;
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy.mock.calls[0]![0]).toContain('/api/langfuse');
+    expect(fetchSpy.mock.calls[1]![0]).toContain('/api/objects/authorize');
+    expect(fetchSpy.mock.calls[2]![0]).toContain('/api/objects/batch');
+    expect(fetchSpy.mock.calls[3]![0]).toContain('/api/langfuse');
+    const langfuseInit = fetchSpy.mock.calls[3]![1] as RequestInit;
     const langfuseBody = langfuseInit.body as string;
     expect(langfuseBody).not.toContain('attachment body should stay out of langfuse');
     expect(langfuseBody).not.toContain('<!doctype html><h1>artifact body</h1>');
@@ -695,6 +699,7 @@ describe('langfuse-bridge.reportRunCompletedFromDaemon', () => {
     });
 
     process.env.OPEN_DESIGN_OBJECT_RELAY_URL = 'https://telemetry.open-design.ai/api/objects/batch';
+    process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL = 'https://telemetry.open-design.ai/api/langfuse';
     process.env.LANGFUSE_PUBLIC_KEY = 'pk';
     process.env.LANGFUSE_SECRET_KEY = 'sk';
     try {
@@ -721,12 +726,16 @@ describe('langfuse-bridge.reportRunCompletedFromDaemon', () => {
       });
     } finally {
       delete process.env.OPEN_DESIGN_OBJECT_RELAY_URL;
+      delete process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL;
       delete process.env.LANGFUSE_PUBLIC_KEY;
       delete process.env.LANGFUSE_SECRET_KEY;
     }
 
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    const langfuseInit = fetchSpy.mock.calls[2]![1] as RequestInit;
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy.mock.calls[0]![0]).toContain('/api/langfuse');
+    expect(fetchSpy.mock.calls[1]![0]).toContain('/api/objects/authorize');
+    expect(fetchSpy.mock.calls[2]![0]).toContain('/api/objects/batch');
+    const langfuseInit = fetchSpy.mock.calls[3]![1] as RequestInit;
     const batch = JSON.parse(langfuseInit.body as string).batch as any[];
     const trace = batch[0].body;
     expect(trace.metadata.manifest_completeness).toBe('partial');

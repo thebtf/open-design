@@ -874,7 +874,7 @@ export async function reportRunCompletedFromDaemon(
       attachmentsRaw,
       producedFilesRaw,
     });
-    const uploadedManifests = await buildTraceObjectManifests({
+    const objectManifestOptions = {
       installationId,
       projectId: run.projectId ?? '',
       runId: run.id,
@@ -885,9 +885,8 @@ export async function reportRunCompletedFromDaemon(
       prompt: telemetryPrompt,
       prefs,
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-    });
-    const finalManifests = mergeTraceSafeManifests(manifests, uploadedManifests);
-    const ctx: ReportContext = {
+    } satisfies Parameters<typeof buildTraceObjectManifests>[0];
+    const buildContext = (finalManifests: FinalTraceSafeManifests): ReportContext => ({
       installationId,
       projectId: run.projectId ?? '',
       conversationId: run.conversationId ?? '',
@@ -928,10 +927,23 @@ export async function reportRunCompletedFromDaemon(
       ...(turn ? { turn } : {}),
       runtime,
       ...(run.promptTelemetry ? { promptTelemetry: run.promptTelemetry } : {}),
-    };
+    });
 
+    const registrationManifests = await buildTraceObjectManifests({
+      ...objectManifestOptions,
+      uploadMode: 'manifest-only',
+    });
+    if (registrationManifests) {
+      await reportRunCompleted(
+        buildContext(mergeTraceSafeManifests(manifests, registrationManifests)),
+        opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {},
+      );
+    }
+
+    const uploadedManifests = await buildTraceObjectManifests(objectManifestOptions);
+    const finalManifests = mergeTraceSafeManifests(manifests, uploadedManifests);
     await reportRunCompleted(
-      ctx,
+      buildContext(finalManifests),
       opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {},
     );
   } catch (err) {
