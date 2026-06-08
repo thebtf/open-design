@@ -14320,9 +14320,12 @@ export async function startServer({
         // values are all on the create payload, so populate them here. The
         // legacy singular `mcp_id` becomes the first enabled server for
         // back-compat; `mcp_ids` carries the full set.
-        session_mode: sessionModeToTracking(
-          typeof reqBody.sessionMode === 'string' ? reqBody.sessionMode : null,
-        ),
+        // Only composer-originated runs have an ask/design mode. DS-generation
+        // runs never go through the composer, so omit `session_mode` for them
+        // rather than defaulting them to `ask` and polluting mode dashboards.
+        ...(!isDesignSystemRun && typeof reqBody.sessionMode === 'string'
+          ? { session_mode: sessionModeToTracking(reqBody.sessionMode) }
+          : {}),
         plugin_id: resolvedSnapshot?.ok
           ? resolvedSnapshot.snapshot.pluginId
           : typeof reqBody.pluginId === 'string'
