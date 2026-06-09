@@ -18,6 +18,15 @@ export type SyncWindowsUninstallDisplayVersionInput = {
   version: string | null;
 };
 
+export function windowsUninstallRegistryQueryArgs(input: {
+  namespace: string;
+}): string[] {
+  return [
+    "query",
+    `HKCU\\${resolveWindowsUninstallRegistryKey(input.namespace)}`,
+  ];
+}
+
 export function windowsUninstallDisplayVersionRegistryArgs(input: {
   namespace: string;
   version: string;
@@ -42,6 +51,13 @@ export async function syncWindowsUninstallDisplayVersion(
   const version = input.version?.trim();
   if (version == null || version.length === 0) return false;
   const run = input.exec ?? execFileAsync;
+  try {
+    await run("reg.exe", windowsUninstallRegistryQueryArgs({
+      namespace: input.namespace,
+    }), { windowsHide: true });
+  } catch {
+    return false;
+  }
   await run("reg.exe", windowsUninstallDisplayVersionRegistryArgs({
     namespace: input.namespace,
     version,
