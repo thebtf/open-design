@@ -66,7 +66,11 @@ jobs:
         with:
           name: visual-pr-verify-${{ github.event.pull_request.number }}-${{ github.run_id }}
           path: |
+            e2e/ui/reports/playwright-html-report
+            e2e/ui/reports/results.json
+            e2e/ui/reports/test-results
             e2e/ui/reports/visual-screenshots
             e2e/ui/reports/visual-results.json
+            e2e/ui/test-results
           if-no-files-found: ignore
           retention-days: 7
