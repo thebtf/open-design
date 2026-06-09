@@ -137,7 +137,7 @@ describe('API proxy routes', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        baseUrl: 'https://api.openai.com/v1',
+        baseUrl: 'https://api.openai.com',
         apiKey: 'sk-openai',
         model: 'gpt-5-chat-latest',
         projectId,

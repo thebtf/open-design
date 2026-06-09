@@ -1055,7 +1055,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
             projectsRoot: ctx.paths.PROJECTS_DIR,
             projectId,
             upstreamApiKey: apiKey,
-            upstreamBaseUrl: baseUrl,
+            upstreamBaseUrl: appendVersionedApiPath(baseUrl, ''),
             requestInit: {},
             mediaModel: imageProjectModel,
             ...(typeof imageProjectMetadata.imageAspect === 'string' && imageProjectMetadata.imageAspect.trim()
