@@ -154,5 +154,7 @@ describe("release workflows", () => {
     expect(stable).toContain(".github/workflow/scripts/release/storage/summary-metadata.ts");
     expect(stable).toContain("open-design-release-mac-arm64-publish-manifest");
     expect(stable).toContain("open-design-release-win-x64-publish-manifest");
+    expect(stable).toContain("--signed\n            --notarize");
+    expect(stable).toContain("--signed \\\n            --notarize");
   });
 });

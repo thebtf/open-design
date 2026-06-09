@@ -339,6 +339,7 @@ jobs:
             --require-vela-cli
             --json
             --signed
+            --notarize
           )
           if build_output="$(pnpm "${build_args[@]}" 2> >(tee -a "$build_log_path" >&2))"; then
             printf '%s\n' "$build_output" | tee "$build_json_path"
@@ -558,7 +559,8 @@ jobs:
             --to all \
             --require-vela-cli \
             --json \
-            --signed
+            --signed \
+            --notarize
 
       - name: Prepare mac intel release assets
         id: assets
