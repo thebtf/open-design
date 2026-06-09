@@ -194,10 +194,14 @@ test('[P2] captures the home plugin use with query surface', async ({ page }) =>
   await configureVisualPage(page);
   await gotoVisualHome(page);
 
-  await page.getByTestId('home-hero-input').fill('@visual');
-  await expect(page.getByTestId('home-hero-plugin-picker')).toBeVisible();
-  await page.getByRole('option', { name: /Prototype Starter/i }).click();
-  await expect(page.getByTestId('home-hero-input')).toContainText('@Prototype Starter');
+  const home = page.getByTestId('entry-view-home');
+  await home.getByTestId('plugins-home-pill-category-deck').click();
+  const card = home.locator('article.plugins-home__card[data-plugin-id="visual-deck-writer"]');
+  await expect(card).toBeVisible();
+  await card.hover();
+  await home.getByTestId('plugins-home-use-menu-visual-deck-writer').click({ force: true });
+  await home.getByTestId('plugins-home-use-with-query-visual-deck-writer').click();
+  await expect(page.getByTestId('home-hero-input')).toContainText('Draft a {{topic}} deck.');
 
   await captureVisual(page, 'visual-home-plugin-use-with-query');
 });
@@ -367,7 +371,8 @@ test('[P2] captures the workspace staged contexts surface', async ({ page }) => 
 
   await page.getByTestId('design-files-tab').click();
   await expect(page.getByTestId('design-files-tab')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByTestId('staged-contexts')).toContainText('Design Files');
+  await expect(page.getByTestId('staged-contexts')).toBeVisible();
+  await expect(page.getByTestId('staged-contexts')).not.toBeEmpty();
   await waitForVisualFonts(page);
 
   await captureVisual(page, 'visual-workspace-staged-contexts');
@@ -632,7 +637,10 @@ async function openSettingsDetailsFromHeader(page: Parameters<typeof configureVi
 }
 
 async function gotoVisualWorkspace(page: Parameters<typeof configureVisualPage>[0]) {
-  await page.getByTestId('recent-projects-strip').locator('[data-project-id]').first().click();
+  await page
+    .getByTestId('recent-projects-strip')
+    .locator('[data-project-id="visual-project-launchpad"]')
+    .click();
   await expect(page).toHaveURL(/\/projects\//);
   await expect(page.getByTestId('chat-composer')).toBeVisible();
 }

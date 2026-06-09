@@ -445,9 +445,10 @@ test('[P0] @critical project instructions flow into the next API run as project-
   await expectWorkspaceReady(page);
 
   const instructions = 'Use tabs for indentation and keep CTA copy terse.';
-  await setCurrentProjectInstructions(page, instructions);
-  await page.reload();
-  await expectWorkspaceReady(page);
+  await page.getByTestId('project-instructions-add').click();
+  await page.getByTestId('project-instructions-textarea').fill(instructions);
+  await page.getByTestId('project-instructions-save').click();
+  await expect(page.getByTestId('project-instructions-preview')).toContainText(instructions);
 
   const input = page.getByTestId('chat-composer-input');
   await input.fill('Generate the onboarding screen.');
@@ -1498,14 +1499,6 @@ async function expectWorkspaceReady(page: Page) {
   await expect(page.getByTestId('chat-composer')).toBeVisible();
   await expect(page.getByTestId('chat-composer-input')).toBeVisible();
   await expect(page.getByTestId('file-workspace')).toBeVisible();
-}
-
-async function setCurrentProjectInstructions(page: Page, instructions: string) {
-  const { projectId } = getProjectContextFromUrl(page);
-  const response = await page.request.patch(`/api/projects/${projectId}`, {
-    data: { customInstructions: instructions },
-  });
-  expect(response.ok()).toBeTruthy();
 }
 
 async function dismissPrivacyDialog(page: Page) {
