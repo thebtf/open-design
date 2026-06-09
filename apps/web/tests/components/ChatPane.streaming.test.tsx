@@ -50,27 +50,18 @@ vi.mock('../../src/components/AssistantMessage', () => ({
     streaming,
     message,
     isLast,
-    showConversationTodoCard,
-    conversationTodoInput,
     onShareToOpenDesign,
     shareToOpenDesignBusy,
   }: {
     streaming: boolean;
     message: ChatMessage;
     isLast?: boolean;
-    showConversationTodoCard?: boolean;
-    conversationTodoInput?: unknown;
     onShareToOpenDesign?: () => void;
     shareToOpenDesignBusy?: boolean;
   }) => (
     <>
       <output data-testid={`assistant-streaming-${message.id}`}>{streaming ? 'streaming' : 'idle'}</output>
       <output data-testid={`assistant-last-${message.id}`}>{isLast ? 'last' : 'not-last'}</output>
-      {showConversationTodoCard ? (
-        <output data-testid={`assistant-todo-input-${message.id}`}>
-          {JSON.stringify(conversationTodoInput)}
-        </output>
-      ) : null}
       {onShareToOpenDesign ? (
         <button
           type="button"
@@ -773,17 +764,9 @@ Expected output:
       />,
     );
 
-    const todoInput = JSON.parse(screen.getByTestId('assistant-todo-input-assistant-1').textContent ?? '{}');
-    expect(todoInput).toEqual({
-      todos: [
-        {
-          content: 'Build prototype',
-          status: 'stopped',
-          activeForm: 'Building prototype',
-        },
-        { content: 'Run QA', status: 'pending' },
-      ],
-    });
+    expect(container.querySelectorAll('.chat-log .op-card.op-todo')).toHaveLength(1);
+    expect(container.querySelector('.todo-stopped .todo-text')?.textContent).toBe('Build prototype');
+    expect(container.querySelector('.todo-pending .todo-text')?.textContent).toBe('Run QA');
     expect(container.querySelector('.chat-pinned-todo')).toBeNull();
   });
   it('shows several queued prompts above the composer with compact controls', () => {

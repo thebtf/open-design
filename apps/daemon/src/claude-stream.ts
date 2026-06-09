@@ -72,6 +72,7 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
   let suppressNextArtifactText = false;
   let suppressDuplicateArtifactText = false;
   let artifactOpenCandidate = '';
+  let pendingArtifactText = '';
 
   function normalizeTaskStatus(value: unknown): RuntimeTask['status'] {
     if (value === 'completed' || value === 'in_progress' || value === 'stopped') {
@@ -222,14 +223,20 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
       const candidateLength = artifactOpenCandidateLength(current, openTag);
       if (suppressNextArtifactText && candidateLength > 0) {
         artifactOpenCandidate = current.slice(-candidateLength);
-        return current.slice(0, -candidateLength);
+        pendingArtifactText += current.slice(0, -candidateLength);
+        return '';
       }
-      suppressNextArtifactText = false;
+      if (suppressNextArtifactText) {
+        pendingArtifactText += current;
+        return '';
+      }
       return current;
     }
     suppressDuplicateArtifactText = true;
     suppressNextArtifactText = false;
-    return `${current.slice(0, openIndex)}${stripDuplicateArtifactText(current.slice(openIndex))}`;
+    const prefix = `${pendingArtifactText}${current.slice(0, openIndex)}`;
+    pendingArtifactText = '';
+    return `${prefix}${stripDuplicateArtifactText(current.slice(openIndex))}`;
   }
 
   function artifactOpenCandidateLength(text: string, openTag: string): number {
@@ -277,12 +284,14 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
   function flush() {
     const rem = buffer.trim();
     buffer = '';
-    if (!rem) return;
-    try {
-      handleObject(JSON.parse(rem));
-    } catch {
-      onEvent({ type: 'raw', line: rem });
+    if (rem) {
+      try {
+        handleObject(JSON.parse(rem));
+      } catch {
+        onEvent({ type: 'raw', line: rem });
+      }
     }
+    flushPendingArtifactText();
   }
 
   function handleObject(obj: unknown) {
@@ -416,6 +425,7 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
 
   function handleStreamEvent(ev: Record<string, unknown>) {
     if (ev.type === 'message_start') {
+      flushPendingArtifactText();
       // Clean up per-message role-marker guard from the previous message.
       if (currentMessageId) roleGuards.delete(currentMessageId);
       currentMessageId = isRecord(ev.message) && typeof ev.message.id === 'string' ? ev.message.id : null;
@@ -498,6 +508,15 @@ export function createClaudeStreamHandler(onEvent: EventSink) {
       blocks.delete(key);
       return;
     }
+  }
+
+  function flushPendingArtifactText() {
+    if (!pendingArtifactText) return;
+    const text = pendingArtifactText;
+    pendingArtifactText = '';
+    artifactOpenCandidate = '';
+    suppressNextArtifactText = false;
+    emitSafeText(currentMessageId, text);
   }
 
   return { feed, flush };

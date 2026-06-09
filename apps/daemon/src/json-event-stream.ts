@@ -13,6 +13,7 @@ type ParserState = {
   suppressNextArtifactText: boolean;
   suppressDuplicateArtifactText: boolean;
   artifactOpenCandidate: string;
+  pendingArtifactText: string;
 };
 
 type Usage = {
@@ -220,6 +221,15 @@ function handleOpenCodeEvent(obj: unknown, onEvent: StreamEventHandler, state: P
 function handleGeminiEvent(obj: unknown, onEvent: StreamEventHandler, state: ParserState): boolean {
   if (!isRecord(obj)) return false;
 
+  const isAssistantTextMessage =
+    obj.type === 'message' &&
+    obj.role === 'assistant' &&
+    typeof obj.content === 'string' &&
+    obj.content.length > 0;
+  if (!isAssistantTextMessage) {
+    flushPendingArtifactText(state, onEvent);
+  }
+
   if (obj.type === 'init') {
     onEvent({
       type: 'status',
@@ -421,14 +431,20 @@ function stripDuplicateArtifactText(text: string, state: ParserState): string {
     const candidateLength = artifactOpenCandidateLength(current, openTag);
     if (state.suppressNextArtifactText && candidateLength > 0) {
       state.artifactOpenCandidate = current.slice(-candidateLength);
-      return current.slice(0, -candidateLength);
+      state.pendingArtifactText += current.slice(0, -candidateLength);
+      return '';
     }
-    state.suppressNextArtifactText = false;
+    if (state.suppressNextArtifactText) {
+      state.pendingArtifactText += current;
+      return '';
+    }
     return current;
   }
   state.suppressDuplicateArtifactText = true;
   state.suppressNextArtifactText = false;
-  return `${current.slice(0, openIndex)}${stripDuplicateArtifactText(current.slice(openIndex), state)}`;
+  const prefix = `${state.pendingArtifactText}${current.slice(0, openIndex)}`;
+  state.pendingArtifactText = '';
+  return `${prefix}${stripDuplicateArtifactText(current.slice(openIndex), state)}`;
 }
 
 function artifactOpenCandidateLength(text: string, openTag: string): number {
@@ -437,6 +453,15 @@ function artifactOpenCandidateLength(text: string, openTag: string): number {
     if (openTag.startsWith(text.slice(-len))) return len;
   }
   return 0;
+}
+
+function flushPendingArtifactText(state: ParserState, onEvent: StreamEventHandler): void {
+  if (!state.pendingArtifactText) return;
+  const delta = state.pendingArtifactText;
+  state.pendingArtifactText = '';
+  state.artifactOpenCandidate = '';
+  state.suppressNextArtifactText = false;
+  onEvent({ type: 'text_delta', delta });
 }
 
 function isFileWriteToolUse(toolName: string, input: unknown): boolean {
@@ -692,6 +717,7 @@ export function createJsonEventStreamHandler(kind: ParserKind, onEvent: StreamEv
     suppressNextArtifactText: false,
     suppressDuplicateArtifactText: false,
     artifactOpenCandidate: '',
+    pendingArtifactText: '',
   };
 
   function handleLine(line: string): void {
@@ -725,8 +751,8 @@ export function createJsonEventStreamHandler(kind: ParserKind, onEvent: StreamEv
   function flush(): void {
     const rem = buffer.trim();
     buffer = '';
-    if (!rem) return;
-    handleLine(rem);
+    if (rem) handleLine(rem);
+    flushPendingArtifactText(state, onEvent);
   }
 
   return { feed, flush };

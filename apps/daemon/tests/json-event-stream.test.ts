@@ -388,11 +388,52 @@ test('gemini stream suppresses duplicate artifact text split across chunks', () 
     },
     {
       type: 'text_delta',
-      delta: 'Done.\\n\\n',
+      delta: 'Done.\\n\\nTail',
+    },
+  ]);
+});
+
+test('gemini stream suppresses duplicate artifact text when plain prose arrives before the artifact chunk', () => {
+  const { events, handler } = collectEvents('gemini');
+
+  handler.feed(
+    JSON.stringify({
+      type: 'tool_use',
+      tool_name: 'write_file',
+      tool_id: 'write_file__1',
+      parameters: {
+        file_path: 'index.html',
+        content: '<!doctype html><html></html>',
+      },
+    }) +
+    '\n' +
+    JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      content: 'Done.\\n\\n',
+    }) +
+    '\n' +
+    JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      content: '<artifact identifier="page" type="text/html">\\n<!doctype html><html></html>\\n</artifact>Tail',
+    }) +
+    '\n',
+  );
+
+  assert.deepEqual(events, [
+    {
+      type: 'tool_use',
+      id: 'write_file__1',
+      name: 'write_file',
+      input: {
+        file_path: 'index.html',
+        content: '<!doctype html><html></html>',
+      },
     },
     {
       type: 'text_delta',
-      delta: 'Tail',
+      delta: 'Done.\\n\\nTail',
     },
   ]);
 });
