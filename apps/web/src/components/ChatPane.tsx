@@ -2853,6 +2853,7 @@ function QueuedSendStrip({
                   data-tooltip={t('chat.send')}
                   data-tooltip-placement="top"
                   aria-label={t('chat.send')}
+                  data-testid="chat-queued-send-now"
                   onClick={() => onSendNow?.(item.id)}
                   disabled={!onSendNow}
                 >
