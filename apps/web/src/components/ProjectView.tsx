@@ -3808,15 +3808,25 @@ export function ProjectView({
       }
       // The interrupted turn moved its preview-comment attachments to
       // 'applying' when it started; since we now suppress its terminal
-      // callbacks, reset them to 'open' here so they don't stay stuck as
-      // "applying" after the replacement send takes over.
+      // callbacks, reset them to 'open' so they don't stay stuck mid-apply.
+      // Reset ONLY the in-flight run's comments: queued sends (including the
+      // one being prioritized) also hold their attachments in 'applying', and
+      // those must stay reserved — the replacement run re-applies them. The
+      // in-flight run's comments are exactly the 'applying' ones not owned by
+      // any queued send.
+      const queuedCommentIds = new Set(
+        queuedChatSendsRef.current.flatMap((send) =>
+          send.commentAttachments.map((attachment) => attachment.id),
+        ),
+      );
       const stuckApplying = previewCommentsRef.current.filter(
-        (comment) => comment.status === 'applying',
+        (comment) => comment.status === 'applying' && !queuedCommentIds.has(comment.id),
       );
       if (stuckApplying.length > 0) {
+        const resetIds = new Set(stuckApplying.map((comment) => comment.id));
         setPreviewComments((current) =>
           current.map((comment) =>
-            comment.status === 'applying' ? { ...comment, status: 'open' } : comment,
+            resetIds.has(comment.id) ? { ...comment, status: 'open' } : comment,
           ),
         );
         void Promise.all(

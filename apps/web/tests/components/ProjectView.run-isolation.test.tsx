@@ -1151,7 +1151,7 @@ describe('ProjectView conversation run isolation', () => {
     expect(fetchProjectFiles).not.toHaveBeenCalled();
   });
 
-  it('clears stuck applying comment status when send-now interrupts a comment-bearing turn', async () => {
+  it('does not reset a queued send\'s own comment status when send-now flushes it', async () => {
     fetchPreviewComments.mockResolvedValue([previewComment]);
     streamViaDaemon.mockImplementation(async (input: unknown) => {
       const options = input as {
@@ -1168,7 +1168,7 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(screen.getByTestId('streaming-state').textContent).toBe('streaming'));
 
     // Attach a comment and send while busy: the turn is queued and its comment
-    // attachment is moved to 'applying'.
+    // attachment is reserved as 'applying'.
     fireEvent.click(screen.getByTestId('attach-first-comment'));
     await waitFor(() => expect(screen.getByTestId('attached-comment-count').textContent).toBe('1'));
     fireEvent.click(screen.getByTestId('send-message'));
@@ -1184,17 +1184,18 @@ describe('ProjectView conversation run isolation', () => {
 
     patchPreviewCommentStatus.mockClear();
 
-    // Send-now interrupts the in-flight turn; the stuck 'applying' comment must
-    // be reset to 'open' rather than left mid-apply forever.
+    // Send-now flushes that queued comment-bearing item. Its comment belongs to
+    // the send being dispatched (the replacement re-applies it), so the
+    // interrupt's stale-comment cleanup must NOT reset it to 'open' — that would
+    // race the replacement's 'applying' write and reopen a reserved comment.
     fireEvent.click(screen.getByTestId('send-queued-0'));
+    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalled());
 
-    await waitFor(() =>
-      expect(patchPreviewCommentStatus).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        previewComment.id,
-        'open',
-      ),
+    expect(patchPreviewCommentStatus).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      previewComment.id,
+      'open',
     );
   });
 
