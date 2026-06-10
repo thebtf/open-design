@@ -40,7 +40,38 @@ const outputNamespaceRoot = join(toolsPackDir, 'out', 'win', 'namespaces', names
 const runtimeNamespaceRoot = join(toolsPackDir, 'runtime', 'win', 'namespaces', namespace);
 const screenshotPath = join(toolsPackDir, 'screenshots', `${namespace}.png`);
 const preUpdateScreenshotPath = join(toolsPackDir, 'screenshots', `${namespace}-before-update.png`);
-const healthExpression = "fetch('/api/health').then(async response => ({ health: await response.json(), href: location.href, status: response.status, title: document.title }))";
+const readinessExpression = `
+  (() => ({
+    href: location.href,
+    mounted: document.documentElement.getAttribute('data-od-app-mounted'),
+    readyState: document.readyState,
+    title: document.title,
+  }))()
+`;
+const healthExpression = `
+  (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch('/api/health', { signal: controller.signal });
+      return {
+        health: await response.json(),
+        href: location.href,
+        status: response.status,
+        title: document.title,
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        href: location.href,
+        name: error instanceof Error ? error.name : null,
+        title: document.title,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  })()
+`;
 const updaterPopupExpression = `
   (() => {
     const popup = document.querySelector('[data-testid="updater-popup"]');
@@ -848,13 +879,25 @@ async function waitForHealthyDesktop(): Promise<WinInspectResult> {
 
   while (Date.now() - startedAt < timeoutMs) {
     try {
+      const statusInspect = await runToolsPackJson<WinInspectResult>('inspect');
+      lastResult = { inspect: statusInspect, step: 'status' };
+      if (statusInspect.status?.state !== 'running') {
+        await delay(1000);
+        continue;
+      }
+
+      const readinessInspect = await runToolsPackJson<WinInspectResult>('inspect', ['--expr', readinessExpression]);
+      lastResult = { inspect: readinessInspect, step: 'readiness' };
+      if (readinessInspect.eval?.ok !== true) {
+        await delay(1000);
+        continue;
+      }
+
       const inspect = await runToolsPackJson<WinInspectResult>('inspect', ['--expr', healthExpression]);
-      lastResult = inspect;
-      if (inspect.status?.state === 'running' && inspect.eval?.ok === true) {
+      lastResult = { inspect, step: 'health' };
+      if (inspect.eval?.ok === true) {
         const value = asHealthEvalValue(inspect.eval.value);
-        if (value?.status === 200 && value.health.ok === true && typeof value.health.version === 'string') {
-          return inspect;
-        }
+        if (value?.status === 200 && value.health.ok === true && typeof value.health.version === 'string') return inspect;
       }
     } catch (error) {
       lastResult = error;
@@ -889,15 +932,29 @@ async function waitForHealthyDesktopVersion(expectedVersion: string, previousPid
 
   while (Date.now() - startedAt < timeoutMs) {
     try {
+      const statusInspect = await runToolsPackJson<WinInspectResult>('inspect');
+      lastResult = { inspect: statusInspect, step: 'status' };
+      if (statusInspect.status?.state !== 'running') {
+        await delay(1000);
+        continue;
+      }
+
+      const readinessInspect = await runToolsPackJson<WinInspectResult>('inspect', ['--expr', readinessExpression]);
+      lastResult = { inspect: readinessInspect, step: 'readiness' };
+      if (readinessInspect.eval?.ok !== true) {
+        await delay(1000);
+        continue;
+      }
+
       const inspect = await runToolsPackJson<WinInspectResult>('inspect', ['--expr', healthExpression]);
-      lastResult = inspect;
-      if (inspect.status?.state === 'running' && inspect.eval?.ok === true) {
+      lastResult = { inspect, step: 'health' };
+      if (inspect.eval?.ok === true) {
         const value = asHealthEvalValue(inspect.eval.value);
         if (
           value?.status === 200 &&
           value.health.ok === true &&
           value.health.version === expectedVersion &&
-          (previousPid == null || inspect.status.pid !== previousPid)
+          (previousPid == null || inspect.status?.pid !== previousPid)
         ) {
           return inspect;
         }

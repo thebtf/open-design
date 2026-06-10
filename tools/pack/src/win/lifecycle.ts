@@ -454,6 +454,24 @@ function resolveUpdateAction(value: string | undefined): "status" | "check" | "d
   throw new Error("--update-action must be status, check, download, or install");
 }
 
+async function requestDesktopEval(
+  ipc: string,
+  expression: string,
+): Promise<DesktopEvalResult> {
+  try {
+    return await requestJsonIpc<DesktopEvalResult>(
+      ipc,
+      { input: { expression }, type: SIDECAR_MESSAGES.EVAL },
+      { timeoutMs: 5000 },
+    );
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+      ok: false,
+    };
+  }
+}
+
 export async function inspectPackedWinApp(config: ToolPackConfig, options: { expr?: string; path?: string; updateAction?: string }): Promise<WinInspectResult> {
   const stamp = desktopStamp(config);
   const status = await requestJsonIpc<DesktopStatusSnapshot>(stamp.ipc, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 2000 }).catch(() => null);
@@ -462,11 +480,7 @@ export async function inspectPackedWinApp(config: ToolPackConfig, options: { exp
   const updateCache = await readToolPackUpdateCacheLifecycleSnapshot(config);
   return {
     ...(options.expr == null ? {} : {
-      eval: await requestJsonIpc<DesktopEvalResult>(
-        stamp.ipc,
-        { input: { expression: options.expr }, type: SIDECAR_MESSAGES.EVAL },
-        { timeoutMs: 5000 },
-      ),
+      eval: await requestDesktopEval(stamp.ipc, options.expr),
     }),
     launcher,
     launcherSource: {

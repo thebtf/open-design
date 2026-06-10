@@ -493,6 +493,27 @@ function installDesktopMenu(
 const REGISTER_DESKTOP_AUTH_RETRY_DELAYS_MS = [120, 240, 480, 960, 1500];
 const REGISTER_DESKTOP_AUTH_TIMEOUT_MS = 800;
 
+function summarizeDesktopIpcInput(input: unknown): Record<string, unknown> | null {
+  if (input == null || typeof input !== "object") return null;
+  if ("expression" in input && typeof (input as { expression?: unknown }).expression === "string") {
+    const expression = (input as { expression: string }).expression;
+    return {
+      expressionLength: expression.length,
+      expressionPreview: expression.length > 120 ? `${expression.slice(0, 120)}...` : expression,
+    };
+  }
+  if ("path" in input && typeof (input as { path?: unknown }).path === "string") {
+    return { path: (input as { path: string }).path };
+  }
+  if ("action" in input && typeof (input as { action?: unknown }).action === "string") {
+    return { action: (input as { action: string }).action };
+  }
+  if ("selector" in input && typeof (input as { selector?: unknown }).selector === "string") {
+    return { selector: (input as { selector: string }).selector };
+  }
+  return null;
+}
+
 /**
  * Sends a fresh, per-process secret to the daemon over its sidecar IPC
  * before any BrowserWindow is created. The daemon stores the secret
@@ -653,44 +674,61 @@ export async function runDesktopMain(
     socketPath: runtime.ipc,
     handler: async (message: unknown) => {
       const request = normalizeDesktopSidecarMessage(message);
-      const activeDesktop = desktop;
-      switch (request.type) {
-        case SIDECAR_MESSAGES.STATUS:
-          return activeDesktop == null
-            ? {
-                pid: process.pid,
-                state: "idle",
-                updatedAt: new Date().toISOString(),
-                url: null,
-                update: await updater.status(),
-                windowVisible: false,
-              }
-            : { ...activeDesktop.status(), update: await updater.status() };
-        case SIDECAR_MESSAGES.SHUTDOWN:
-          setImmediate(() => {
-            shutdownAndExit();
-          });
-          return { accepted: true };
-      }
-      if (activeDesktop == null) {
-        throw new Error("desktop runtime is not initialized");
-      }
-      switch (request.type) {
-        case SIDECAR_MESSAGES.EVAL:
-          return await activeDesktop.eval(request.input as DesktopEvalInput);
-        case SIDECAR_MESSAGES.SCREENSHOT:
-          return await activeDesktop.screenshot(request.input as DesktopScreenshotInput);
-        case SIDECAR_MESSAGES.CONSOLE:
-          return activeDesktop.console();
-        case SIDECAR_MESSAGES.SHOW:
-          activeDesktop.show();
-          return { accepted: true };
-        case SIDECAR_MESSAGES.CLICK:
-          return await activeDesktop.click(request.input as DesktopClickInput);
-        case SIDECAR_MESSAGES.EXPORT_PDF:
-          return await activeDesktop.exportPdf(request.input as DesktopExportPdfInput);
-        case SIDECAR_MESSAGES.UPDATE:
-          return await updater.handle((request.input as DesktopUpdateInput).action);
+      const startedAt = Date.now();
+      const input = "input" in request ? summarizeDesktopIpcInput(request.input) : null;
+      console.info("[open-design desktop] desktop IPC request start", { input, type: request.type });
+      try {
+        const activeDesktop = desktop;
+        switch (request.type) {
+          case SIDECAR_MESSAGES.STATUS:
+            return activeDesktop == null
+              ? {
+                  pid: process.pid,
+                  state: "idle",
+                  updatedAt: new Date().toISOString(),
+                  url: null,
+                  update: await updater.status(),
+                  windowVisible: false,
+                }
+              : { ...activeDesktop.status(), update: await updater.status() };
+          case SIDECAR_MESSAGES.SHUTDOWN:
+            setImmediate(() => {
+              shutdownAndExit();
+            });
+            return { accepted: true };
+        }
+        if (activeDesktop == null) {
+          throw new Error("desktop runtime is not initialized");
+        }
+        switch (request.type) {
+          case SIDECAR_MESSAGES.EVAL:
+            return await activeDesktop.eval(request.input as DesktopEvalInput);
+          case SIDECAR_MESSAGES.SCREENSHOT:
+            return await activeDesktop.screenshot(request.input as DesktopScreenshotInput);
+          case SIDECAR_MESSAGES.CONSOLE:
+            return activeDesktop.console();
+          case SIDECAR_MESSAGES.SHOW:
+            activeDesktop.show();
+            return { accepted: true };
+          case SIDECAR_MESSAGES.CLICK:
+            return await activeDesktop.click(request.input as DesktopClickInput);
+          case SIDECAR_MESSAGES.EXPORT_PDF:
+            return await activeDesktop.exportPdf(request.input as DesktopExportPdfInput);
+          case SIDECAR_MESSAGES.UPDATE:
+            return await updater.handle((request.input as DesktopUpdateInput).action);
+        }
+      } catch (error) {
+        console.error("[open-design desktop] desktop IPC request failed", {
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+          type: request.type,
+        });
+        throw error;
+      } finally {
+        console.info("[open-design desktop] desktop IPC request end", {
+          durationMs: Date.now() - startedAt,
+          type: request.type,
+        });
       }
     },
   });
