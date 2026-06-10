@@ -1,7 +1,8 @@
-import { protocol } from "electron";
+import { net, protocol } from "electron";
 
 const OD_SCHEME = "od";
 const OD_ENTRY_URL = `${OD_SCHEME}://app/`;
+type OdProtocolFetch = (request: Request) => Promise<Response>;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -66,7 +67,7 @@ function buildProxyErrorResponse(error: unknown, target: string): Response {
 export async function handleOdRequest(
   request: Request,
   webRuntimeUrl: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: OdProtocolFetch = fetch,
 ): Promise<Response> {
   const target = toWebRuntimeUrl(webRuntimeUrl, request.url);
   try {
@@ -82,6 +83,6 @@ export function packagedEntryUrl(): string {
 
 export function registerOdProtocol(webRuntimeUrl: string): void {
   protocol.handle(OD_SCHEME, async (request) => {
-    return await handleOdRequest(request, webRuntimeUrl);
+    return await handleOdRequest(request, webRuntimeUrl, net.fetch);
   });
 }

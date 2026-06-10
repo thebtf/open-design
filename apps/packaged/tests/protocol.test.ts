@@ -22,6 +22,9 @@
 import { vi } from 'vitest';
 
 vi.mock('electron', () => ({
+  net: {
+    fetch: vi.fn(),
+  },
   protocol: {
     registerSchemesAsPrivileged: vi.fn(),
     handle: vi.fn(),
