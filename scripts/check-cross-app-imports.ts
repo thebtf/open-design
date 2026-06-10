@@ -139,6 +139,12 @@ function isNodeModuleSpecifier(node: ts.Node | undefined): boolean {
   return node != null && ts.isStringLiteralLike(node) && (node.text === "node:module" || node.text === "module");
 }
 
+function isRequireNodeModuleCall(expression: ts.Expression): boolean {
+  if (!ts.isCallExpression(expression) || !ts.isIdentifier(expression.expression)) return false;
+  const [moduleSpecifier] = expression.arguments;
+  return expression.expression.text === "require" && isNodeModuleSpecifier(moduleSpecifier);
+}
+
 function collectCreateRequireBindings(sourceFile: ts.SourceFile): CreateRequireBindings {
   const bindings: CreateRequireBindings = {
     createRequireIdentifiers: new Set(),
@@ -164,25 +170,25 @@ function collectCreateRequireBindings(sourceFile: ts.SourceFile): CreateRequireB
         bindings.createRequireNamespaces.add(namedBindings.name.text);
       }
     } else if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)) {
-      if (
-        node.initializer != null &&
-        ts.isCallExpression(node.initializer) &&
-        ts.isIdentifier(node.initializer.expression)
-      ) {
-        const [moduleSpecifier] = node.initializer.arguments;
-        if (node.initializer.expression.text === "require" && isNodeModuleSpecifier(moduleSpecifier)) {
-          for (const element of node.name.elements) {
-            const propertyName = element.propertyName != null && ts.isIdentifier(element.propertyName)
-              ? element.propertyName.text
-              : ts.isIdentifier(element.name)
-                ? element.name.text
-                : null;
-            if (propertyName === "createRequire" && ts.isIdentifier(element.name)) {
-              bindings.createRequireIdentifiers.add(element.name.text);
-            }
+      if (node.initializer != null && isRequireNodeModuleCall(node.initializer)) {
+        for (const element of node.name.elements) {
+          const propertyName = element.propertyName != null && ts.isIdentifier(element.propertyName)
+            ? element.propertyName.text
+            : ts.isIdentifier(element.name)
+              ? element.name.text
+              : null;
+          if (propertyName === "createRequire" && ts.isIdentifier(element.name)) {
+            bindings.createRequireIdentifiers.add(element.name.text);
           }
         }
       }
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer != null &&
+      isRequireNodeModuleCall(node.initializer)
+    ) {
+      bindings.createRequireNamespaces.add(node.name.text);
     }
 
     ts.forEachChild(node, collectCreateRequireImports);

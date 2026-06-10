@@ -92,6 +92,23 @@ test("cross-app import check rejects createRequire-based cross-app resolution", 
   assert.ok(violations.every((violation) => violation.targetApp === "daemon"));
 });
 
+test("cross-app import check rejects CommonJS node:module namespace createRequire resolution", () => {
+  const violations = collectCrossAppImportViolationsFromSource(
+    "apps/web/src/setup-runtime.cjs",
+    [
+      'const moduleApi = require("node:module");',
+      "const nodeRequire = moduleApi.createRequire(__filename);",
+      'nodeRequire.resolve("@open-design/daemon/package.json");',
+    ].join("\n"),
+    registry,
+  );
+
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0]?.specifier, "@open-design/daemon/package.json");
+  assert.equal(violations[0]?.targetApp, "daemon");
+  assert.equal(violations[0]?.lineNumber, 3);
+});
+
 test("cross-app import check rejects cross-app imports from app-owned mjs entrypoints", () => {
   assert.equal(isCrossAppImportSourceFile("entry.js"), true);
   assert.equal(isCrossAppImportSourceFile("entry.cjs"), true);
