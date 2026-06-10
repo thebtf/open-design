@@ -206,6 +206,21 @@ async function walkSlides(page, driver) {
   return Math.max(SLIDE_MS, Date.now() - t0);
 }
 
+// Probe which input advances a fixed-viewport deck: press the arrow key, then
+// nudge the wheel, watching deckSignal for a real slide change. Returns 'arrow',
+// 'wheel', or null when nothing moves it (a single static screen). Advances the
+// deck as a side effect, so callers that go on to capture reload first.
+async function probeDeckDriver(page) {
+  const sig0 = await page.evaluate(deckSignal, DECK_SCAN_CAP);
+  await driveDeck(page, 'arrow');
+  await sleep(900);
+  if ((await page.evaluate(deckSignal, DECK_SCAN_CAP)) !== sig0) return 'arrow';
+  await driveDeck(page, 'wheel');
+  await sleep(900);
+  if ((await page.evaluate(deckSignal, DECK_SCAN_CAP)) !== sig0) return 'wheel';
+  return null;
+}
+
 // ---- render + encode one plugin -------------------------------------------
 async function bakeOne(browser, id, hash, motion) {
   const page = await browser.newPage();
@@ -218,36 +233,32 @@ async function bakeOne(browser, id, hash, motion) {
   await sleep(1000);
 
   // Capture mode: an explicit `od.preview.motion` declaration wins; otherwise
-  // auto-detect from the viewport height. A fixed-viewport page (no vertical
-  // scroll) is a deck/slideshow; a vertically-scrollable page is a landing page
-  // and gets the pan — even when it carries a horizontal sub-component (a logo
-  // marquee, a feature carousel) that would otherwise look like a slide rail.
-  // Classifying by scroll height, NOT by probing inputs, keeps a tall page off
-  // the deck path: a wheel probe would scroll it and the scroll-driven animation
-  // would read as a slide change (precision-farming pages got walked sideways).
+  // auto-detect.
   let mode = motion;
-  if (mode !== 'scroll' && mode !== 'deck' && mode !== 'static') {
+  let deckDriver = null;
+  if (mode === 'scroll' || mode === 'deck' || mode === 'static') {
+    // Explicit declaration: a deck still needs its advancing input probed.
+    if (mode === 'deck') deckDriver = await probeDeckDriver(page);
+  } else {
+    // A vertically-scrollable page is a landing page (pan it) — even with a
+    // horizontal marquee/carousel sub-component; classifying by scroll height,
+    // not by probing, keeps a tall page off the deck path (a wheel probe would
+    // scroll it and the scroll-driven animation reads as a slide change, which
+    // walked precision-farming pages sideways). A fixed-viewport page is a deck
+    // only if an input actually advances it; otherwise it's a single static
+    // screen that just holds its in-place animation (default viewport, no walk).
     const vScrollable = await page.evaluate(
       () => document.documentElement.scrollHeight > window.innerHeight * 1.15,
     );
-    mode = vScrollable ? 'scroll' : 'deck';
+    if (vScrollable) {
+      mode = 'scroll';
+    } else {
+      deckDriver = await probeDeckDriver(page);
+      mode = deckDriver ? 'deck' : 'static';
+    }
   }
   const isDeck = mode === 'deck';
   const isStatic = mode === 'static';
-  let deckDriver = null;
-  if (isDeck) {
-    // Find which input advances the deck (arrow keys, then the wheel) — only on a
-    // confirmed deck, where a wheel nudge can't scroll the page out from under us.
-    const sig0 = await page.evaluate(deckSignal, DECK_SCAN_CAP);
-    await driveDeck(page, 'arrow');
-    await sleep(900);
-    if ((await page.evaluate(deckSignal, DECK_SCAN_CAP)) !== sig0) deckDriver = 'arrow';
-    else {
-      await driveDeck(page, 'wheel');
-      await sleep(900);
-      if ((await page.evaluate(deckSignal, DECK_SCAN_CAP)) !== sig0) deckDriver = 'wheel';
-    }
-  }
   let capW = RENDER_W, capH = VIEW_H;
   if (isDeck) {
     capW = DECK_W; capH = DECK_H;
