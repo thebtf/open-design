@@ -19,11 +19,19 @@ type ActionName =
   | "browser";
 type ActionKind = "real" | "placeholder";
 type ActionStatus = "success" | "failure" | "not-run";
+type StepStatus = "success" | "failure";
+
+type ActionStepTiming = {
+  name: string;
+  durationMs: number;
+  status: StepStatus;
+};
 
 type ActionResult = {
   action: ActionName;
   kind: ActionKind;
   status: ActionStatus;
+  steps?: ActionStepTiming[];
 };
 
 type WorkflowResult = {
@@ -219,10 +227,41 @@ function parseWorkflowResult(raw: unknown): WorkflowResult {
     if (status !== "success" && status !== "failure" && status !== "not-run") {
       throw new Error(`unknown action status: ${status}`);
     }
+    let steps: ActionStepTiming[] | undefined;
+    if (action.steps != null) {
+      if (!Array.isArray(action.steps)) {
+        throw new Error(`action ${actionName} steps must be an array`);
+      }
+      steps = action.steps.map((stepEntry) => {
+        if (typeof stepEntry !== "object" || stepEntry == null) {
+          throw new Error(`action ${actionName} step must be an object`);
+        }
+        const step = stepEntry as Record<string, unknown>;
+        const name = String(step.name ?? "");
+        const durationMs = Number(step.durationMs);
+        const stepStatus = String(step.status);
+        if (!name) {
+          throw new Error(`action ${actionName} step name is required`);
+        }
+        if (!Number.isFinite(durationMs) || durationMs < 0) {
+          throw new Error(`action ${actionName} step ${name} has invalid durationMs`);
+        }
+        if (stepStatus !== "success" && stepStatus !== "failure") {
+          throw new Error(`action ${actionName} step ${name} has invalid status ${stepStatus}`);
+        }
+        return {
+          name,
+          durationMs,
+          status: stepStatus as StepStatus,
+        };
+      });
+    }
+
     return {
       action: actionName as ActionName,
       kind: kind as ActionKind,
       status: status as ActionStatus,
+      steps,
     };
   });
 

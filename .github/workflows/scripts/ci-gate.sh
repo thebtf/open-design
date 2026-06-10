@@ -89,6 +89,22 @@ append_result() {
   local action="$1"
   local kind="$2"
   local status="$3"
+  local steps_path="${4:-}"
+  if [ -n "$steps_path" ] && [ -s "$steps_path" ]; then
+    jq -nc \
+      --arg action "$action" \
+      --arg kind "$kind" \
+      --arg status "$status" \
+      --slurpfile steps "$steps_path" \
+      '{
+        action: $action,
+        kind: $kind,
+        status: $status,
+        steps: $steps
+      }' >> "$actions_jsonl"
+    return 0
+  fi
+
   jq -nc \
     --arg action "$action" \
     --arg kind "$kind" \
@@ -149,6 +165,10 @@ fi
 
 overall_exit=0
 for action in "${actions[@]}"; do
+  action_steps_jsonl="$results_dir/${action}-steps.jsonl"
+  : > "$action_steps_jsonl"
+  export CI_GATE_ACTION_TIMINGS_PATH="$action_steps_jsonl"
+
   if ! is_real_action "$action"; then
     append_result "$action" "placeholder" "not-run"
     continue
@@ -166,9 +186,9 @@ for action in "${actions[@]}"; do
   action_exit="$?"
   set -e
   if [ "$action_exit" = "0" ]; then
-    append_result "$action" "real" "success"
+    append_result "$action" "real" "success" "$action_steps_jsonl"
   else
-    append_result "$action" "real" "failure"
+    append_result "$action" "real" "failure" "$action_steps_jsonl"
     overall_exit=1
   fi
 done
