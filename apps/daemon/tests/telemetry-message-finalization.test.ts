@@ -272,7 +272,7 @@ describe('Langfuse message finalization gate', () => {
     });
   });
 
-  it('allows a real final message report after a terminal fallback report', () => {
+  it('allows a real final message report after a terminal fallback report', async () => {
     const run = {
       id: 'run-failed-late-final',
       projectId: 'project-1',
@@ -283,9 +283,17 @@ describe('Langfuse message finalization gate', () => {
       updatedAt: 2,
       events: [],
     };
-    const report = vi.fn();
+    const capture = vi.fn<(event: { insertId?: string }) => void>();
+    const report = vi.fn(async (_args: any) => ({
+      langfuse_expected: true,
+      langfuse_delivery_status: 'accepted' as const,
+    }));
     const reporter = createFinalizedMessageTelemetryReporter({
-      design: { runs: { get: vi.fn(() => run) } },
+      design: {
+        analytics: { capture },
+        getAppVersion: () => '0.7.0',
+        runs: { get: vi.fn(() => run) },
+      },
       db: 'db',
       dataDir: '/tmp/od-data',
       reportedRuns: new Set<string>(),
@@ -295,24 +303,58 @@ describe('Langfuse message finalization gate', () => {
     reporter(
       { ...terminalMessage, runId: run.id, runStatus: 'failed', endedAt: 1234 },
       { telemetryFinalized: true },
-      { reportTrigger: 'terminal_fallback' },
+      {
+        analyticsContext: {
+          deviceId: 'device-1',
+          sessionId: 'session-1',
+          clientType: 'desktop',
+          locale: 'zh-CN',
+          requestId: 'request-1',
+        },
+        reportTrigger: 'terminal_fallback',
+      },
     );
     reporter(
       { ...terminalMessage, runId: run.id, runStatus: 'failed', endedAt: 1235 },
       { telemetryFinalized: true },
-      { reportTrigger: 'final_message' },
+      {
+        analyticsContext: {
+          deviceId: 'device-1',
+          sessionId: 'session-1',
+          clientType: 'desktop',
+          locale: 'zh-CN',
+          requestId: 'request-1',
+        },
+        reportTrigger: 'final_message',
+      },
     );
     reporter(
       { ...terminalMessage, runId: run.id, runStatus: 'failed', endedAt: 1236 },
       { telemetryFinalized: true },
-      { reportTrigger: 'final_message' },
+      {
+        analyticsContext: {
+          deviceId: 'device-1',
+          sessionId: 'session-1',
+          clientType: 'desktop',
+          locale: 'zh-CN',
+          requestId: 'request-1',
+        },
+        reportTrigger: 'final_message',
+      },
     );
+    await Promise.resolve();
 
     expect(report).toHaveBeenCalledTimes(2);
     expect(report.mock.calls.map(([call]) => call.persistedEndedAt)).toEqual([
       1234,
       1235,
     ]);
+    expect(capture).toHaveBeenCalledTimes(3);
+    expect(capture.mock.calls.map(([call]) => call.insertId)).toEqual(expect.arrayContaining([
+      'run-failed-late-final-langfuse-report-terminal_fallback-accepted',
+      'run-failed-late-final-langfuse-report-final_message-accepted',
+      'run-failed-late-final-langfuse-report-final_message-skipped-duplicate_run',
+    ]));
   });
 
   it('captures Langfuse report acceptance after final message reporting resolves', async () => {
@@ -367,7 +409,7 @@ describe('Langfuse message finalization gate', () => {
     expect(capture).toHaveBeenCalledWith(
       expect.objectContaining({
         eventName: 'langfuse_report_result',
-        insertId: 'run-accepted-langfuse-report-accepted',
+        insertId: 'run-accepted-langfuse-report-terminal_fallback-accepted',
         properties: expect.objectContaining({
           run_id: 'run-accepted',
           langfuse_trace_id: 'run-accepted',
@@ -414,7 +456,7 @@ describe('Langfuse message finalization gate', () => {
     expect(capture).toHaveBeenCalledWith(
       expect.objectContaining({
         eventName: 'langfuse_report_result',
-        insertId: 'run-missing-langfuse-report-skipped-run_not_found',
+        insertId: 'run-missing-langfuse-report-final_message-skipped-run_not_found',
         properties: expect.objectContaining({
           project_id: 'project-1',
           conversation_id: 'conv-1',

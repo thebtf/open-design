@@ -3104,7 +3104,7 @@ export function createFinalizedMessageTelemetryReporter({
         ...(run?.agentId ? { agent_provider_id: agentIdToTracking(run.agentId) } : {}),
         ...(run?.model !== undefined ? { model_id: modelIdForTracking(run.model) } : {}),
       },
-      insertId: `${runId}-langfuse-report-${reportResult}${skipReason ? `-${skipReason}` : ''}`,
+      insertId: `${runId}-langfuse-report-${reportTrigger}-${reportResult}${skipReason ? `-${skipReason}` : ''}`,
     });
   };
   return (saved, body = {}, options = {}) => {
