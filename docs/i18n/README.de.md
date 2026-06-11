@@ -2,7 +2,7 @@
 
 > 🔥 **Open Design 0.10.0 ist da: der All-in-one Agentic-Design-Arbeitsplatz.** Das ganze Handwerk lebt jetzt in einem Fenster — von der vagen Idee über das Entdecken von Referenzen, das Sammeln von Material, interaktives Bearbeiten, das Einreihen von Kommentaren und den Feinschliff der Animationen bis zur Übergabe an einen Editor oder Code Agent — ohne die App zu verlassen. Mit parallelen Sessions fühlt es sich nicht mehr wie ein Assistent an, sondern wie ein lokales Designteam, das für dich arbeitet. [0.10.0 herunterladen](https://github.com/nexu-io/open-design/releases) · [An der Diskussion teilnehmen](https://github.com/nexu-io/open-design/discussions/4153)
 >
-> ⚡ **Open Design AMR (Open Design Model Router) — der offizielle Modell-Service.** Einmal aufladen und GPT, Claude, Gemini und DeepSeek direkt in Open Design nutzen: 20+ Flaggschiff-Modelle, null Konfiguration, Abrechnung nach realem Token-Verbrauch. [AMR ausprobieren](https://open-design.ai/amr/)
+> ⚡ **Open Design AMR (Agentic Model Router) — der offizielle Modell-Service.** Einmal aufladen und GPT, Claude, Gemini und DeepSeek direkt in Open Design nutzen: 20+ Flaggschiff-Modelle, null Konfiguration, Abrechnung nach realem Token-Verbrauch. [AMR ausprobieren](https://open-design.ai/amr/)
 >
 > 🏅 **Das Open Design Fellow-Programm ist jetzt offen.** Wenn auch du glaubst, dass Design offen sein sollte — werde Open Design Fellow, gestalte das Produkt gemeinsam mit dem Kernteam und hilf mehr Menschen dabei, die Zukunft des Designs mitzubestimmen. Details → [`MAINTAINERS.md`](../../MAINTAINERS.md) und [Discord](https://discord.gg/qhbcCH8Am4).
 
@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://open-design.ai/">Website</a> ·
   <a href="https://open-design.ai/">Download</a> ·
-  <a href="https://open-design.ai/amr/">AMR</a> ·
+  <a href="https://open-design.ai/amr/">Model Router</a> ·
   <a href="https://discord.gg/qhbcCH8Am4">Discord</a> ·
   <a href="https://x.com/nexudotio">@nexudotio folgen</a>
 </p>

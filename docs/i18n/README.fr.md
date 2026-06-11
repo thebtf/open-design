@@ -2,7 +2,7 @@
 
 > 🔥 **Open Design 0.10.0 est là : l'espace de travail design Agentic tout-en-un.** Tout le métier tient désormais dans une seule fenêtre — partez d'une idée vague, découvrez des références, rassemblez la matière, éditez de manière interactive, mettez vos commentaires en file d'attente, peaufinez les animations, puis transmettez le résultat à un éditeur ou à un Code Agent — sans quitter l'application. Avec les sessions parallèles, ce n'est plus un assistant, mais une équipe de design locale qui travaille pour vous. [Télécharger 0.10.0](https://github.com/nexu-io/open-design/releases) · [Rejoindre la discussion](https://github.com/nexu-io/open-design/discussions/4153)
 >
-> ⚡ **Open Design AMR (Open Design Model Router) — le service de modèles officiel.** Une seule recharge pour utiliser GPT, Claude, Gemini et DeepSeek directement dans Open Design : plus de 20 modèles phares, zéro configuration, facturation à l'usage réel des tokens. [Essayer AMR](https://open-design.ai/amr/)
+> ⚡ **Open Design AMR (Agentic Model Router) — le service de modèles officiel.** Une seule recharge pour utiliser GPT, Claude, Gemini et DeepSeek directement dans Open Design : plus de 20 modèles phares, zéro configuration, facturation à l'usage réel des tokens. [Essayer AMR](https://open-design.ai/amr/)
 >
 > 🏅 **Le programme Open Design Fellow est désormais ouvert.** Si vous croyez vous aussi que le design devrait être ouvert — devenez Open Design Fellow, façonnez le produit aux côtés de l'équipe principale et aidez davantage de personnes à participer à la définition de l'avenir du design. Détails → [`MAINTAINERS.md`](../../MAINTAINERS.md) et [Discord](https://discord.gg/qhbcCH8Am4).
 
@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://open-design.ai/">Site web</a> ·
   <a href="https://open-design.ai/">Télécharger</a> ·
-  <a href="https://open-design.ai/amr/">AMR</a> ·
+  <a href="https://open-design.ai/amr/">Model Router</a> ·
   <a href="https://discord.gg/qhbcCH8Am4">Discord</a> ·
   <a href="https://x.com/nexudotio">Suivre @nexudotio</a>
 </p>
