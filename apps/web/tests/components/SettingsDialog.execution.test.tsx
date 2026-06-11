@@ -385,6 +385,7 @@ beforeEach(() => {
 describe('SettingsDialog execution settings BYOK interactions', () => {
   afterEach(() => {
     cleanup();
+    window.history.pushState({}, '', '/');
     vi.unstubAllGlobals();
   });
 
@@ -461,6 +462,27 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     renderSettingsDialog({ mode: 'daemon' });
 
     expect(screen.queryByTestId('settings-byok-no-file-tools-notice')).toBeNull();
+  });
+
+  it('does not lock execution tabs while previewing a BYOK failure', () => {
+    window.history.pushState({}, '', '/?odPreview=byok-failure');
+    renderSettingsDialog();
+
+    const byokTab = screen.getByRole('tab', { name: /BYOK.*API provider/i });
+    expect(byokTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('heading', { name: 'Anthropic API' })).toBeTruthy();
+
+    const localCliTab = screen.getByRole('tab', { name: /Local CLI.*1 installed/i });
+    fireEvent.click(localCliTab);
+
+    expect(localCliTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('heading', { name: 'Your CLIs (1)' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Anthropic API' })).toBeNull();
+
+    fireEvent.click(byokTab);
+
+    expect(byokTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('heading', { name: 'Anthropic API' })).toBeTruthy();
   });
 
   it('only persists Max tokens overrides within the supported BYOK range', async () => {

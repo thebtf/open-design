@@ -1167,7 +1167,7 @@ export function SettingsDialog({
   const [providerTestState, setProviderTestState] = useState<TestState>({
     status: 'idle',
   });
-  const executionModeForRender: ExecMode = previewByokFailure ? 'api' : cfg.mode;
+  const executionModeForRender: ExecMode = cfg.mode;
   const previewProviderFailureResult = useMemo<ConnectionTestResponse | null>(
     () =>
       previewByokFailure
