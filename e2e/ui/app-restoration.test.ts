@@ -2476,6 +2476,57 @@ test('[P1] composer plus menu design toolbox action seeds the next run request',
   expect(runBodies[0]?.message).toContain('Global resource index');
 });
 
+test('[P1] composer design toolbox motion action seeds its specific prompt into the next run request', async ({ page }) => {
+  await routeMockAgents(page);
+
+  const runBodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/runs', async (route) => {
+    const raw = route.request().postData();
+    if (raw) runBodies.push(JSON.parse(raw) as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: '{"runId":"toolbox-motion-run"}',
+    });
+  });
+  await page.route('**/api/runs/*/events', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+      },
+      body: [
+        'event: start',
+        'data: {"bin":"mock-agent"}',
+        '',
+        'event: end',
+        'data: {"code":0,"status":"succeeded"}',
+        '',
+        '',
+      ].join('\n'),
+    });
+  });
+
+  await createEmptyProject(page, 'Composer toolbox motion action context');
+  await expectWorkspaceReady(page);
+
+  await page.getByTestId('chat-composer-input').fill('Animate the KPI dashboard hero.');
+  await page.getByTestId('chat-plus-trigger').click();
+  await page.getByRole('menuitem', { name: 'Design toolbox' }).click();
+  await page.getByRole('menuitem', { name: 'Add animation / motion' }).click();
+
+  const input = page.getByTestId('chat-composer-input');
+  await expect(input).toContainText('Add high-quality motion to the current HTML / page element');
+  await expect(input).toContainText('Preserve the intent already in the composer: Animate the KPI dashboard hero.');
+
+  await page.getByTestId('chat-send').click();
+  expect(runBodies[0]?.message).toContain('Add high-quality motion to the current HTML / page element');
+  expect(runBodies[0]?.message).toContain('prefers-reduced-motion fallbacks');
+  expect(runBodies[0]?.message).toContain('Animate the KPI dashboard hero.');
+  expect(runBodies[0]?.message).not.toContain('Creative Director orchestrator');
+});
+
 test('[P0] composer session mode switch is carried into the next daemon run request', async ({ page }) => {
   await routeMockAgents(page);
 
@@ -2520,6 +2571,259 @@ test('[P0] composer session mode switch is carried into the next daemon run requ
 
   expect(runBodies[0]?.message).toContain('Explain what changed in this artifact.');
   expect(runBodies[0]?.sessionMode).toBe('chat');
+});
+
+test('[P1] questions tab Skip all sends structured skipped answers into the next run request', async ({ page }) => {
+  await routeMockAgents(page);
+
+  const runBodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/runs', async (route) => {
+    const raw = route.request().postData();
+    if (raw) runBodies.push(JSON.parse(raw) as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ runId: `questions-skip-run-${runBodies.length}` }),
+    });
+  });
+  let eventCount = 0;
+  await page.route('**/api/runs/*/events', async (route) => {
+    eventCount += 1;
+    const questionForm = [
+      '<question-form id="discovery" title="Quick brief">',
+      JSON.stringify(
+        {
+          description: 'Answer these before generation continues.',
+          questions: [
+            {
+              id: 'audience',
+              label: 'Audience',
+              type: 'text',
+              required: true,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      '</question-form>',
+    ].join('\n');
+    const chunk = eventCount === 1 ? questionForm : 'Thanks — continuing with skipped answers.';
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+      },
+      body: [
+        'event: start',
+        'data: {"bin":"mock-agent"}',
+        '',
+        'event: stdout',
+        `data: ${JSON.stringify({ chunk })}`,
+        '',
+        'event: end',
+        'data: {"code":0,"status":"succeeded"}',
+        '',
+        '',
+      ].join('\n'),
+    });
+  });
+
+  const projectId = await createEmptyProject(page, 'Questions skip all run context');
+  await expectWorkspaceReady(page);
+
+  await sendPrompt(page, 'Plan a landing page after asking clarifying questions.');
+  await expect(page.getByTestId('questions-tab')).toBeVisible();
+  await page.getByTestId('questions-tab').click();
+
+  const panel = page.getByTestId('questions-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText('Audience')).toBeVisible();
+
+  const skipAll = panel.getByRole('button', { name: /Skip all/i });
+  await expect(skipAll).toBeEnabled();
+  await Promise.all([
+    page.waitForResponse(isCreateRunResponse, { timeout: 5_000 }),
+    skipAll.click(),
+  ]);
+
+  await expect.poll(() => runBodies.length).toBe(2);
+  expect(runBodies[1]?.message).toContain('[form answers — discovery]');
+  expect(runBodies[1]?.message).toContain('Audience: (skipped)');
+
+  const conversationsResponse = await page.request.get(`/api/projects/${projectId}/conversations`);
+  expect(conversationsResponse.ok()).toBeTruthy();
+  const { conversations } = (await conversationsResponse.json()) as {
+    conversations: Array<{ id: string }>;
+  };
+  const conversationId = conversations[0]?.id;
+  expect(conversationId).toBeTruthy();
+  const messagesResponse = await page.request.get(
+    `/api/projects/${projectId}/conversations/${conversationId}/messages`,
+  );
+  expect(messagesResponse.ok()).toBeTruthy();
+  const { messages } = (await messagesResponse.json()) as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  expect(
+    messages.some(
+      (message) =>
+        message.role === 'user' &&
+        message.content.includes('[form answers — discovery]') &&
+        message.content.includes('Audience: (skipped)'),
+    ),
+  ).toBe(true);
+});
+
+test('[P1] questions tab Continue sends selected answers into the next run request', async ({ page }) => {
+  await routeMockAgents(page);
+
+  const runBodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/runs', async (route) => {
+    const raw = route.request().postData();
+    if (raw) runBodies.push(JSON.parse(raw) as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ runId: `questions-continue-run-${runBodies.length}` }),
+    });
+  });
+  let eventCount = 0;
+  await page.route('**/api/runs/*/events', async (route) => {
+    eventCount += 1;
+    const questionForm = [
+      '<question-form id="discovery" title="Quick brief">',
+      JSON.stringify(
+        {
+          description: 'Answer these before generation continues.',
+          questions: [
+            {
+              id: 'audience',
+              label: 'Audience',
+              type: 'text',
+              required: true,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      '</question-form>',
+    ].join('\n');
+    const chunk = eventCount === 1 ? questionForm : 'Thanks — continuing with selected answers.';
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+      },
+      body: [
+        'event: start',
+        'data: {"bin":"mock-agent"}',
+        '',
+        'event: stdout',
+        `data: ${JSON.stringify({ chunk })}`,
+        '',
+        'event: end',
+        'data: {"code":0,"status":"succeeded"}',
+        '',
+        '',
+      ].join('\n'),
+    });
+  });
+
+  const projectId = await createEmptyProject(page, 'Questions continue run context');
+  await expectWorkspaceReady(page);
+
+  await sendPrompt(page, 'Plan a landing page after user choices.');
+  await expect(page.getByTestId('questions-tab')).toBeVisible();
+  await page.getByTestId('questions-tab').click();
+
+  const panel = page.getByTestId('questions-panel');
+  await expect(panel).toBeVisible();
+  const audienceQuestion = panel.locator('.qf-field', { has: page.getByText('Audience') });
+  await audienceQuestion.locator('input.qf-input').fill('Product marketers');
+
+  const continueButton = panel.getByRole('button', { name: /^Continue$/i });
+  await expect(continueButton).toBeEnabled();
+  await Promise.all([
+    page.waitForResponse(isCreateRunResponse, { timeout: 5_000 }),
+    continueButton.click(),
+  ]);
+
+  await expect.poll(() => runBodies.length).toBe(2);
+  expect(runBodies[1]?.message).toContain('[form answers — discovery]');
+  expect(runBodies[1]?.message).toContain('Audience: Product marketers');
+  expect(runBodies[1]?.message).not.toContain('(skipped)');
+
+  const conversationsResponse = await page.request.get(`/api/projects/${projectId}/conversations`);
+  expect(conversationsResponse.ok()).toBeTruthy();
+  const { conversations } = (await conversationsResponse.json()) as {
+    conversations: Array<{ id: string }>;
+  };
+  const conversationId = conversations[0]?.id;
+  expect(conversationId).toBeTruthy();
+  const messagesResponse = await page.request.get(
+    `/api/projects/${projectId}/conversations/${conversationId}/messages`,
+  );
+  expect(messagesResponse.ok()).toBeTruthy();
+  const { messages } = (await messagesResponse.json()) as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  expect(
+    messages.some(
+      (message) =>
+        message.role === 'user' &&
+        message.content.includes('[form answers — discovery]') &&
+        message.content.includes('Audience: Product marketers'),
+    ),
+  ).toBe(true);
+});
+
+test('[P1] project composer working directory replace and clear update linked dirs metadata', async ({ page }) => {
+  const workingDir = '/Users/mac/open-design/open-design/e2e';
+  const patchBodies: Array<Record<string, unknown>> = [];
+
+  await page.route('**/api/recent-dirs', async (route) => {
+    await route.fulfill({ json: { dirs: [] } });
+  });
+  await page.route('**/api/dialog/open-folder', async (route) => {
+    await route.fulfill({ json: { path: workingDir } });
+  });
+  await page.route('**/api/dir-exists', async (route) => {
+    await route.fulfill({ json: { exists: true } });
+  });
+  await page.route('**/api/app-config', async (route) => {
+    if (route.request().method() === 'PUT') {
+      await route.fulfill({ json: { config: { recentLinkedDirs: [workingDir] } } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route('**/api/projects/*', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patchBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    }
+    await route.continue();
+  });
+
+  await createEmptyProject(page, 'Project composer working directory metadata');
+  await expectWorkspaceReady(page);
+
+  await page.getByTestId('working-dir-trigger').click();
+  await page.getByTestId('working-dir-pick').click();
+  await expect(page.getByTestId('working-dir-trigger')).toContainText('e2e');
+  await expect
+    .poll(() => patchBodies.at(-1)?.metadata)
+    .toMatchObject({ linkedDirs: [workingDir] });
+
+  await page.getByTestId('working-dir-trigger').click();
+  await page.getByTestId('working-dir-clear').click();
+  await expect(page.getByTestId('working-dir-trigger')).toContainText('Select working directory');
+  await expect
+    .poll(() => patchBodies.at(-1)?.metadata)
+    .toMatchObject({ linkedDirs: [] });
 });
 
 async function routeMockAgents(page: Page) {
