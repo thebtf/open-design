@@ -167,36 +167,6 @@
       "description": "Retro-modern single-file HTML decks: electric blue x deep navy split panels, neon yellow badges, halftone dot textures, and script flourishes with Syne + Space Mono on a fixed 1920x1080 stage that scales to any viewport. Based on zarazhangrui/frontend-slides Creative Voltage preset (STYLE_PRESETS.md section 3)."
     },
     {
-      "name": "community/fs-dark-botanical",
-      "title": "Dark Botanical",
-      "version": "1.0.0",
-      "source": "github:nexu-io/open-design@main/plugins/community/fs-dark-botanical",
-      "publisher": {
-        "id": "zarazhangrui",
-        "github": "zarazhangrui",
-        "url": "https://github.com/zarazhangrui"
-      },
-      "homepage": "https://github.com/zarazhangrui/frontend-slides",
-      "license": "MIT",
-      "capabilitiesSummary": [
-        "prompt:inject",
-        "fs:write"
-      ],
-      "tags": [
-        "community",
-        "deck",
-        "slides",
-        "presentation",
-        "dark",
-        "elegant",
-        "botanical",
-        "luxury",
-        "web",
-        "ppt"
-      ],
-      "description": "Elegant premium dark slides: near-black centered serif composition with blurred warm pink/gold/terracotta glow orbs, thin vertical accent lines, and italic signature typography. Cormorant + IBM Plex Sans on a fixed 1920x1080 stage that scales to any viewport, zero dependencies. Based on zarazhangrui/frontend-slides STYLE_PRESETS.md preset 4 (Dark Botanical)."
-    },
-    {
       "name": "community/fs-editorial-forest",
       "title": "Editorial Forest",
       "version": "1.0.0",
