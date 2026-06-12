@@ -522,6 +522,21 @@ const matterRuntime = readFileSync(
         // geometry (unaffected by the scale transform), so there's no
         // feedback wobble. rAF-throttled; resets on leave; no-ops under
         // reduced-motion.
+        // Lab clips ship as VP9 WebM (sharp at a fraction of the H.264 size) with
+        // the original .mp4 kept as a fallback. Prefer WebM where the browser can
+        // decode it (Chrome/Edge/Firefox/Safari 16+); older Safari keeps the mp4.
+        // `data-preview-video` carries the .mp4 path; this swaps the extension.
+        const labPrefersWebm = (() => {
+          try {
+            const v = document.createElement('video');
+            return !!(v.canPlayType && v.canPlayType('video/webm; codecs="vp9"'));
+          } catch (e) {
+            return false;
+          }
+        })();
+        const labClipSrc = (src) =>
+          labPrefersWebm && /\.mp4$/i.test(src || '') ? src.replace(/\.mp4$/i, '.webm') : src;
+
         const enhanceLabDock = () => {
           const dock = document.querySelector('[data-lab-dock]');
           if (!dock) return;
@@ -535,7 +550,8 @@ const matterRuntime = readFileSync(
           (function prefetchLabVideos() {
             const srcs = Array.from(dock.querySelectorAll('[data-preview-video]'))
               .map((el) => el.getAttribute('data-preview-video'))
-              .filter(Boolean);
+              .filter(Boolean)
+              .map(labClipSrc);
             if (srcs.length === 0) return;
             let done = false;
             const run = () => {
@@ -1007,7 +1023,8 @@ const matterRuntime = readFileSync(
             // at a different clip, then show + restart the looping video.
             if (vsrc && video) {
               artifact.classList.remove('is-visible');
-              if (video.getAttribute('src') !== vsrc) video.setAttribute('src', vsrc);
+              const clip = labClipSrc(vsrc);
+              if (video.getAttribute('src') !== clip) video.setAttribute('src', clip);
               video.classList.add('is-visible');
               try {
                 video.currentTime = 0;
