@@ -217,17 +217,21 @@ const DECK_SCRIPT = `
   function fitAll() {
     [].forEach.call(document.querySelectorAll('.f-body'), fitFrame);
   }
-  var fitScheduled = false;
+  // Fit synchronously rather than via requestAnimationFrame: rAF callbacks are
+  // throttled while the deck is offscreen/occluded, which would leave a slide
+  // unscaled (and clipped) until first paint. A trailing settle pass catches
+  // late reflow (web-font swap, image load).
+  var fitTimer;
   function scheduleFit() {
-    if (fitScheduled) return;
-    fitScheduled = true;
-    requestAnimationFrame(function () { fitScheduled = false; fitAll(); });
+    fitAll();
+    if (fitTimer) clearTimeout(fitTimer);
+    fitTimer = setTimeout(fitAll, 150);
   }
   window.addEventListener('resize', scheduleFit);
   if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(scheduleFit).catch(function () {});
+    document.fonts.ready.then(fitAll).catch(function () {});
   }
-  window.addEventListener('load', scheduleFit);
+  window.addEventListener('load', fitAll);
   scheduleFit();
 
   var deck = document.querySelector('.deck');
