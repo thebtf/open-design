@@ -27,30 +27,15 @@ const RUNTIME_MODULE_PROJECT_ROOT = resolveProjectRootFromNestedModule(
 
 // Build the env passed to spawn() for a given agent adapter.
 //
-// The claude adapter strips inherited Anthropic API credentials so Claude
-// Code's own auth resolution (claude login / Pro/Max plan) wins instead of
-// silently falling back to API-key billing whenever the daemon happened to be
-// launched from a shell that exported the key for SDK or scripting use. See
-// issue #398. Credentials explicitly configured through Open Design Settings
-// are preserved because that is the user's selected Claude Code auth mode.
+// Claude Code and Codex Local CLI should resolve auth exactly as the user's
+// local CLI does. Preserve credentials from the inherited launch environment
+// (OAuth-backed config, CLI home, or user-owned API-key env), but never let
+// Open Design's saved agentCliEnv inject or override API credentials for
+// those CLIs. BYOK credentials are for Open Design provider calls only.
 //
-// When ANTHROPIC_BASE_URL is set the user is intentionally routing Claude Code
-// to a custom endpoint (e.g. a Kimi/Moonshot proxy). In that case claude login
-// is meaningless, so preserve the credential so the child can authenticate
-// against the custom base URL.
-//
-// The codex adapter has the symmetric problem: inherited OPENAI_API_KEY /
-// CODEX_API_KEY values can silently outrank Codex CLI's own
-// `~/.codex/auth.json` (codex login) and trip 401 invalid_api_key whenever
-// execution mode is Local CLI. Strip inherited keys unless the user has also
-// configured a custom OPENAI_BASE_URL, but preserve credentials explicitly
-// configured through Open Design Settings for Codex Local CLI. See issue #2420.
-//
-// Windows env-var names are case-insensitive at the kernel level
-// (`GetEnvironmentVariable`), but spreading `process.env` into a plain
-// object loses Node's case-insensitive accessor — `Anthropic_Api_Key`
-// would survive a literal `delete env.ANTHROPIC_API_KEY` and still reach
-// the child. Iterate keys and compare case-insensitively to close that.
+// Open Design-saved configured env may contain Windows-style mixed-case key
+// names. Sanitize by case-insensitive key comparison before the merge so a
+// saved `Anthropic_Api_Key` cannot override the inherited local CLI auth.
 // When the daemon launches the vela (amr) CLI, forward this installation's id
 // so vela's analytics can be correlated back to it. spawnEnvForAgent is
 // synchronous, so this uses readAppConfigSync — the synchronous mirror of
@@ -89,11 +74,16 @@ export function spawnEnvForAgent(
 ): NodeJS.ProcessEnv {
   const sandboxRuntime = sandboxRuntimeConfigForBaseEnv(baseEnv);
   const expandedConfiguredEnv = expandConfiguredEnv(configuredEnv);
+  const sanitizedConfiguredEnv = sanitizeConfiguredEnvForAgent(
+    agentId,
+    expandedConfiguredEnv,
+    options,
+  );
   const env = mergeProxyAwareEnv(
     process.platform,
     systemProxyEnv,
     baseEnv,
-    expandedConfiguredEnv,
+    sanitizedConfiguredEnv,
   );
   if (agentId === 'amr') {
     Object.assign(env, amrVelaProfileEnv(env));
@@ -132,29 +122,9 @@ export function spawnEnvForAgent(
     return reapplySandboxRuntimeEnv(env, sandboxRuntime);
   }
   if (agentId === 'claude') {
-    if (!isOpenClaudeExecutable(options.resolvedBin)) {
-      const configuredAnthropicCredentials = pickNonEmptyEnvValues(
-        expandedConfiguredEnv,
-        ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'],
-      );
-      stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', [
-        'ANTHROPIC_API_KEY',
-        'ANTHROPIC_AUTH_TOKEN',
-      ]);
-      Object.assign(env, configuredAnthropicCredentials);
-    }
     return reapplySandboxRuntimeEnv(env, sandboxRuntime);
   }
   if (agentId === 'codex') {
-    const configuredOpenAiCredentials = pickNonEmptyEnvValues(
-      expandedConfiguredEnv,
-      ['OPENAI_API_KEY', 'CODEX_API_KEY'],
-    );
-    stripUnlessCustomBaseUrl(env, 'OPENAI_BASE_URL', [
-      'OPENAI_API_KEY',
-      'CODEX_API_KEY',
-    ]);
-    Object.assign(env, configuredOpenAiCredentials);
     return reapplySandboxRuntimeEnv(env, sandboxRuntime);
   }
   if (agentId === 'opencode') {
@@ -234,42 +204,28 @@ function reapplySandboxRuntimeEnv(
   return applySandboxRuntimeEnv(env, sandboxRuntime);
 }
 
-// Remove `secretKeys` from `env` unless `baseUrlKey` is set to a non-empty
-// value — in which case the user is intentionally routing the CLI through
-// a custom endpoint and the secret is the credential that authenticates
-// against it. Comparison is case-insensitive so Windows env names with
-// mixed casing (`Openai_Api_Key`) cannot slip past a literal `delete`.
-function stripUnlessCustomBaseUrl(
-  env: NodeJS.ProcessEnv,
-  baseUrlKey: string,
-  secretKeys: readonly string[],
-): void {
-  const baseUrlKeyUpper = baseUrlKey.toUpperCase();
-  const hasCustomBaseUrl = Object.keys(env).some(
-    (k) =>
-      k.toUpperCase() === baseUrlKeyUpper &&
-      typeof env[k] === 'string' &&
-      env[k].trim() !== '',
-  );
-  if (hasCustomBaseUrl) return;
-  const secretKeysUpper = new Set(secretKeys.map((k) => k.toUpperCase()));
-  for (const key of Object.keys(env)) {
-    if (secretKeysUpper.has(key.toUpperCase())) delete env[key];
-  }
-}
-
-function pickNonEmptyEnvValues(
-  env: Record<string, string>,
-  keysToKeep: readonly string[],
+// Remove Open Design-saved API credentials before they can override the
+// user's local CLI auth. Comparison is case-insensitive so Windows-style
+// mixed casing (`Openai_Api_Key`) cannot slip past a literal delete.
+function sanitizeConfiguredEnvForAgent(
+  agentId: string,
+  configuredEnv: Record<string, string>,
+  options: SpawnEnvOptions,
 ): Record<string, string> {
-  const keysUpper = new Set(keysToKeep.map((key) => key.toUpperCase()));
-  const kept: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (!keysUpper.has(key.toUpperCase())) continue;
-    if (!value.trim()) continue;
-    kept[key] = value;
+  const sanitized = { ...configuredEnv };
+  if (agentId === 'claude' && !isOpenClaudeExecutable(options.resolvedBin)) {
+    stripKeysCaseInsensitive(sanitized, [
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+    ]);
   }
-  return kept;
+  if (agentId === 'codex') {
+    stripKeysCaseInsensitive(sanitized, [
+      'OPENAI_API_KEY',
+      'CODEX_API_KEY',
+    ]);
+  }
+  return sanitized;
 }
 
 function stripKeysCaseInsensitive(

@@ -2141,11 +2141,9 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
 setImmediate(() => process.exit(0));
 `,
         async () => {
-          // CODEX_API_KEY only flows through when the user has also
-          // configured a custom OPENAI_BASE_URL — i.e. they intend to
-          // authenticate Codex CLI against a third-party gateway. Without
-          // the base URL, spawnEnvForAgent strips the credential so Codex
-          // CLI's own `codex login` wins (issue #2420).
+          // Open Design may pass path/base-url style CLI settings, but its
+          // saved API keys must not become Codex CLI auth. The child should
+          // authenticate exactly as the local CLI would.
           const res = await realFetch(`${baseUrl}/api/test/connection`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -2175,7 +2173,7 @@ setImmediate(() => process.exit(0));
             JSON.stringify({
               CODEX_HOME: codexHome,
               OPENAI_BASE_URL: 'https://proxy.example.com/v1',
-              CODEX_API_KEY: 'codex-key',
+              CODEX_API_KEY: null,
               SHOULD_NOT_PASS: null,
             }),
           );
@@ -2186,7 +2184,7 @@ setImmediate(() => process.exit(0));
     }
   });
 
-  it('strips inherited Codex API keys when no custom OPENAI_BASE_URL is configured', async () => {
+  it('preserves inherited Codex API keys during connection tests', async () => {
     const markerDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'od-conn-test-codex-strip-'));
     const envFile = path.join(markerDir, 'env.json');
     const codexHome = path.join(markerDir, 'codex-home');
@@ -2207,9 +2205,8 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
 setImmediate(() => process.exit(0));
 `,
         async () => {
-          // Simulates the issue #2420 boundary: inherited OpenAI/Codex API
-          // credentials in the daemon environment must not silently override
-          // Codex CLI's own login when no custom OPENAI_BASE_URL is configured.
+          // These keys come from the process environment, not Open Design
+          // BYOK/agentCliEnv. Preserve them so local CLI API-key auth works.
           const res = await realFetch(`${baseUrl}/api/test/connection`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -2232,8 +2229,8 @@ setImmediate(() => process.exit(0));
           await expect(fsp.readFile(envFile, 'utf8')).resolves.toBe(
             JSON.stringify({
               CODEX_HOME: codexHome,
-              OPENAI_API_KEY: null,
-              CODEX_API_KEY: null,
+              OPENAI_API_KEY: 'sk-inherited-openai',
+              CODEX_API_KEY: 'sk-inherited-codex',
             }),
           );
         },
@@ -2247,7 +2244,7 @@ setImmediate(() => process.exit(0));
     }
   });
 
-  it('preserves explicitly configured Codex API credentials during connection tests', async () => {
+  it('does not let configured Codex API credentials override inherited auth during connection tests', async () => {
     const markerDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'od-conn-test-codex-api-'));
     const envFile = path.join(markerDir, 'env.json');
     const previousOpenAiKey = process.env.OPENAI_API_KEY;
@@ -2289,8 +2286,8 @@ setImmediate(() => process.exit(0));
           });
           await expect(fsp.readFile(envFile, 'utf8')).resolves.toBe(
             JSON.stringify({
-              OPENAI_API_KEY: 'sk-configured-openai',
-              CODEX_API_KEY: 'sk-configured-codex',
+              OPENAI_API_KEY: 'sk-inherited-openai',
+              CODEX_API_KEY: 'sk-inherited-codex',
               OPENAI_BASE_URL: null,
             }),
           );
@@ -2305,7 +2302,7 @@ setImmediate(() => process.exit(0));
     }
   });
 
-  it('preserves explicitly configured Claude API credentials during connection tests', async () => {
+  it('does not let configured Claude API credentials override inherited auth during connection tests', async () => {
     const markerDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'od-conn-test-claude-api-'));
     const envFile = path.join(markerDir, 'env.json');
     const previousKey = process.env.ANTHROPIC_API_KEY;
@@ -2364,8 +2361,8 @@ process.stdin.on('end', () => {
           });
           await expect(fsp.readFile(envFile, 'utf8')).resolves.toBe(
             JSON.stringify({
-              ANTHROPIC_API_KEY: 'sk-configured',
-              ANTHROPIC_AUTH_TOKEN: 'sk-configured-token',
+              ANTHROPIC_API_KEY: 'sk-inherited-stale',
+              ANTHROPIC_AUTH_TOKEN: 'sk-inherited-token',
               ANTHROPIC_BASE_URL: null,
             }),
           );

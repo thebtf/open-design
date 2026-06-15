@@ -13,10 +13,10 @@ import { getRememberedLiveModels } from '../../src/runtimes/models.js';
 const fsTest = process.platform === 'win32' ? test.skip : test;
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
-// Issue #398: Claude Code prefers Anthropic API credentials over `claude login`
-// credentials, silently billing API usage. Strip them for the claude
-// adapter so the user's subscription wins.
-test('spawnEnvForAgent strips Anthropic API credentials for the claude adapter', () => {
+// Claude Code owns its own auth resolution. Preserve credentials from the
+// inherited environment so users who run the local CLI with API-key auth get
+// the same behavior through Open Design.
+test('spawnEnvForAgent preserves inherited Anthropic API credentials for the claude adapter', () => {
   const env = spawnEnvForAgent('claude', {
     ANTHROPIC_API_KEY: 'sk-leak',
     ANTHROPIC_AUTH_TOKEN: 'sk-token-leak',
@@ -24,13 +24,13 @@ test('spawnEnvForAgent strips Anthropic API credentials for the claude adapter',
     OD_DAEMON_URL: 'http://127.0.0.1:7456',
   });
 
-  assert.equal('ANTHROPIC_API_KEY' in env, false);
-  assert.equal('ANTHROPIC_AUTH_TOKEN' in env, false);
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-leak');
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'sk-token-leak');
   assert.equal(env.PATH, '/usr/bin');
   assert.equal(env.OD_DAEMON_URL, 'http://127.0.0.1:7456');
 });
 
-test('spawnEnvForAgent applies configured Claude Code env before inherited auth stripping', () => {
+test('spawnEnvForAgent applies configured Claude Code env without stripping inherited auth', () => {
   const env = spawnEnvForAgent(
     'claude',
     {
@@ -44,12 +44,12 @@ test('spawnEnvForAgent applies configured Claude Code env before inherited auth 
   );
 
   assert.equal(env.CLAUDE_CONFIG_DIR, '/Users/test/.claude-2');
-  assert.equal('ANTHROPIC_API_KEY' in env, false);
-  assert.equal('ANTHROPIC_AUTH_TOKEN' in env, false);
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-leak');
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'sk-token-leak');
   assert.equal(env.PATH, '/usr/bin');
 });
 
-test('spawnEnvForAgent preserves explicitly configured Claude Code API credentials', () => {
+test('spawnEnvForAgent does not let configured Claude Code API credentials override inherited auth', () => {
   const env = spawnEnvForAgent(
     'claude',
     {
@@ -63,8 +63,8 @@ test('spawnEnvForAgent preserves explicitly configured Claude Code API credentia
     },
   );
 
-  assert.equal(env.ANTHROPIC_API_KEY, 'sk-configured');
-  assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'sk-configured-token');
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-inherited-stale');
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'sk-inherited-token');
   assert.equal(env.PATH, '/usr/bin');
 });
 
@@ -1138,13 +1138,18 @@ test('antigravity auth matcher covers agy print-mode + log-file auth signals', a
 // spreading process.env into a plain object loses Node's case-insensitive
 // accessor — a `Anthropic_Api_Key` key would survive a literal
 // `delete env.ANTHROPIC_API_KEY` and still reach Claude Code on Windows.
-test('spawnEnvForAgent strips Anthropic credentials case-insensitively for the claude adapter', () => {
-  const env = spawnEnvForAgent('claude', {
-    Anthropic_Api_Key: 'sk-mixed-case',
-    anthropic_api_key: 'sk-lower-case',
-    Anthropic_Auth_Token: 'sk-token-mixed-case',
-    PATH: '/usr/bin',
-  });
+test('spawnEnvForAgent strips configured Anthropic credentials case-insensitively for the claude adapter', () => {
+  const env = spawnEnvForAgent(
+    'claude',
+    {
+      PATH: '/usr/bin',
+    },
+    {
+      Anthropic_Api_Key: 'sk-mixed-case',
+      anthropic_api_key: 'sk-lower-case',
+      Anthropic_Auth_Token: 'sk-token-mixed-case',
+    },
+  );
 
   const remaining = Object.keys(env).filter(
     (k) => k.toUpperCase() === 'ANTHROPIC_API_KEY' || k.toUpperCase() === 'ANTHROPIC_AUTH_TOKEN',
@@ -1191,33 +1196,32 @@ test('spawnEnvForAgent preserves Anthropic credentials for non-claude adapters',
   }
 });
 
-// Issue #2420: Codex CLI prefers OPENAI_API_KEY / CODEX_API_KEY over its own
-// `codex login` OAuth credentials when both are set. Strip inherited keys so
-// Codex CLI's own auth resolution wins, while preserving credentials the user
-// explicitly configured through Settings → Local CLI.
-test('spawnEnvForAgent strips OPENAI_API_KEY for the codex adapter when OPENAI_BASE_URL is absent', () => {
+// Codex CLI owns its own auth resolution. Preserve credentials from the
+// inherited environment so users who run the local CLI with API-key auth get
+// the same behavior through Open Design.
+test('spawnEnvForAgent preserves inherited OPENAI_API_KEY for the codex adapter', () => {
   const env = spawnEnvForAgent('codex', {
     OPENAI_API_KEY: 'sk-stale-byok',
     PATH: '/usr/bin',
     OD_DAEMON_URL: 'http://127.0.0.1:7456',
   });
 
-  assert.equal('OPENAI_API_KEY' in env, false);
+  assert.equal(env.OPENAI_API_KEY, 'sk-stale-byok');
   assert.equal(env.PATH, '/usr/bin');
   assert.equal(env.OD_DAEMON_URL, 'http://127.0.0.1:7456');
 });
 
-test('spawnEnvForAgent strips CODEX_API_KEY for the codex adapter when OPENAI_BASE_URL is absent', () => {
+test('spawnEnvForAgent preserves inherited CODEX_API_KEY for the codex adapter', () => {
   const env = spawnEnvForAgent('codex', {
     CODEX_API_KEY: 'sk-stale-byok',
     PATH: '/usr/bin',
   });
 
-  assert.equal('CODEX_API_KEY' in env, false);
+  assert.equal(env.CODEX_API_KEY, 'sk-stale-byok');
   assert.equal(env.PATH, '/usr/bin');
 });
 
-test('spawnEnvForAgent strips Codex API keys when OPENAI_BASE_URL is empty', () => {
+test('spawnEnvForAgent preserves inherited Codex API keys when OPENAI_BASE_URL is empty', () => {
   const env = spawnEnvForAgent('codex', {
     OPENAI_API_KEY: 'sk-stale-byok',
     CODEX_API_KEY: 'sk-stale-byok',
@@ -1225,19 +1229,19 @@ test('spawnEnvForAgent strips Codex API keys when OPENAI_BASE_URL is empty', () 
     PATH: '/usr/bin',
   });
 
-  assert.equal('OPENAI_API_KEY' in env, false);
-  assert.equal('CODEX_API_KEY' in env, false);
+  assert.equal(env.OPENAI_API_KEY, 'sk-stale-byok');
+  assert.equal(env.CODEX_API_KEY, 'sk-stale-byok');
   assert.equal(env.PATH, '/usr/bin');
 });
 
-test('spawnEnvForAgent strips Codex API keys when OPENAI_BASE_URL is whitespace', () => {
+test('spawnEnvForAgent preserves inherited Codex API keys when OPENAI_BASE_URL is whitespace', () => {
   const env = spawnEnvForAgent('codex', {
     OPENAI_API_KEY: 'sk-stale-byok',
     OPENAI_BASE_URL: '   ',
     PATH: '/usr/bin',
   });
 
-  assert.equal('OPENAI_API_KEY' in env, false);
+  assert.equal(env.OPENAI_API_KEY, 'sk-stale-byok');
   assert.equal(env.PATH, '/usr/bin');
 });
 
@@ -1264,13 +1268,18 @@ test('spawnEnvForAgent preserves CODEX_API_KEY when OPENAI_BASE_URL is set to a 
   assert.equal(env.OPENAI_BASE_URL, 'https://proxy.example.com/v1');
 });
 
-test('spawnEnvForAgent strips Codex API keys case-insensitively when OPENAI_BASE_URL is absent', () => {
-  const env = spawnEnvForAgent('codex', {
-    Openai_Api_Key: 'sk-mixed-case',
-    openai_api_key: 'sk-lower-case',
-    Codex_Api_Key: 'sk-mixed-case',
-    PATH: '/usr/bin',
-  });
+test('spawnEnvForAgent strips configured Codex API keys case-insensitively', () => {
+  const env = spawnEnvForAgent(
+    'codex',
+    {
+      PATH: '/usr/bin',
+    },
+    {
+      Openai_Api_Key: 'sk-mixed-case',
+      openai_api_key: 'sk-lower-case',
+      Codex_Api_Key: 'sk-mixed-case',
+    },
+  );
 
   const remainingOpenAi = Object.keys(env).filter(
     (k) => k.toUpperCase() === 'OPENAI_API_KEY',
@@ -1303,12 +1312,7 @@ test('spawnEnvForAgent preserves Codex API keys for non-codex adapters', () => {
   }
 });
 
-// When the user has explicitly configured a BYOK Codex base URL through the
-// Settings → Execution mode → Local CLI form, the configured API key in
-// `agentCliEnv.codex.OPENAI_API_KEY` (or CODEX_API_KEY) flows through to the
-// spawn alongside the base URL. The stripping helper must keep both in sync
-// so the configured proxy actually authenticates.
-test('spawnEnvForAgent applies configured codex env and preserves API key when base URL is configured', () => {
+test('spawnEnvForAgent applies configured codex base URL without configured API key', () => {
   const env = spawnEnvForAgent(
     'codex',
     { PATH: '/usr/bin' },
@@ -1319,10 +1323,10 @@ test('spawnEnvForAgent applies configured codex env and preserves API key when b
   );
 
   assert.equal(env.OPENAI_BASE_URL, 'https://proxy.example.com/v1');
-  assert.equal(env.OPENAI_API_KEY, 'sk-configured');
+  assert.equal('OPENAI_API_KEY' in env, false);
 });
 
-test('spawnEnvForAgent preserves explicitly configured Codex API credentials without a custom base URL', () => {
+test('spawnEnvForAgent does not let configured Codex API credentials override inherited auth', () => {
   const env = spawnEnvForAgent(
     'codex',
     {
@@ -1336,12 +1340,12 @@ test('spawnEnvForAgent preserves explicitly configured Codex API credentials wit
     },
   );
 
-  assert.equal(env.OPENAI_API_KEY, 'sk-configured-openai');
-  assert.equal(env.CODEX_API_KEY, 'sk-configured-codex');
+  assert.equal(env.OPENAI_API_KEY, 'sk-inherited-stale');
+  assert.equal(env.CODEX_API_KEY, 'sk-inherited-codex');
   assert.equal(env.PATH, '/usr/bin');
 });
 
-test('spawnEnvForAgent preserves Anthropic API credentials when ANTHROPIC_BASE_URL is set', () => {
+test('spawnEnvForAgent preserves inherited Anthropic API credentials when ANTHROPIC_BASE_URL is set', () => {
   const env = spawnEnvForAgent('claude', {
     ANTHROPIC_API_KEY: 'sk-kimi',
     ANTHROPIC_AUTH_TOKEN: 'sk-token',
@@ -1355,7 +1359,7 @@ test('spawnEnvForAgent preserves Anthropic API credentials when ANTHROPIC_BASE_U
   assert.equal(env.PATH, '/usr/bin');
 });
 
-test('spawnEnvForAgent strips Anthropic API credentials when ANTHROPIC_BASE_URL is empty', () => {
+test('spawnEnvForAgent preserves inherited Anthropic API credentials when ANTHROPIC_BASE_URL is empty', () => {
   const env = spawnEnvForAgent('claude', {
     ANTHROPIC_API_KEY: 'sk-leak',
     ANTHROPIC_AUTH_TOKEN: 'sk-token-leak',
@@ -1363,12 +1367,12 @@ test('spawnEnvForAgent strips Anthropic API credentials when ANTHROPIC_BASE_URL 
     PATH: '/usr/bin',
   });
 
-  assert.equal('ANTHROPIC_API_KEY' in env, false);
-  assert.equal('ANTHROPIC_AUTH_TOKEN' in env, false);
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-leak');
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'sk-token-leak');
   assert.equal(env.PATH, '/usr/bin');
 });
 
-test('spawnEnvForAgent strips Anthropic API credentials when ANTHROPIC_BASE_URL is whitespace', () => {
+test('spawnEnvForAgent preserves inherited Anthropic API credentials when ANTHROPIC_BASE_URL is whitespace', () => {
   const env = spawnEnvForAgent('claude', {
     ANTHROPIC_API_KEY: 'sk-leak',
     ANTHROPIC_AUTH_TOKEN: 'sk-token-leak',
@@ -1376,8 +1380,8 @@ test('spawnEnvForAgent strips Anthropic API credentials when ANTHROPIC_BASE_URL 
     PATH: '/usr/bin',
   });
 
-  assert.equal('ANTHROPIC_API_KEY' in env, false);
-  assert.equal('ANTHROPIC_AUTH_TOKEN' in env, false);
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-leak');
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, 'sk-token-leak');
   assert.equal(env.PATH, '/usr/bin');
 });
 
