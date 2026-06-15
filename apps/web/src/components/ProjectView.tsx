@@ -2795,6 +2795,7 @@ export function ProjectView({
                     artifactHtml: artifactToPersist.html,
                     producedFiles: producedBeforeFallback,
                     readProjectHtml,
+                    allowAnyHtmlWrite: message.agentId === 'claude',
                   });
                   if (recoveredExistingArtifact) {
                     savedArtifactRef.current = recoveredExistingArtifact.name;
@@ -3540,6 +3541,7 @@ export function ProjectView({
                 artifactHtml: artifactToPersist.html,
                 producedFiles: producedBeforeFallback,
                 readProjectHtml,
+                allowAnyHtmlWrite: assistantAgentId === 'claude',
               });
               if (sameTurnHtmlWrite) {
                 savedArtifactRef.current = sameTurnHtmlWrite.name;
@@ -6328,10 +6330,12 @@ export async function findSameTurnHtmlWriteForRecoveredArtifact({
   artifactHtml,
   producedFiles,
   readProjectHtml,
+  allowAnyHtmlWrite = false,
 }: {
   artifactHtml: string;
   producedFiles: readonly ProjectFile[];
   readProjectHtml: (name: string) => Promise<string | null>;
+  allowAnyHtmlWrite?: boolean;
 }): Promise<ProjectFile | null> {
   const recovered = normalizeHtmlForRecoveredArtifactComparison(artifactHtml);
   if (!recovered) return null;
@@ -6342,6 +6346,7 @@ export async function findSameTurnHtmlWriteForRecoveredArtifact({
       return file;
     }
   }
+  if (allowAnyHtmlWrite) return candidates[0] ?? null;
   return null;
 }
 

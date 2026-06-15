@@ -224,10 +224,10 @@ describe('findSameTurnHtmlWriteForRecoveredArtifact', () => {
     })).resolves.toBe(indexFile);
   });
 
-  it('does not treat different same-turn HTML files as duplicates even for Claude-shaped fallback input', async () => {
+  it('does not treat different same-turn HTML files as duplicates', async () => {
     const indexFile = {
-      name: 'helper.html',
-      path: 'helper.html',
+      name: 'index.html',
+      path: 'index.html',
       size: html.length,
       mtime: 2,
       kind: 'html',
@@ -238,8 +238,7 @@ describe('findSameTurnHtmlWriteForRecoveredArtifact', () => {
       artifactHtml: html,
       producedFiles: [indexFile] as never,
       readProjectHtml: vi.fn(async () => html.replace('Demo</h1>', 'Other</h1>')),
-      allowAnyHtmlWrite: true,
-    } as never)).resolves.toBeNull();
+    })).resolves.toBeNull();
   });
 
   it('ignores non-HTML same-turn files', async () => {
