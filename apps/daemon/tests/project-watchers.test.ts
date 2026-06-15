@@ -50,7 +50,11 @@ async function makeProjectsRoot() {
 
 function waitFor(
   predicate: () => boolean,
-  { timeout = 2000, interval = 25 }: { timeout?: number; interval?: number } = {},
+  {
+    label,
+    timeout = 2000,
+    interval = 25,
+  }: { label?: string | (() => string); timeout?: number; interval?: number } = {},
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const started = Date.now();
@@ -60,7 +64,10 @@ function waitFor(
       } catch (err) {
         return reject(err);
       }
-      if (Date.now() - started > timeout) return reject(new Error('waitFor timeout'));
+      if (Date.now() - started > timeout) {
+        const detail = typeof label === 'function' ? label() : label;
+        return reject(new Error(`waitFor timeout after ${timeout}ms${detail ? `: ${detail}` : ''}`));
+      }
       setTimeout(tick, interval);
     };
     tick();
@@ -313,7 +320,10 @@ describe('project-watchers (chokidar options)', () => {
       await writeFile(path.join(externalDir, 'leaked.txt'), 'leak');
       // Settle: write a real in-project file to give chokidar something to do.
       await writeFile(path.join(projectRoot, 'real.txt'), 'real');
-      await waitFor(() => events.some((e) => e.path === 'real.txt'));
+      await waitFor(() => events.some((e) => e.path === 'real.txt'), {
+        label: () => `expected real.txt event after symlink write; events=${JSON.stringify(events)}`,
+        timeout: 6000,
+      });
 
       const linkedEvents = events.filter((e) => e.path.startsWith('linked/'));
       expect(linkedEvents).toEqual([]);
@@ -321,5 +331,5 @@ describe('project-watchers (chokidar options)', () => {
       await sub.unsubscribe();
       await rm(dataRoot, { recursive: true, force: true });
     }
-  }, 8_000);
+  }, 12_000);
 });

@@ -415,6 +415,7 @@ import {
   getDeployment,
   getDeploymentById,
   getMessageTelemetryFinalizationState,
+  getFirstConversationForProject,
   getProject,
   getTemplate,
   insertConversation,
@@ -13020,19 +13021,7 @@ export async function startServer({
       (typeof meta.conversationId !== 'string' || !meta.conversationId)
     ) {
       try {
-        const convs = listConversations(db, meta.projectId);
-        // listConversations is ordered for the UI by recent activity; this
-        // fallback must bind to the seeded default conversation instead.
-        const defaultConv = Array.isArray(convs) && convs.length > 0
-          ? [...convs].sort((a, b) => {
-              const aCreated = Number(a?.createdAt);
-              const bCreated = Number(b?.createdAt);
-              if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) {
-                return aCreated - bCreated;
-              }
-              return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
-            })[0]
-          : null;
+        const defaultConv = getFirstConversationForProject(db, meta.projectId);
         if (defaultConv && typeof defaultConv.id === 'string' && defaultConv.id) {
           meta.conversationId = defaultConv.id;
           if (typeof meta.assistantMessageId !== 'string' || !meta.assistantMessageId) {

@@ -917,6 +917,26 @@ export function getConversation(db: SqliteDb, id: string) {
   };
 }
 
+export function getFirstConversationForProject(db: SqliteDb, projectId: string) {
+  const r = db
+    .prepare(
+      `SELECT id, project_id AS projectId, title, session_mode AS sessionMode,
+              created_at AS createdAt, updated_at AS updatedAt,
+              (SELECT COUNT(*) FROM messages WHERE conversation_id = conversations.id) AS messageCount
+         FROM conversations
+        WHERE project_id = ?
+        ORDER BY created_at ASC, rowid ASC
+        LIMIT 1`,
+    )
+    .get(projectId) as DbRow | undefined;
+  if (!r) return null;
+  return {
+    ...normalizeConversation(r),
+    latestRun: latestConversationRunSummary(db, r.id) ?? undefined,
+    ...numberProperty('totalDurationMs', totalConversationRunDurationMs(db, r.id)),
+  };
+}
+
 function normalizeConversation(r: DbRow) {
   const latestRun = conversationRunSummaryFromRow({
     runStatus: r.latestRunStatus,
