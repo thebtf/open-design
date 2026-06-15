@@ -464,6 +464,7 @@ describe("packaged smoke workflow", () => {
     expect(workflow).toContain("Write mac_arm64 release report");
     expect(workflow).toContain("fnm exec --using=24 -- pnpm exec tools-release write-report");
     expect(workflow).toContain("fnm.exe\" exec --using=24 -- pnpm.cmd exec tools-release write-report");
+    expect(workflow).toContain("fnm.exe\" exec --using=24 -- pnpm.cmd exec tools-release publish-platform");
     expect(workflow).toContain("Prepare mac_arm64 assets");
     expect(workflow).toContain("RELEASE_TARGET: mac_arm64");
     expect(workflow).toContain("RELEASE_SIGNED: ${{ (inputs.mac_arm64_delivery_mode == 'internal-updater' || inputs.mac_arm64_sign_mode != 'no') && 'true' || 'false' }}");

@@ -807,7 +807,7 @@ jobs:
           RELEASE_VERSION_LOCK_KEY: ${{ needs.metadata.outputs.version_lock_key }}
           RELEASE_VERSION_LOCK_REQUIRED: "true"
         shell: pwsh
-        run: '& "C:\Users\runner\.cargo\bin\fnm.exe" exec --using=24 -- pnpm exec tools-release publish-platform'
+        run: '& "C:\Users\runner\.cargo\bin\fnm.exe" exec --using=24 -- pnpm.cmd exec tools-release publish-platform'
 
   publish:
     name: Publish betas metadata to Nexu S3
