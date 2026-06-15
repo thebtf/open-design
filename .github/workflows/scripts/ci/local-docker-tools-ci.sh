@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF' >&2
+usage: local-docker-tools-ci.sh [--profile ci-base|ci-playwright|nix-capable] <run-id> [atom...]
+
+Default ci-base atoms:
+  guard i18n
+
+Default ci-playwright atoms:
+  browser
+
+Default nix-capable atoms:
+  nix
+
+Supported ci-base atoms:
+  guard i18n unit daemon web typecheck build
+
+Supported ci-playwright atoms:
+  browser
+
+Supported nix-capable atoms:
+  nix
+
+Environment:
+  OPEN_DESIGN_CI_IMAGE_REF          Docker image ref override
+  OPEN_DESIGN_CI_BASE_IMAGE         ci-base image ref, default open-design-ci-base:v0.1.0-beta.1
+  OPEN_DESIGN_CI_PLAYWRIGHT_IMAGE   ci-playwright image ref, default open-design-ci-playwright:v0.1.0-beta.2
+  OPEN_DESIGN_CI_NIX_IMAGE          nix-capable image ref, default open-design-ci-nix:v0.1.0-beta.3
+
+Evidence is written under:
+  .tmp/workflows/ci-gate/runs/<run-id>
+EOF
+  exit 2
+}
+
+profile="ci-base"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --profile)
+      profile="${2:-}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "unknown option: $1" >&2
+      usage
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [ "$#" -lt 1 ]; then
+  usage
+fi
+
+case "$profile" in
+  ci-base|ci-playwright|nix-capable)
+    ;;
+  *)
+    echo "unsupported profile: $profile" >&2
+    usage
+    ;;
+esac
+
+run_id="$1"
+shift
+
+if [ "$#" -eq 0 ]; then
+  case "$profile" in
+    ci-playwright)
+      selected_atoms=(browser)
+      ;;
+    nix-capable)
+      selected_atoms=(nix)
+      ;;
+    *)
+      selected_atoms=(guard i18n)
+      ;;
+  esac
+else
+  selected_atoms=("$@")
+fi
+
+case "$run_id" in
+  ''|*/*|*' '*|*'..'*)
+    echo "run-id must be a simple path segment" >&2
+    exit 2
+    ;;
+esac
+
+for atom in "${selected_atoms[@]}"; do
+  case "$profile:$atom" in
+    ci-base:guard|ci-base:i18n|ci-base:unit|ci-base:daemon|ci-base:web|ci-base:typecheck|ci-base:build)
+      ;;
+    ci-playwright:browser)
+      ;;
+    nix-capable:nix)
+      ;;
+    *)
+      echo "unsupported $profile atom: $atom" >&2
+      usage
+      ;;
+  esac
+done
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+repo_root="$(CDPATH= cd -- "$script_dir/../../../.." && pwd)"
+case "$profile" in
+  ci-playwright)
+    default_image_ref="${OPEN_DESIGN_CI_PLAYWRIGHT_IMAGE:-open-design-ci-playwright:v0.1.0-beta.2}"
+    ;;
+  nix-capable)
+    default_image_ref="${OPEN_DESIGN_CI_NIX_IMAGE:-open-design-ci-nix:v0.1.0-beta.3}"
+    ;;
+  *)
+    default_image_ref="${OPEN_DESIGN_CI_BASE_IMAGE:-open-design-ci-base:v0.1.0-beta.1}"
+    ;;
+esac
+image_ref="${OPEN_DESIGN_CI_IMAGE_REF:-$default_image_ref}"
+run_root="$repo_root/.tmp/workflows/ci-gate/runs/$run_id"
+tool_root="$repo_root/.tmp/tools-ci"
+selection_path="$tool_root/selections/$run_id.json"
+head_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+host_uid="$(id -u)"
+host_gid="$(id -g)"
+ci_mode="default"
+
+if [ ! -f "$repo_root/package.json" ]; then
+  echo "open-design package.json not found: $repo_root" >&2
+  exit 1
+fi
+
+if [ ! -f "$repo_root/tools/ci/dist/index.mjs" ]; then
+  echo "tools-ci dist is missing; run pnpm --filter @open-design/tools-ci build first" >&2
+  exit 1
+fi
+
+docker inspect --type=image "$image_ref" >/dev/null
+
+mkdir -p "$run_root" "$tool_root/selections"
+
+docker_profile_args=()
+docker_profile_env=()
+docker_source_env=(--env OD_CI_COPY_NODE_MODULES=1)
+if [ "$profile" = "ci-playwright" ]; then
+  docker_profile_args=(--shm-size 2g)
+  docker_profile_env=(
+    --env CI_GATE_E2E_VITEST_FLAGS=--no-file-parallelism
+    --env CI_GATE_SKIP_PLAYWRIGHT_INSTALL=1
+    --env PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+  )
+fi
+if [ "$profile" = "nix-capable" ]; then
+  docker_source_env=()
+  ci_mode="nix"
+fi
+
+node - "$selection_path" "${selected_atoms[@]}" <<'NODE'
+const { writeFileSync } = require("node:fs");
+
+const [selectionPath, ...selectedAtoms] = process.argv.slice(2);
+writeFileSync(
+  selectionPath,
+  `${JSON.stringify({
+    provider: "local-docker",
+    schemaVersion: 1,
+    selectedAtoms,
+    unavailable: [],
+  }, null, 2)}\n`,
+  "utf8",
+);
+NODE
+
+docker run --rm \
+  --name "od-tools-ci-${run_id}" \
+  "${docker_profile_args[@]}" \
+  --user "$host_uid:$host_gid" \
+  --volume "$repo_root:/repo-src:ro" \
+  --volume "$repo_root/.tmp/workflows/ci-gate:/evidence" \
+  --volume "$tool_root:/tool" \
+  --workdir /repo-src \
+  --env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+  --env HOME=/tool/home \
+  --env OD_CI_ATOM_MANIFEST=/repo-src/tools/ci/atoms.json \
+  --env OD_CI_EVIDENCE_ROOT=/evidence \
+  --env OD_CI_HEAD_SHA="$head_sha" \
+  --env OD_CI_MODE="$ci_mode" \
+  --env OD_CI_PROFILE="$profile" \
+  --env OD_CI_PROVIDER_ID=local-docker \
+  --env OD_CI_REPO_DIR=/repo-src \
+  --env OD_CI_RUN_ATTEMPT=1 \
+  --env OD_CI_RUN_ID="$run_id" \
+  --env OD_CI_SOURCE_MODE=copy \
+  --env OD_CI_TOOL_ROOT=/tool \
+  --env OD_CI_TMP_DIR="/tmp/tools-ci-tmp/$run_id" \
+  --env OD_CI_WORK_DIR="/tmp/tools-ci-work/$run_id" \
+  --env OD_CI_WORKSPACE_ROOT=/repo-src \
+  --env SHELL=/bin/bash \
+  "${docker_source_env[@]}" \
+  "${docker_profile_env[@]}" \
+  "$image_ref" \
+  bash -lc 'node /repo-src/tools/ci/dist/index.mjs execute --selection "/tool/selections/$OD_CI_RUN_ID.json"'
+
+echo "$run_root"

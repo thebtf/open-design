@@ -50,10 +50,15 @@ case "$provider" in
     ;;
 esac
 
+event_name="${GITHUB_EVENT_NAME:-unknown}"
+head_sha="${CI_GATE_HEAD_SHA:-${GITHUB_SHA:-unknown}}"
+run_id="${GITHUB_RUN_ID:-unknown}"
+run_attempt="${GITHUB_RUN_ATTEMPT:-unknown}"
+
 ci_root="${GITHUB_WORKSPACE:-$(pwd)}"
-results_path="${results_path:-$ci_root/.od/ci-gate/ci-results.json}"
+results_path="${results_path:-$ci_root/.tmp/workflows/ci-gate/runs/$run_id/ci-results.json}"
 results_dir="$(dirname "$results_path")"
-actions_jsonl="$results_dir/actions.jsonl"
+selection_path="$results_dir/selection.json"
 
 export COREPACK_ENABLE_DOWNLOAD_PROMPT="${COREPACK_ENABLE_DOWNLOAD_PROMPT:-0}"
 export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/open-design-ci/corepack}"
@@ -66,151 +71,92 @@ export npm_config_network_timeout="${npm_config_network_timeout:-180000}"
 mkdir -p "$results_dir"
 mkdir -p "$COREPACK_HOME"
 mkdir -p "$npm_config_store_dir"
-: > "$actions_jsonl"
 
-event_name="${GITHUB_EVENT_NAME:-unknown}"
-head_sha="${CI_GATE_HEAD_SHA:-${GITHUB_SHA:-unknown}}"
-run_id="${GITHUB_RUN_ID:-unknown}"
-run_attempt="${GITHUB_RUN_ATTEMPT:-unknown}"
+PROVIDER="$provider" \
+MODE="$mode" \
+MANIFEST_PATH="$ci_root/tools/ci/atoms.json" \
+SELECTION_PATH="$selection_path" \
+node <<'EOF'
+const fs = require("node:fs");
 
-actions=(
-  nix
-  guard
-  i18n
-  unit
-  typecheck
-  daemon
-  web
-  build
-  browser
-)
+const provider = process.env.PROVIDER;
+const mode = process.env.MODE;
+const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST_PATH, "utf8"));
 
-append_result() {
-  local action="$1"
-  local kind="$2"
-  local status="$3"
-  local steps_path="${4:-}"
-  if [ -n "$steps_path" ] && [ -s "$steps_path" ]; then
-    jq -nc \
-      --arg action "$action" \
-      --arg kind "$kind" \
-      --arg status "$status" \
-      --slurpfile steps "$steps_path" \
-      '{
-        action: $action,
-        kind: $kind,
-        status: $status,
-        steps: $steps
-      }' >> "$actions_jsonl"
-    return 0
-  fi
-
-  jq -nc \
-    --arg action "$action" \
-    --arg kind "$kind" \
-    --arg status "$status" \
-    '{
-      action: $action,
-      kind: $kind,
-      status: $status
-    }' >> "$actions_jsonl"
+function isSelected(atom) {
+  if (provider === "owned") return atom.name !== "nix";
+  if (provider === "github" && mode === "nix") return atom.name === "nix";
+  if (provider === "github" && mode === "full") return true;
+  throw new Error(`unsupported provider/mode: ${provider}/${mode}`);
 }
 
-is_real_action() {
-  local action="$1"
-  case "$provider:$mode:$action" in
-    owned:default:nix)
-      return 1
-      ;;
-    github:nix:nix)
-      return 0
-      ;;
-    github:nix:*)
-      return 1
-      ;;
-    *)
-      return 0
-      ;;
-  esac
+function unavailableFor(atom) {
+  if (provider === "owned" && atom.name === "nix") {
+    return {
+      atom: atom.name,
+      missingCapabilities: ["nix"],
+      reason: "owned-nix-substrate-not-proven",
+      status: "unavailable",
+    };
+  }
+  return {
+    atom: atom.name,
+    missingCapabilities: [],
+    reason: `${provider}-${mode}-not-selected`,
+    status: "unavailable",
+  };
 }
 
-has_real_non_nix=false
-for action in "${actions[@]}"; do
-  if is_real_action "$action" && [ "$action" != "nix" ]; then
-    has_real_non_nix=true
-    break
-  fi
-done
+const selectedAtoms = [];
+const unavailable = [];
+for (const atom of manifest.atoms) {
+  if (isSelected(atom)) {
+    selectedAtoms.push(atom.name);
+  } else {
+    unavailable.push(unavailableFor(atom));
+  }
+}
 
-setup_status="success"
-if [ "$has_real_non_nix" = "true" ]; then
-  package_manager="$(node -p "require('./package.json').packageManager")"
-  echo "preparing workspace with $package_manager"
-  set +e
-  timeout 180s bash -lc 'corepack enable && corepack prepare "$1" --activate' _ "$package_manager"
-  corepack_exit="$?"
-  set -e
-  if [ "$corepack_exit" != "0" ]; then
-    setup_status="failure"
-  else
-    set +e
-    timeout 1800s pnpm install --frozen-lockfile --prefer-offline --network-concurrency=8
-    install_exit="$?"
-    set -e
-    if [ "$install_exit" != "0" ]; then
-      setup_status="failure"
-    fi
-  fi
+fs.writeFileSync(
+  process.env.SELECTION_PATH,
+  `${JSON.stringify({
+    provider,
+    schemaVersion: 1,
+    selectedAtoms,
+    unavailable,
+  }, null, 2)}\n`,
+);
+EOF
+
+export OD_CI_ARTIFACTS_DIR="$results_dir/artifacts"
+export OD_CI_ATOM_MANIFEST="$ci_root/tools/ci/atoms.json"
+export OD_CI_CACHE_DIR="${OD_CI_CACHE_DIR:-$HOME/.cache/open-design-ci/$provider-$mode}"
+export OD_CI_EVENT_NAME="$event_name"
+export OD_CI_HEAD_SHA="$head_sha"
+export OD_CI_MODE="$mode"
+export OD_CI_PROVIDER_ID="$provider"
+export OD_CI_REPO_DIR="$ci_root"
+export OD_CI_RESULTS_DIR="$results_dir"
+export OD_CI_RUN_ATTEMPT="$run_attempt"
+export OD_CI_RUN_ID="$run_id"
+export OD_CI_TMP_DIR="${OD_CI_TMP_DIR:-${RUNNER_TEMP:-$ci_root/.tmp/tools-ci}/$provider-$mode-$run_id}"
+export OD_CI_WORK_DIR="$ci_root"
+export OD_CI_WORKSPACE_ROOT="$ci_root"
+
+set +e
+node "$ci_root/tools/ci/dist/index.mjs" execute \
+  --manifest "$OD_CI_ATOM_MANIFEST" \
+  --selection "$selection_path"
+execute_exit="$?"
+set -e
+
+generated_results_path="$results_dir/ci-results.json"
+if [ "$generated_results_path" != "$results_path" ] && [ -f "$generated_results_path" ]; then
+  cp "$generated_results_path" "$results_path"
 fi
 
-overall_exit=0
-for action in "${actions[@]}"; do
-  action_steps_jsonl="$results_dir/${action}-steps.jsonl"
-  : > "$action_steps_jsonl"
-  export CI_GATE_ACTION_TIMINGS_PATH="$action_steps_jsonl"
-
-  if ! is_real_action "$action"; then
-    append_result "$action" "placeholder" "not-run"
-    continue
-  fi
-
-  if [ "$action" != "nix" ] && [ "$setup_status" != "success" ]; then
-    append_result "$action" "real" "failure"
-    overall_exit=1
-    continue
-  fi
-
-  echo "running action: $action"
-  set +e
-  "$ci_root/.github/workflows/scripts/ci/actions/$action.sh"
-  action_exit="$?"
-  set -e
-  if [ "$action_exit" = "0" ]; then
-    append_result "$action" "real" "success" "$action_steps_jsonl"
-  else
-    append_result "$action" "real" "failure" "$action_steps_jsonl"
-    overall_exit=1
-  fi
-done
-
-jq -sc \
-  --arg provider "$provider" \
-  --arg mode "$mode" \
-  --arg eventName "$event_name" \
-  --arg headSha "$head_sha" \
-  --arg runId "$run_id" \
-  --arg runAttempt "$run_attempt" \
-  '{
-    schemaVersion: 1,
-    provider: $provider,
-    mode: $mode,
-    eventName: $eventName,
-    headSha: $headSha,
-    runId: $runId,
-    runAttempt: $runAttempt,
-    actions: .
-  }' "$actions_jsonl" > "$results_path"
-
 echo "ci results: $results_path"
-echo "OD_CI_RESULTS_JSON $(base64 < "$results_path" | tr -d '\n')"
-exit "$overall_exit"
+if [ -f "$results_path" ]; then
+  echo "OD_CI_RESULTS_JSON $(base64 < "$results_path" | tr -d '\n')"
+fi
+exit "$execute_exit"

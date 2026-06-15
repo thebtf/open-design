@@ -107,6 +107,10 @@ const residualAllowedExactPaths = new Set([
   "apps/daemon/tests/fixtures/fake-vela.mjs",
   "tools/dev/bin/tools-dev.mjs",
   "tools/dev/esbuild.config.mjs",
+  // tools-ci follows the same package-local bin shim + esbuild config pattern
+  // as the other tools control planes.
+  "tools/ci/bin/tools-ci.mjs",
+  "tools/ci/esbuild.config.mjs",
   "tools/pack/bin/tools-pack.mjs",
   "tools/pack/esbuild.config.mjs",
   "tools/serve/bin/tools-serve.mjs",
@@ -921,6 +925,7 @@ const toolsRootAllowlist = new Map<string, "directory" | "file">([
   // Keep top-level tools intentionally small. `tools/launcher` was an incoming
   // Windows shim experiment from PR #683 and is not an active repo boundary.
   ["AGENTS.md", "file"],
+  ["ci", "directory"],
   ["dev", "directory"],
   ["pack", "directory"],
   ["serve", "directory"],

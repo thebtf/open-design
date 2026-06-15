@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "atoms": [
+    {
+      "domain": "nix",
+      "key": "flake",
+      "name": "nix",
+      "call": "nix flake check --print-build-logs --keep-going",
+      "script": ".github/workflows/scripts/ci/actions/nix.sh",
+      "requires": ["nix"],
+      "setup": "nix-flake",
+      "timeoutSeconds": 1800,
+      "cacheProfile": "nix",
+      "artifactProfile": "nix",
+      "resultRequired": true
+    },
+    {
+      "domain": "workspace",
+      "key": "guard",
+      "name": "guard",
+      "call": "pnpm guard",
+      "script": ".github/workflows/scripts/ci/actions/guard.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 600,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "workspace",
+      "key": "i18n",
+      "name": "i18n",
+      "call": "pnpm i18n:check",
+      "script": ".github/workflows/scripts/ci/actions/i18n.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 600,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "packages",
+      "key": "unit",
+      "name": "unit",
+      "call": "workspace package and tool unit tests",
+      "script": ".github/workflows/scripts/ci/actions/unit.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 1800,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "workspace",
+      "key": "typecheck",
+      "name": "typecheck",
+      "call": "workspace type declarations and typecheck",
+      "script": ".github/workflows/scripts/ci/actions/typecheck.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 1800,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "apps",
+      "key": "daemon",
+      "name": "daemon",
+      "call": "daemon build and tests",
+      "script": ".github/workflows/scripts/ci/actions/daemon.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 1200,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "apps",
+      "key": "web",
+      "name": "web",
+      "call": "web sidecar build and tests",
+      "script": ".github/workflows/scripts/ci/actions/web.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 1200,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "workspace",
+      "key": "build",
+      "name": "build",
+      "call": "workspace build closure",
+      "script": ".github/workflows/scripts/ci/actions/build.sh",
+      "requires": ["node", "pnpm"],
+      "setup": "pnpm-workspace",
+      "timeoutSeconds": 2400,
+      "cacheProfile": "node-pnpm",
+      "artifactProfile": "standard",
+      "resultRequired": true
+    },
+    {
+      "domain": "e2e",
+      "key": "browser",
+      "name": "browser",
+      "call": "browser e2e and critical Playwright",
+      "script": ".github/workflows/scripts/ci/actions/browser.sh",
+      "requires": ["node", "pnpm", "playwright", "chromium"],
+      "setup": "browser-e2e",
+      "timeoutSeconds": 7200,
+      "cacheProfile": "browser",
+      "artifactProfile": "browser",
+      "resultRequired": true
+    }
+  ]
+}

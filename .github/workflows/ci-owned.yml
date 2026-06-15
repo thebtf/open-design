@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: Run owned CI protocol
-        run: .github/workflows/scripts/ci-gate.sh --provider owned --mode default --results-path .od/ci-gate/ci-results.json
+        run: .github/workflows/scripts/ci-gate.sh --provider owned --mode default --results-path ".tmp/workflows/ci-gate/runs/${GITHUB_RUN_ID}/ci-results.json"
 
       - name: Upload owned CI results
         if: ${{ always() }}
@@ -33,6 +33,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ci-results-owned
-          path: .od/ci-gate/ci-results.json
+          path: .tmp/workflows/ci-gate/runs/${{ github.run_id }}
           if-no-files-found: error
           retention-days: 7

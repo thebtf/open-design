@@ -47,7 +47,7 @@ jobs:
             accept-flake-config = true
 
       - name: Run GitHub-hosted CI protocol
-        run: .github/workflows/scripts/ci-gate.sh --provider github --mode "$CI_GATE_GITHUB_MODE" --results-path .od/ci-gate/ci-results.json
+        run: .github/workflows/scripts/ci-gate.sh --provider github --mode "$CI_GATE_GITHUB_MODE" --results-path ".tmp/workflows/ci-gate/runs/${GITHUB_RUN_ID}/ci-results.json"
 
       - name: Upload GitHub-hosted CI results
         if: ${{ always() }}
@@ -55,6 +55,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ci-results-github
-          path: .od/ci-gate/ci-results.json
+          path: .tmp/workflows/ci-gate/runs/${{ github.run_id }}
           if-no-files-found: error
           retention-days: 7

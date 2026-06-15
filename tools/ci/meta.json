@@ -1,0 +1,7 @@
+{
+  "toolName": "tools-ci",
+  "packageName": "@open-design/tools-ci",
+  "buildCommand": "pnpm --filter @open-design/tools-ci build",
+  "distEntries": ["dist/index.mjs"],
+  "inputs": ["src", "fixtures", "meta.json", "package.json", "esbuild.config.mjs", "tsconfig.json"]
+}
