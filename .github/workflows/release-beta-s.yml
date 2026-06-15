@@ -1013,41 +1013,24 @@ jobs:
             const outputs = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/release-metadata/outputs.json`, "utf8"));
             for (const [key, value] of Object.entries(outputs)) core.setOutput(key, String(value));
 
-      - name: Verify betas metadata
-        env:
-          ENABLE_LINUX_X64: "false"
-          ENABLE_MAC_ARM64: ${{ inputs.enable_mac_arm64 }}
-          ENABLE_MAC_X64: "false"
-          ENABLE_WIN_X64: ${{ inputs.enable_win_x64 }}
-          MAC_ARM64_RESULT: ${{ needs.build_mac_arm64.result }}
-          RELEASE_CHANNEL: betas
-          RELEASE_METADATA_URL: ${{ steps.outputs.outputs.version_metadata_url }}
-          RELEASE_VERSION: ${{ needs.metadata.outputs.release_version }}
-          WIN_X64_RESULT: ${{ needs.build_win_x64.result }}
-        working-directory: _release-scripts
-        run: |
-          set -euo pipefail
-          if ! command -v rehash >/dev/null 2>&1; then
-            rehash() { hash -r; }
-          fi
-          # shellcheck disable=SC1090
-          source "$OPEN_DESIGN_RELEASE_PROFILE"
-          fnm exec --using=24 -- pnpm exec tools-release verify-metadata
-
       - name: Write betas metadata summary
         env:
-          RELEASE_CHANNEL: betas
+          RELEASE_STATE: ${{ steps.outputs.outputs.release_state }}
           RELEASE_METADATA_URL: ${{ steps.outputs.outputs.version_metadata_url }}
           RELEASE_SUMMARY_PATH: ${{ runner.temp }}/release-metadata/summary.md
+          RELEASE_VERSION: ${{ needs.metadata.outputs.release_version }}
         working-directory: _release-scripts
         run: |
           set -euo pipefail
-          if ! command -v rehash >/dev/null 2>&1; then
-            rehash() { hash -r; }
-          fi
-          # shellcheck disable=SC1090
-          source "$OPEN_DESIGN_RELEASE_PROFILE"
-          fnm exec --using=24 -- pnpm exec tools-release summary-metadata
+          {
+            echo "## Betas release metadata"
+            echo
+            echo "- version: \`$RELEASE_VERSION\`"
+            echo "- state: \`$RELEASE_STATE\`"
+            echo "- metadata: $RELEASE_METADATA_URL"
+            echo
+            echo "release-beta-s publishes to an internal S3 namespace; public metadata fetch verification is intentionally skipped."
+          } > "$RELEASE_SUMMARY_PATH"
 
       - name: Publish summary
         run: cat "${{ runner.temp }}/release-metadata/summary.md" >> "$GITHUB_STEP_SUMMARY"

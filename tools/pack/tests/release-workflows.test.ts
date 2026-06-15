@@ -126,8 +126,9 @@ describe("release workflows", () => {
     expect(betaSelfHosted).not.toContain("verify-beta-metadata.ts");
     expect(betaSelfHosted).not.toContain("summary-beta.ts");
     expect(betaSelfHosted).toContain("tools-release publish-metadata");
-    expect(betaSelfHosted).toContain("tools-release verify-metadata");
-    expect(betaSelfHosted).toContain("tools-release summary-metadata");
+    expect(betaSelfHosted).not.toContain("tools-release verify-metadata");
+    expect(betaSelfHosted).not.toContain("tools-release summary-metadata");
+    expect(betaSelfHosted).toContain("release-beta-s publishes to an internal S3 namespace; public metadata fetch verification is intentionally skipped.");
     expect(win).toContain("-IncludeZip $${{ inputs.win_x64_target == 'all' || inputs.win_x64_target == 'zip' }}");
     expect(selfHostedWin).toContain("OD_UPDATE_METADATA_URL: ${{ inputs.release_public_origin }}/betas/latest/metadata.json");
     expect(selfHostedWin).toContain("RELEASE_CHANNEL: betas");

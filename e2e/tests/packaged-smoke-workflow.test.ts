@@ -489,8 +489,10 @@ describe("packaged smoke workflow", () => {
     expect(workflow).toContain("open-design-betas-win-x64-publish-manifest");
     expect(workflow).toContain("open-design-betas-mac-arm64-publish-manifest");
     expect(workflow).toContain('STATE_SOURCE: ${{ needs.metadata.outputs.state_source }}');
-    expect(workflow).toContain("Verify betas metadata");
-    expect(workflow).toContain("tools-release verify-metadata");
+    expect(workflow).not.toContain("Verify betas metadata");
+    expect(workflow).not.toContain("tools-release verify-metadata");
+    expect(workflow).not.toContain("tools-release summary-metadata");
+    expect(workflow).toContain("release-beta-s publishes to an internal S3 namespace; public metadata fetch verification is intentionally skipped.");
     expect(publishMetadataScript).toContain("validateManifest");
     expect(publishMetadataScript).toContain("manifest.releaseVersion !== releaseVersion");
     expect(publishMetadataScript).toContain("manifest.github?.runId !== currentRunId");
