@@ -61,6 +61,7 @@ export npm_config_fetch_retries="${npm_config_fetch_retries:-6}"
 export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-120000}"
 export npm_config_fetch_retry_mintimeout="${npm_config_fetch_retry_mintimeout:-20000}"
 export npm_config_network_timeout="${npm_config_network_timeout:-180000}"
+export OD_CI_USE_COREPACK_PNPM_SHIM="${OD_CI_USE_COREPACK_PNPM_SHIM:-1}"
 
 mkdir -p "$results_dir"
 mkdir -p "$COREPACK_HOME"
