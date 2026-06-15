@@ -82,6 +82,7 @@ export function createClaudeStreamHandler(
   let pendingArtifactText = '';
   let duplicateArtifactCandidate = '';
   const recentWriteContents: string[] = [];
+  let wroteHtmlFileThisTurn = false;
 
   function normalizeTaskStatus(value: unknown): RuntimeTask['status'] {
     if (value === 'completed' || value === 'in_progress' || value === 'stopped') {
@@ -176,6 +177,7 @@ export function createClaudeStreamHandler(
       suppressNextArtifactText = true;
       const content = fileWriteContent(input);
       if (content) {
+        wroteHtmlFileThisTurn = wroteHtmlFileThisTurn || isHtmlWriteToolInput(input);
         recentWriteContents.push(normalizeArtifactEchoContent(content));
         if (recentWriteContents.length > 5) recentWriteContents.shift();
       }
@@ -281,8 +283,18 @@ export function createClaudeStreamHandler(
     const gt = candidate.indexOf('>');
     const close = candidate.lastIndexOf('</artifact>');
     if (gt === -1 || close === -1 || close <= gt) return false;
+    if (
+      options.suppressHtmlArtifactsAfterFileWrite === true &&
+      isHtmlArtifact(candidate) &&
+      wroteHtmlFileThisTurn
+    ) return true;
     const body = normalizeArtifactEchoContent(candidate.slice(gt + 1, close));
     return recentWriteContents.some((content) => content === body);
+  }
+
+  function isHtmlArtifact(candidate: string): boolean {
+    const openTag = candidate.slice(0, Math.max(0, candidate.indexOf('>') + 1));
+    return /\btype\s*=\s*["']text\/html["']/i.test(openTag);
   }
 
   function normalizeArtifactEchoContent(value: string): string {
@@ -440,6 +452,7 @@ export function createClaudeStreamHandler(
         onEvent({ type: 'turn_end', stopReason });
         if (stopReason !== 'tool_use') {
           recentWriteContents.length = 0;
+          wroteHtmlFileThisTurn = false;
         }
       }
       if (typeof obj.error === 'string' && obj.error.trim()) {
@@ -589,6 +602,7 @@ export function createClaudeStreamHandler(
     suppressNextArtifactText = false;
     suppressDuplicateArtifactText = false;
     recentWriteContents.length = 0;
+    wroteHtmlFileThisTurn = false;
     emitSafeText(currentMessageId, text);
   }
 
