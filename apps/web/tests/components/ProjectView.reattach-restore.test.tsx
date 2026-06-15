@@ -419,17 +419,35 @@ describe('ProjectView daemon reattach restore', () => {
     });
     listActiveChatRuns.mockResolvedValue([]);
 
-    let capturedOnDone: (() => void) | null = null;
+    let captured: {
+      onAgentEvent: (ev: unknown) => void;
+      onDone: () => void;
+    } | null = null;
     reattachDaemonRun.mockImplementation(async (options: any) => {
-      capturedOnDone = options.handlers.onDone;
+      captured = {
+        onAgentEvent: options.handlers.onAgentEvent,
+        onDone: options.handlers.onDone,
+      };
       return new Promise<void>(() => {});
     });
 
     renderProjectView();
 
     await waitFor(() => expect(reattachDaemonRun).toHaveBeenCalledTimes(1));
-    expect(capturedOnDone).not.toBeNull();
-    capturedOnDone!();
+    expect(captured).not.toBeNull();
+    captured!.onAgentEvent({
+      kind: 'tool_use',
+      id: 'tool-edit',
+      name: 'str_replace_edit',
+      input: { path: 'existing.html' },
+    });
+    captured!.onAgentEvent({
+      kind: 'tool_result',
+      toolUseId: 'tool-edit',
+      content: '',
+      isError: false,
+    });
+    captured!.onDone();
 
     await waitFor(() => {
       const saves = saveMessage.mock.calls
@@ -451,6 +469,94 @@ describe('ProjectView daemon reattach restore', () => {
           ({ options }) => options?.telemetryFinalized === true,
         ),
       ).toBe(false);
+    });
+  });
+
+  it('uses replayed events for trace object files during a full reattach replay', async () => {
+    const startedAt = Date.now();
+    listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
+    listMessages.mockResolvedValue([
+      {
+        id: 'msg-reattach-full-replay-trace',
+        role: 'assistant',
+        content: '',
+        createdAt: startedAt,
+        startedAt,
+        runId: 'run-full-replay-trace',
+        runStatus: 'running',
+        preTurnFileNames: ['existing.html'],
+        events: [],
+      } satisfies ChatMessage,
+    ]);
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    const beforeFiles = [
+      { name: 'existing.html', path: '/p/existing.html', size: 1, updatedAt: 0 },
+    ];
+    const afterFiles = [
+      { name: 'existing.html', path: '/p/existing.html', size: 2, updatedAt: 1 },
+    ];
+    fetchProjectFiles.mockResolvedValueOnce(beforeFiles).mockResolvedValue(afterFiles);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    fetchChatRunStatus.mockResolvedValue({
+      id: 'run-full-replay-trace',
+      status: 'running',
+      createdAt: startedAt,
+      updatedAt: startedAt,
+      exitCode: null,
+      signal: null,
+    });
+    listActiveChatRuns.mockResolvedValue([]);
+
+    let captured: {
+      onAgentEvent: (ev: unknown) => void;
+      onDone: () => void;
+    } | null = null;
+    reattachDaemonRun.mockImplementation(async (options: any) => {
+      captured = {
+        onAgentEvent: options.handlers.onAgentEvent,
+        onDone: options.handlers.onDone,
+      };
+      return new Promise<void>(() => {});
+    });
+
+    renderProjectView();
+
+    await waitFor(() => expect(reattachDaemonRun).toHaveBeenCalledTimes(1));
+    expect(captured).not.toBeNull();
+    captured!.onAgentEvent({
+      kind: 'tool_use',
+      id: 'tool-edit',
+      name: 'str_replace_edit',
+      input: { path: 'existing.html' },
+    });
+    captured!.onAgentEvent({
+      kind: 'tool_result',
+      toolUseId: 'tool-edit',
+      content: '',
+      isError: false,
+    });
+    captured!.onDone();
+
+    await waitFor(() => {
+      const finalized = saveMessage.mock.calls
+        .map((call) => ({
+          message: call[2] as ChatMessage,
+          options: call[3] as { telemetryFinalized?: boolean } | undefined,
+        }))
+        .filter(
+          ({ message, options }) =>
+            message?.id === 'msg-reattach-full-replay-trace' &&
+            options?.telemetryFinalized === true,
+        )
+        .at(-1);
+      expect(finalized?.message.traceObjectFiles?.map((file) => [
+        file.name,
+        file.traceObjectReason,
+      ])).toEqual([['existing.html', 'modified']]);
     });
   });
 
