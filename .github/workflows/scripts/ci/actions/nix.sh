@@ -32,6 +32,8 @@ fi
 export NIX_CONFIG="${NIX_CONFIG:+$NIX_CONFIG
 }experimental-features = nix-command flakes
 connect-timeout = 30
+http-connections = 8
+max-substitution-jobs = 8
 stalled-download-timeout = 120
 download-attempts = 3"
 
