@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
 
-import { writeFakeVelaBin } from '@/amr';
+import { startFakeAmrRecoveryApi, writeFakeVelaBin } from '@/amr';
 import { createAmrProject, putAmrAppConfig } from '@/vitest/amr';
 import { requestJson } from '@/vitest/http';
 import { readRunEvents, startRun, waitForRunStatus, waitForRunTerminal } from '@/vitest/runs';
@@ -13,6 +13,7 @@ import { createSmokeSuite } from '@/vitest/smoke-suite';
 describe('AMR logout state persistence', () => {
   test('a previously working AMR session stops working after local logout and requires re-login', { timeout: 180_000 }, async () => {
     const suite = await createSmokeSuite('amr-logout-state-persistence');
+    const recoveryApi = await startFakeAmrRecoveryApi();
     const previousProfile = process.env.OPEN_DESIGN_AMR_PROFILE;
     const previousHome = process.env.HOME;
     const homeDir = join(suite.scratchDir, 'home-logout-state');
@@ -33,6 +34,7 @@ describe('AMR logout state persistence', () => {
           agentId: 'amr',
           agentCliEnv: {
             amr: {
+              VELA_API_URL: recoveryApi.url,
               VELA_BIN: successVelaBin,
               OPEN_DESIGN_AMR_PROFILE: 'local',
               VELA_LINK_URL: 'http://localhost:18081',
@@ -88,6 +90,7 @@ describe('AMR logout state persistence', () => {
         await expect(readRunEvents(webUrl, secondRun.runId)).resolves.toMatch(/AMR_AUTH_REQUIRED/);
       });
     } finally {
+      await recoveryApi.close();
       if (previousProfile === undefined) delete process.env.OPEN_DESIGN_AMR_PROFILE;
       else process.env.OPEN_DESIGN_AMR_PROFILE = previousProfile;
       if (previousHome === undefined) delete process.env.HOME;

@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -6,6 +9,27 @@ export type FakeVelaOptions = {
   failAuthAtPrompt?: boolean;
   failBalanceAtPrompt?: boolean;
   requireLoginConfig?: boolean;
+};
+
+export type FakeAmrRecoveryRequest = {
+  body: Record<string, unknown>;
+  method: string;
+  pathname: string;
+};
+
+export type FakeAmrRecoveryApi = {
+  close: () => Promise<void>;
+  requests: FakeAmrRecoveryRequest[];
+  url: string;
+};
+
+type FakeRecoveryContext = {
+  mode: 'manual_topup';
+  operationId: string;
+  recoveryUrl: string | null;
+  retryToken: string;
+  status: 'active' | 'waiting_payment' | 'retry_available' | 'resuming' | 'completed' | 'failed' | 'canceled';
+  version: number;
 };
 
 const DEFAULT_ASSISTANT_TEXT = 'Hello from the e2e fake vela.';
@@ -21,6 +45,8 @@ const REMOTE_MODELS_JSON = JSON.stringify({
     { id: 'glm-5' },
   ],
 });
+const DEFAULT_RECOVERY_URL =
+  'https://open-design.ai/amr/wallet?source=open_design&od_origin=open_design&od_entry_source=chat_error_recharge';
 
 export async function writeFakeVelaBin(root: string, options: FakeVelaOptions = {}): Promise<string> {
   await mkdir(root, { recursive: true });
@@ -30,11 +56,126 @@ export async function writeFakeVelaBin(root: string, options: FakeVelaOptions = 
   return bin;
 }
 
+export async function startFakeAmrRecoveryApi(): Promise<FakeAmrRecoveryApi> {
+  const requests: FakeAmrRecoveryRequest[] = [];
+  const contexts = new Map<string, FakeRecoveryContext>();
+
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const body = await readJsonBody(req);
+    requests.push({ body, method: req.method ?? 'GET', pathname: url.pathname });
+
+    if (req.method === 'POST' && url.pathname === '/api/v1/billing/recoveries') {
+      const operationId = `op-${readString(body.runId) ?? randomUUID()}`;
+      const context: FakeRecoveryContext = {
+        mode: 'manual_topup',
+        operationId,
+        recoveryUrl: null,
+        retryToken: 'test-retry-token',
+        status: 'active',
+        version: 1,
+      };
+      contexts.set(operationId, context);
+      writeJson(res, 200, context);
+      return;
+    }
+
+    const match = /^\/api\/v1\/billing\/recoveries\/([^/]+)(?:\/([^/]+))?$/.exec(url.pathname);
+    if (!match) {
+      writeJson(res, 404, { error: 'not_found' });
+      return;
+    }
+
+    const operationId = decodeURIComponent(match[1] ?? '');
+    const action = match[2] ?? null;
+    const context = contexts.get(operationId);
+    if (!context) {
+      writeJson(res, 404, { error: 'unknown_recovery_operation' });
+      return;
+    }
+
+    if (req.method === 'GET' && !action) {
+      writeJson(res, 200, context);
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      writeJson(res, 405, { error: 'method_not_allowed' });
+      return;
+    }
+
+    if (action === 'insufficient-balance') {
+      const next = {
+        ...context,
+        recoveryUrl: DEFAULT_RECOVERY_URL,
+        status: 'waiting_payment' as const,
+        version: context.version + 1,
+      };
+      contexts.set(operationId, next);
+      writeJson(res, 200, next);
+      return;
+    }
+
+    if (action === 'resume') {
+      const next = {
+        ...context,
+        status: 'resuming' as const,
+        version: context.version + 1,
+      };
+      contexts.set(operationId, next);
+      writeJson(res, 200, next);
+      return;
+    }
+
+    if (action === 'complete' || action === 'fail' || action === 'cancel') {
+      const status: FakeRecoveryContext['status'] =
+        action === 'complete'
+          ? 'completed'
+          : action === 'cancel'
+            ? 'canceled'
+            : 'failed';
+      const next = {
+        ...context,
+        status,
+        version: context.version + 1,
+      };
+      contexts.set(operationId, next);
+      writeJson(res, 200, next);
+      return;
+    }
+
+    writeJson(res, 404, { error: 'unknown_recovery_action' });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+
+  const address = server.address() as AddressInfo;
+  return {
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      }),
+    requests,
+    url: `http://127.0.0.1:${address.port}`,
+  };
+}
+
 export async function seedVelaLoginConfig(
   homeDir: string,
   options: {
+    apiUrl?: string;
     profile?: string;
     email?: string;
+    linkUrl?: string;
     runtimeKey?: string;
     controlKey?: string;
   } = {},
@@ -51,8 +192,8 @@ export async function seedVelaLoginConfig(
           [profile]: {
             runtimeKey: options.runtimeKey ?? 'fake-runtime-key',
             controlKey: options.controlKey ?? 'fake-control-key',
-            apiUrl: 'http://localhost:18080',
-            linkUrl: 'http://localhost:18081',
+            apiUrl: options.apiUrl ?? 'http://localhost:18080',
+            linkUrl: options.linkUrl ?? 'http://localhost:18081',
             user: {
               id: 'fake-user-id',
               email: options.email ?? 'e2e@example.com',
@@ -71,6 +212,31 @@ export async function seedVelaLoginConfig(
 
 export async function clearVelaLoginConfig(homeDir: string): Promise<void> {
   await rm(join(homeDir, '.amr', 'config.json'), { force: true });
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  if (chunks.length === 0) return {};
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function writeJson(res: ServerResponse, status: number, body: Record<string, unknown>): void {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body));
 }
 
 function renderFakeVelaScript(options: FakeVelaOptions): string {
@@ -125,8 +291,8 @@ if (argv[2] === 'login') {
       [profile]: {
         runtimeKey: 'fake-runtime-key-0000000000000000000000',
         controlKey: 'fake-control-key-0000000000000000000000',
-        apiUrl: 'http://localhost:18080',
-        linkUrl: 'http://localhost:18081',
+        apiUrl: env.VELA_API_URL || 'http://localhost:18080',
+        linkUrl: env.VELA_LINK_URL || 'http://localhost:18081',
         user: { id: 'fake-user-id', email: env.FAKE_VELA_LOGIN_USER_EMAIL || 'e2e@example.com', plan: 'free' },
       },
     },

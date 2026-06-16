@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
 
-import { seedVelaLoginConfig, writeFakeVelaBin } from '@/amr';
+import { seedVelaLoginConfig, startFakeAmrRecoveryApi, writeFakeVelaBin } from '@/amr';
 import { createAmrProject, putAmrAppConfig } from '@/vitest/amr';
 import { readRunEvents, startRun, waitForRunStatus, waitForRunTerminal } from '@/vitest/runs';
 import { createSmokeSuite } from '@/vitest/smoke-suite';
@@ -62,6 +62,7 @@ describe('AMR relogin-required run failures', () => {
 
   test('uses configured AMR profile env for pre-run login status', { timeout: 180_000 }, async () => {
     const suite = await createSmokeSuite('amr-configured-profile-preflight');
+    const recoveryApi = await startFakeAmrRecoveryApi();
     const previousProfile = process.env.OPEN_DESIGN_AMR_PROFILE;
     const previousHome = process.env.HOME;
     const homeDir = join(suite.scratchDir, 'home-configured-profile');
@@ -69,7 +70,7 @@ describe('AMR relogin-required run failures', () => {
     process.env.HOME = homeDir;
 
     try {
-      await seedVelaLoginConfig(homeDir, { profile: 'local' });
+      await seedVelaLoginConfig(homeDir, { apiUrl: recoveryApi.url, profile: 'local' });
       await suite.with.toolsDev(async ({ webUrl }) => {
         const velaBin = await writeFakeVelaBin(join(suite.scratchDir, 'fake-vela-configured-profile'));
 
@@ -77,6 +78,7 @@ describe('AMR relogin-required run failures', () => {
           agentId: 'amr',
           agentCliEnv: {
             amr: {
+              VELA_API_URL: recoveryApi.url,
               VELA_BIN: velaBin,
               OPEN_DESIGN_AMR_PROFILE: 'local',
             },
@@ -100,6 +102,7 @@ describe('AMR relogin-required run failures', () => {
         await waitForRunStatus(webUrl, run.runId, 'succeeded', { timeoutMs: 20_000 });
       });
     } finally {
+      await recoveryApi.close();
       if (previousProfile === undefined) delete process.env.OPEN_DESIGN_AMR_PROFILE;
       else process.env.OPEN_DESIGN_AMR_PROFILE = previousProfile;
       if (previousHome === undefined) delete process.env.HOME;
@@ -109,13 +112,16 @@ describe('AMR relogin-required run failures', () => {
 
   test('uses daemon AMR runtime credentials for pre-run login status', { timeout: 180_000 }, async () => {
     const suite = await createSmokeSuite('amr-daemon-env-credentials-preflight');
+    const recoveryApi = await startFakeAmrRecoveryApi();
     const previousProfile = process.env.OPEN_DESIGN_AMR_PROFILE;
     const previousHome = process.env.HOME;
+    const previousApiUrl = process.env.VELA_API_URL;
     const previousRuntimeKey = process.env.VELA_RUNTIME_KEY;
     const previousLinkUrl = process.env.VELA_LINK_URL;
     const homeDir = join(suite.scratchDir, 'home-daemon-env-credentials');
     process.env.OPEN_DESIGN_AMR_PROFILE = 'local';
     process.env.HOME = homeDir;
+    process.env.VELA_API_URL = recoveryApi.url;
     process.env.VELA_RUNTIME_KEY = 'fake-runtime-key-from-daemon-env';
     process.env.VELA_LINK_URL = 'http://localhost:18081';
 
@@ -129,6 +135,7 @@ describe('AMR relogin-required run failures', () => {
           agentId: 'amr',
           agentCliEnv: {
             amr: {
+              VELA_API_URL: recoveryApi.url,
               VELA_BIN: velaBin,
               OPEN_DESIGN_AMR_PROFILE: 'local',
             },
@@ -152,10 +159,13 @@ describe('AMR relogin-required run failures', () => {
         await waitForRunStatus(webUrl, run.runId, 'succeeded', { timeoutMs: 20_000 });
       });
     } finally {
+      await recoveryApi.close();
       if (previousProfile === undefined) delete process.env.OPEN_DESIGN_AMR_PROFILE;
       else process.env.OPEN_DESIGN_AMR_PROFILE = previousProfile;
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
+      if (previousApiUrl === undefined) delete process.env.VELA_API_URL;
+      else process.env.VELA_API_URL = previousApiUrl;
       if (previousRuntimeKey === undefined) delete process.env.VELA_RUNTIME_KEY;
       else process.env.VELA_RUNTIME_KEY = previousRuntimeKey;
       if (previousLinkUrl === undefined) delete process.env.VELA_LINK_URL;
