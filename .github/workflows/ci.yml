@@ -32,7 +32,7 @@ concurrency:
 jobs:
   change_scopes:
     name: Detect CI change scopes
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     outputs:
       daemon_tests_required: ${{ steps.detect.outputs.daemon_tests_required }}
       web_tests_required: ${{ steps.detect.outputs.web_tests_required }}
@@ -146,7 +146,7 @@ jobs:
   blob_guard:
     name: Guard changed file sizes
     if: ${{ github.event_name == 'debug_disabled' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
@@ -467,7 +467,7 @@ jobs:
       - change_scopes
       - daemon_workspace_tests
     if: ${{ always() }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
@@ -571,6 +571,75 @@ jobs:
       - name: Build workspaces
         run: pnpm -r --filter '!@open-design/landing-page' --workspace-concurrency=1 --if-present run build
 
+  runner_perf_probe:
+    name: Runner perf probe (${{ matrix.target }} / ${{ matrix.runner_label }})
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: daemon-watcher
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner_label: 4vcpu-arm
+          - target: daemon-watcher
+            runner: blacksmith-8vcpu-ubuntu-2404-arm
+            runner_label: 8vcpu-arm
+          - target: preflight
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner_label: 4vcpu-arm
+          - target: preflight
+            runner: blacksmith-8vcpu-ubuntu-2404-arm
+            runner_label: 8vcpu-arm
+          - target: browser-critical
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner_label: 4vcpu-arm
+          - target: browser-critical
+            runner: blacksmith-8vcpu-ubuntu-2404-arm
+            runner_label: 8vcpu-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Setup Playwright
+        if: ${{ matrix.target == 'browser-critical' }}
+        uses: ./.github/actions/setup-playwright
+        with:
+          package-json-path: e2e/package.json
+          install-command: pnpm -C e2e exec playwright install --with-deps chromium
+
+      - name: Daemon watcher probe
+        if: ${{ matrix.target == 'daemon-watcher' }}
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/daemon exec vitest run -c vitest.config.ts tests/project-watchers.test.ts
+
+      - name: Preflight probe
+        if: ${{ matrix.target == 'preflight' }}
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/desktop build
+          pnpm --filter @open-design/web build:sidecar
+          pnpm -r --filter '!open-design' --filter '!@open-design/landing-page' --workspace-concurrency=4 --if-present run typecheck
+          pnpm exec tsc -p scripts/tsconfig.json --noEmit
+          pnpm guard
+          pnpm i18n:check
+
+      - name: Browser critical probe
+        if: ${{ matrix.target == 'browser-critical' }}
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/desktop build
+          pnpm --filter @open-design/web build:sidecar
+          pnpm --filter @open-design/e2e test
+          pnpm -C e2e exec tsx scripts/playwright.ts clean
+          pnpm -C e2e run test:ui:critical
+
   validate:
     # Legacy `ci` remains the current factual gate surface. Keep this job on
     # `Validate workspace` until a later ruleset follow-up explicitly moves the
@@ -588,7 +657,7 @@ jobs:
       - browser_tests
       - build_workspaces
     if: ${{ always() }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
@@ -610,7 +679,7 @@ jobs:
     needs:
       - validate
     if: ${{ always() && github.event_name == 'debug_disabled' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
