@@ -584,22 +584,37 @@ jobs:
             runner: blacksmith-4vcpu-ubuntu-2404-arm
             runner_label: 4vcpu-arm
             playwright_workers: ""
+            fully_parallel: ""
           - target: preflight
             runner: blacksmith-4vcpu-ubuntu-2404-arm
             runner_label: 4vcpu-arm
             playwright_workers: ""
+            fully_parallel: ""
           - target: browser-critical
             runner: blacksmith-4vcpu-ubuntu-2404
             runner_label: 4vcpu-x64-2w
             playwright_workers: "2"
+            fully_parallel: ""
           - target: browser-critical
             runner: blacksmith-4vcpu-ubuntu-2404
             runner_label: 4vcpu-x64-4w
             playwright_workers: "4"
+            fully_parallel: ""
+          - target: browser-critical
+            runner: blacksmith-4vcpu-ubuntu-2404
+            runner_label: 4vcpu-x64-4w-full
+            playwright_workers: "4"
+            fully_parallel: "1"
           - target: browser-critical
             runner: blacksmith-8vcpu-ubuntu-2404
             runner_label: 8vcpu-x64-4w
             playwright_workers: "4"
+            fully_parallel: ""
+          - target: browser-critical
+            runner: blacksmith-8vcpu-ubuntu-2404
+            runner_label: 8vcpu-x64-4w-full
+            playwright_workers: "4"
+            fully_parallel: "1"
 
     steps:
       - name: Checkout
@@ -651,6 +666,7 @@ jobs:
         if: ${{ matrix.target == 'browser-critical' }}
         env:
           OD_PLAYWRIGHT_WORKERS: ${{ matrix.playwright_workers }}
+          OD_PLAYWRIGHT_FULLY_PARALLEL: ${{ matrix.fully_parallel }}
         run: pnpm -C e2e run test:ui:critical
 
   validate:

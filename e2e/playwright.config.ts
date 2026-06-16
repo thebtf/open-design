@@ -17,7 +17,7 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
-  fullyParallel: false,
+  fullyParallel: process.env.OD_PLAYWRIGHT_FULLY_PARALLEL === '1',
   workers: parseWorkerCount(process.env.OD_PLAYWRIGHT_WORKERS),
   reporter: process.env.CI
     ? [
