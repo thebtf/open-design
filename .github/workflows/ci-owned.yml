@@ -72,7 +72,7 @@ jobs:
         run: tar -C tools/ci -xf "$OPEN_DESIGN_CI_OWNED_ROOT/$GITHUB_RUN_ID/tools-ci-dist.tar"
 
       - name: Run owned CI shard
-        run: OPEN_DESIGN_CI_EVIDENCE_ROOT="$OPEN_DESIGN_CI_OWNED_ROOT/$GITHUB_RUN_ID/evidence" .github/workflows/scripts/ci/local-docker-tools-ci.sh --provider owned --profile "${{ matrix.profile }}" "${GITHUB_RUN_ID}-${{ matrix.shard }}" ${{ matrix.atoms }}
+        run: OPEN_DESIGN_CI_EVIDENCE_ROOT="$OPEN_DESIGN_CI_OWNED_ROOT/$GITHUB_RUN_ID/evidence" OPEN_DESIGN_CI_TRUST_TOOLS_CI_DIST=1 .github/workflows/scripts/ci/local-docker-tools-ci.sh --provider owned --profile "${{ matrix.profile }}" "${GITHUB_RUN_ID}-${{ matrix.shard }}" ${{ matrix.atoms }}
 
   merge:
     name: Owned CI / merge

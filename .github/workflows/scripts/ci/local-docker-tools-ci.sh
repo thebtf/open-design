@@ -173,7 +173,12 @@ if [ ! -f "$repo_root/package.json" ]; then
   exit 1
 fi
 
-if ! node --experimental-strip-types "$repo_root/packages/metatool/src/cli.ts" check "$repo_root/tools/ci" >/dev/null 2>&1; then
+if [ "${OPEN_DESIGN_CI_TRUST_TOOLS_CI_DIST:-}" = "1" ]; then
+  if [ ! -f "$repo_root/tools/ci/dist/index.mjs" ] || [ ! -f "$repo_root/tools/ci/dist/metadata.json" ]; then
+    echo "trusted tools-ci dist is missing after extraction" >&2
+    exit 1
+  fi
+elif ! node --experimental-strip-types "$repo_root/packages/metatool/src/cli.ts" check "$repo_root/tools/ci" >/dev/null 2>&1; then
   package_manager="$(node -p "JSON.parse(require('node:fs').readFileSync('$repo_root/package.json', 'utf8')).packageManager")"
   echo "tools-ci dist is missing or stale; installing workspace"
   (
