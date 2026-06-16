@@ -12,14 +12,28 @@ ci_gate_timed_nix_step() {
 }
 
 flake_ref="${CI_GATE_NIX_FLAKE_REF:-.}"
+nix_system="${CI_GATE_NIX_SYSTEM:-}"
+
+if [ -z "$nix_system" ]; then
+  case "$(uname -m)" in
+    aarch64|arm64)
+      nix_system="aarch64-linux"
+      ;;
+    x86_64|amd64)
+      nix_system="x86_64-linux"
+      ;;
+    *)
+      echo "unsupported Linux architecture for Nix system: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 export NIX_CONFIG="${NIX_CONFIG:+$NIX_CONFIG
 }experimental-features = nix-command flakes
 connect-timeout = 30
 stalled-download-timeout = 120
 download-attempts = 3"
-
-nix_system="${CI_GATE_NIX_SYSTEM:-$(nix eval --raw --expr builtins.currentSystem)}"
 
 printf 'nix system: %s\n' "$nix_system"
 printf 'nix flake ref: %s\n' "$flake_ref"
