@@ -9,7 +9,7 @@ Default ci-base atoms:
   guard i18n
 
 Default ci-playwright atoms:
-  browser
+  e2e-vitest playwright-critical
 
 Default nix-capable atoms:
   nix
@@ -18,7 +18,7 @@ Supported ci-base atoms:
   guard i18n unit daemon web typecheck build
 
 Supported ci-playwright atoms:
-  browser
+  e2e-vitest playwright-critical
 
 Supported nix-capable atoms:
   nix
@@ -92,7 +92,7 @@ shift
 if [ "$#" -eq 0 ]; then
   case "$profile" in
     ci-playwright)
-      selected_atoms=(browser)
+      selected_atoms=(e2e-vitest playwright-critical)
       ;;
     nix-capable)
       selected_atoms=(nix)
@@ -116,7 +116,7 @@ for atom in "${selected_atoms[@]}"; do
   case "$profile:$atom" in
     ci-base:guard|ci-base:i18n|ci-base:unit|ci-base:daemon|ci-base:web|ci-base:typecheck|ci-base:build)
       ;;
-    ci-playwright:browser)
+    ci-playwright:e2e-vitest|ci-playwright:playwright-critical)
       ;;
     nix-capable:nix)
       ;;

@@ -58,9 +58,12 @@ jobs:
           - shard: nix
             profile: nix-capable
             atoms: nix
-          - shard: browser
+          - shard: e2e-vitest
             profile: ci-playwright
-            atoms: browser
+            atoms: e2e-vitest
+          - shard: playwright-critical
+            profile: ci-playwright
+            atoms: playwright-critical
           - shard: daemon
             profile: ci-base
             atoms: daemon

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { aggregateWorkflowResults, mergeWorkflowShardResultFiles, parseWorkflowResult } from "../src/aggregate.js";
+import {
+  aggregateWorkflowResults,
+  mergeWorkflowShardResultFiles,
+  parseWorkflowResult,
+  validateWorkflowResultAgainstManifest,
+} from "../src/aggregate.js";
 
 test("aggregateWorkflowResults passes an atom when either provider has a real success", () => {
   const owned = parseWorkflowResult({
@@ -73,8 +78,19 @@ test("aggregateWorkflowResults fails when no provider has a real success", () =>
   assert.equal(result.actions[0]?.reason, "real results but no success (owned:failure, github:failure)");
 });
 
-test("aggregateWorkflowResults handles the current nine-atom ci-gate shape", () => {
-  const atomNames = ["nix", "guard", "i18n", "unit", "typecheck", "daemon", "web", "build", "browser"];
+test("aggregateWorkflowResults handles the current ci-gate atom shape", () => {
+  const atomNames = [
+    "nix",
+    "guard",
+    "i18n",
+    "unit",
+    "typecheck",
+    "daemon",
+    "web",
+    "build",
+    "e2e-vitest",
+    "playwright-critical",
+  ];
   const owned = parseWorkflowResult({
     schemaVersion: 1,
     provider: "owned",
@@ -110,7 +126,79 @@ test("aggregateWorkflowResults handles the current nine-atom ci-gate shape", () 
   assert.equal(result.passed, true);
   assert.deepEqual(result.actions.map((entry) => entry.action), [...atomNames].sort());
   assert.equal(result.actions.find((entry) => entry.action === "nix")?.reason, "success via owned, github");
-  assert.equal(result.actions.find((entry) => entry.action === "browser")?.reason, "success via owned, github");
+  assert.equal(result.actions.find((entry) => entry.action === "playwright-critical")?.reason, "success via owned, github");
+});
+
+test("validateWorkflowResultAgainstManifest rejects atom drift", () => {
+  const manifest = {
+    schemaVersion: 1 as const,
+    atoms: [
+      {
+        artifactProfile: "standard" as const,
+        cacheProfile: "node-pnpm" as const,
+        call: "pnpm guard",
+        domain: "workspace" as const,
+        key: "guard",
+        name: "guard",
+        requires: ["node" as const, "pnpm" as const],
+        resultRequired: true,
+        script: ".github/workflows/scripts/ci/actions/guard.sh",
+        setup: "pnpm-workspace" as const,
+        timeoutSeconds: 600,
+      },
+      {
+        artifactProfile: "browser" as const,
+        cacheProfile: "browser" as const,
+        call: "critical browser Playwright suite",
+        domain: "e2e" as const,
+        key: "playwright-critical",
+        name: "playwright-critical",
+        requires: ["node" as const, "pnpm" as const, "playwright" as const, "chromium" as const],
+        resultRequired: true,
+        script: ".github/workflows/scripts/ci/actions/playwright-critical.sh",
+        setup: "browser-e2e" as const,
+        timeoutSeconds: 3600,
+      },
+    ],
+  };
+
+  const valid = parseWorkflowResult({
+    schemaVersion: 1,
+    provider: "owned",
+    mode: "default",
+    eventName: "workflow_dispatch",
+    headSha: "abc",
+    runId: "1",
+    runAttempt: "1",
+    actions: [
+      { action: "guard", kind: "real", status: "success" },
+      { action: "playwright-critical", kind: "real", status: "success" },
+    ],
+  });
+  assert.doesNotThrow(() => validateWorkflowResultAgainstManifest(valid, { manifest, provider: "owned" }));
+
+  const unknown = parseWorkflowResult({
+    ...valid,
+    actions: [
+      { action: "guard", kind: "real", status: "success" },
+      { action: "browser", kind: "real", status: "success" },
+    ],
+  });
+  assert.throws(
+    () => validateWorkflowResultAgainstManifest(unknown, { manifest, provider: "owned" }),
+    /unknown action: browser/,
+  );
+
+  const missing = parseWorkflowResult({
+    ...valid,
+    actions: [
+      { action: "guard", kind: "real", status: "success" },
+    ],
+  });
+  assert.throws(
+    () => validateWorkflowResultAgainstManifest(missing, { manifest, provider: "owned" }),
+    /missing manifest action\(s\): playwright-critical/,
+  );
 });
 
 test("mergeWorkflowShardResultFiles merges shard results in manifest order", async () => {

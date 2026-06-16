@@ -62,10 +62,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
 
       - name: Validate manual override combinations
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -132,5 +130,8 @@ jobs:
             "repos/${{ github.repository }}/actions/workflows/ci-github.yml/dispatches" \
             -f ref='${{ github.ref_name }}'
 
+      - name: Build tools-ci
+        run: pnpm --filter @open-design/tools-ci build
+
       - name: Aggregate CI results
-        run: node --experimental-strip-types .github/workflows/scripts/ci/aggregate-results.ts
+        run: node tools/ci/dist/index.mjs gate --manifest tools/ci/atoms.json

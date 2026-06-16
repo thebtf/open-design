@@ -45,6 +45,11 @@ export type AggregateResult = {
   schemaVersion: 1;
 };
 
+export type WorkflowResultValidationOptions = {
+  manifest: AtomManifest;
+  provider?: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -155,13 +160,45 @@ export function aggregateWorkflowResults(owned: WorkflowResult, github: Workflow
   };
 }
 
+export function validateWorkflowResultAgainstManifest(
+  result: WorkflowResult,
+  options: WorkflowResultValidationOptions,
+): void {
+  if (options.provider != null && result.provider !== options.provider) {
+    throw new Error(`expected provider ${options.provider}, got ${result.provider}`);
+  }
+
+  const expected = new Set(options.manifest.atoms.map((atom) => atom.name));
+  const seen = new Set<string>();
+  for (const action of result.actions) {
+    if (!expected.has(action.action)) {
+      throw new Error(`${result.provider} result contains unknown action: ${action.action}`);
+    }
+    if (seen.has(action.action)) {
+      throw new Error(`${result.provider} result has duplicate action: ${action.action}`);
+    }
+    seen.add(action.action);
+  }
+
+  const missing = [...expected].filter((action) => !seen.has(action));
+  if (missing.length > 0) {
+    throw new Error(`${result.provider} result is missing manifest action(s): ${missing.join(", ")}`);
+  }
+}
+
 export async function aggregateWorkflowResultFiles(options: {
   githubResultsPath: string;
+  manifestPath?: string;
   outPath?: string;
   ownedResultsPath: string;
 }): Promise<AggregateResult> {
   const owned = parseWorkflowResult(JSON.parse(await readFile(resolve(options.ownedResultsPath), "utf8")));
   const github = parseWorkflowResult(JSON.parse(await readFile(resolve(options.githubResultsPath), "utf8")));
+  if (options.manifestPath != null) {
+    const manifest = await loadAtomManifest(resolve(options.manifestPath));
+    validateWorkflowResultAgainstManifest(owned, { manifest, provider: "owned" });
+    validateWorkflowResultAgainstManifest(github, { manifest, provider: "github" });
+  }
   const result = aggregateWorkflowResults(owned, github);
   if (options.outPath != null) {
     await writeFile(resolve(options.outPath), `${JSON.stringify(result, null, 2)}\n`, "utf8");

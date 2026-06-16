@@ -100,7 +100,6 @@ function assertStringEnumArray<T extends readonly string[]>(value: unknown, allo
 export function atomNameFromIdentity(domain: AtomDomain, key: string): string {
   if (domain === "nix" && key === "flake") return "nix";
   if (domain === "packages" && key === "unit") return "unit";
-  if (domain === "e2e" && key === "browser") return "browser";
   return key;
 }
 
@@ -120,8 +119,6 @@ export function deriveAtomIdentity(name: string): { domain: AtomDomain; key: str
       return { domain: "apps", key: "daemon", call: "daemon build and tests" };
     case "web":
       return { domain: "apps", key: "web", call: "web sidecar build and tests" };
-    case "browser":
-      return { domain: "e2e", key: "browser", call: "browser e2e and critical Playwright" };
     case "nix":
       return { domain: "nix", key: "flake", call: "nix flake archive + check --no-build + build checks" };
     default:

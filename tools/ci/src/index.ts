@@ -4,6 +4,7 @@ import { aggregateWorkflowResultFiles, mergeWorkflowShardResultFiles } from "./a
 import { validateAtomManifest } from "./atoms.js";
 import { selectAtomsFromFiles } from "./capabilities.js";
 import { executeAtomsFromFiles } from "./execute.js";
+import { gateCi } from "./gate.js";
 
 type ValidateAtomsOptions = {
   json?: boolean;
@@ -26,8 +27,25 @@ type ExecuteOptions = {
 type AggregateOptions = {
   githubResults?: string;
   json?: boolean;
+  manifest?: string;
   out?: string;
   ownedResults?: string;
+};
+
+type GateOptions = {
+  githubRunId?: string;
+  githubWorkflow?: string;
+  manifest?: string;
+  ownedRunId?: string;
+  ownedWorkflow?: string;
+  pollIntervalSeconds?: string;
+  providerRunCreatedAfter?: string;
+  repository?: string;
+  summaryPath?: string;
+  targetEvent?: string;
+  targetSha?: string;
+  timeoutSeconds?: string;
+  token?: string;
 };
 
 type MergeShardsOptions = {
@@ -113,6 +131,7 @@ async function aggregate(options: AggregateOptions): Promise<void> {
   }
   const result = await aggregateWorkflowResultFiles({
     githubResultsPath: options.githubResults,
+    manifestPath: options.manifest ?? "tools/ci/atoms.json",
     outPath: options.out,
     ownedResultsPath: options.ownedResults,
   });
@@ -120,6 +139,40 @@ async function aggregate(options: AggregateOptions): Promise<void> {
     printJson(result);
   } else {
     process.stdout.write(`tools-ci aggregate: ${result.passed ? "success" : "failure"} (${result.actions.length} atoms)\n`);
+  }
+  if (!result.passed) {
+    process.exitCode = 1;
+  }
+}
+
+function parseOptionalPositiveNumber(value: string | undefined, name: string): number | undefined {
+  if (value == null || value.length === 0) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number: ${value}`);
+  }
+  return parsed;
+}
+
+async function gate(options: GateOptions): Promise<void> {
+  const result = await gateCi({
+    githubRunId: options.githubRunId,
+    githubWorkflow: options.githubWorkflow,
+    manifestPath: options.manifest ?? "tools/ci/atoms.json",
+    ownedRunId: options.ownedRunId,
+    ownedWorkflow: options.ownedWorkflow,
+    pollIntervalSeconds: parseOptionalPositiveNumber(options.pollIntervalSeconds, "poll-interval-seconds"),
+    providerRunCreatedAfter: options.providerRunCreatedAfter,
+    repository: options.repository ?? process.env.GITHUB_REPOSITORY ?? "",
+    summaryPath: options.summaryPath,
+    targetEvent: options.targetEvent,
+    targetSha: options.targetSha,
+    timeoutSeconds: parseOptionalPositiveNumber(options.timeoutSeconds, "timeout-seconds"),
+    token: options.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? "",
+  });
+
+  for (const line of result.summaryLines) {
+    process.stdout.write(`${line}\n`);
   }
   if (!result.passed) {
     process.exitCode = 1;
@@ -196,12 +249,32 @@ cli
 
 cli
   .command("aggregate", "Aggregate CI atom results")
+  .option("--manifest <path>", "Atom manifest path", { default: "tools/ci/atoms.json" })
   .option("--owned-results <path>", "Owned ci-results.json path")
   .option("--github-results <path>", "GitHub-hosted ci-results.json path")
   .option("--out <path>", "Write aggregate JSON to a file")
   .option("--json", "Print JSON")
   .action((options: AggregateOptions) => {
     void aggregate(options);
+  });
+
+cli
+  .command("gate", "Wait for provider runs and evaluate the CI gate")
+  .option("--manifest <path>", "Atom manifest path", { default: "tools/ci/atoms.json" })
+  .option("--repository <repo>", "GitHub repository, owner/name")
+  .option("--token <token>", "GitHub token")
+  .option("--target-sha <sha>", "Target commit SHA")
+  .option("--target-event <event>", "Target GitHub event")
+  .option("--owned-run-id <id>", "Explicit ci-owned run id")
+  .option("--github-run-id <id>", "Explicit ci-github run id")
+  .option("--owned-workflow <name>", "Owned workflow name", { default: "ci-owned" })
+  .option("--github-workflow <name>", "GitHub-hosted workflow name", { default: "ci-github" })
+  .option("--provider-run-created-after <timestamp>", "Only match provider runs created after this timestamp")
+  .option("--timeout-seconds <seconds>", "Polling timeout seconds")
+  .option("--poll-interval-seconds <seconds>", "Polling interval seconds")
+  .option("--summary-path <path>", "GitHub step summary path")
+  .action((options: GateOptions) => {
+    void gate(options);
   });
 
 cli
@@ -227,5 +300,6 @@ export { loadAtomManifest, parseAtomManifest, validateAtomManifest } from "./ato
 export { parseProviderCapabilities, selectAtoms, selectAtomsFromFiles } from "./capabilities.js";
 export { executeAtoms, executeAtomsFromFiles } from "./execute.js";
 export { aggregateWorkflowResultFiles, aggregateWorkflowResults, mergeWorkflowShardResultFiles, mergeWorkflowShardResults, parseWorkflowResult } from "./aggregate.js";
+export { gateCi } from "./gate.js";
 export { readNormalizedEnvelope, resolveToolCiConfig, resolveToolCiRoots } from "./envelope.js";
 export type { NormalizedEnvelope, ToolCiConfig, ToolCiProfile, ToolCiRoots, ToolCiSourceMode } from "./envelope.js";
