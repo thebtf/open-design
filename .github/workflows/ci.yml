@@ -220,6 +220,10 @@ jobs:
     if: ${{ needs.change_scopes.outputs.nix_validation_required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -231,6 +235,9 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
+
+      - name: Configure GitHub-backed Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Setup Node for Nix hash refresh
         if: ${{ github.event_name == 'pull_request' }}
