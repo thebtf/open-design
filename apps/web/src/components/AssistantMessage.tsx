@@ -600,6 +600,9 @@ function AssistantMessageImpl({
   // start so switching project tabs or remounting the message cannot restart it.
   const hasContent = blocks.some((b) => b.kind !== "status") || fileOps.length > 0;
   const preparing = streaming && !hasContent;
+  const preparingStatus = preparing && events.some((e) => e.kind === "status" && e.label === "thinking")
+    ? "thinking"
+    : "preparing";
 
   // Index of the trailing text block — the streaming caret rides the end of
   // the last prose block so it tracks the final character as tokens arrive.
@@ -765,6 +768,7 @@ function AssistantMessageImpl({
                   hasUnfinishedTodos: unfinishedTodos.length > 0,
                   hasEmptyResponse,
                   preparing,
+                  preparingStatus,
                   copyMarkdown,
                   onFork: canFork ? onForkFromMessage : undefined,
                   forking,
@@ -781,6 +785,7 @@ function AssistantMessageImpl({
                 hasUnfinishedTodos={unfinishedTodos.length > 0}
                 hasEmptyResponse={hasEmptyResponse}
                 preparing={preparing}
+                preparingStatus={preparingStatus}
                 copyMarkdown={copyMarkdown}
                 onFork={canFork ? onForkFromMessage : undefined}
                 forking={forking}
@@ -963,6 +968,7 @@ interface AssistantFooterProps {
   // Pre-output phase: streaming but nothing rendered yet. The label shimmers
   // "Preparing…"; once content lands it flips to "Working".
   preparing?: boolean;
+  preparingStatus?: "preparing" | "thinking";
   copyMarkdown?: string;
   onFork?: () => void;
   forking?: boolean;
@@ -981,6 +987,7 @@ function AssistantFooter({
   hasUnfinishedTodos,
   hasEmptyResponse,
   preparing = false,
+  preparingStatus = "preparing",
   copyMarkdown,
   onFork,
   forking = false,
@@ -1019,7 +1026,9 @@ function AssistantFooter({
       <span className={`assistant-label${streaming && preparing ? " shimmer-text shimmer-prepare" : ""}`}>
         {streaming
           ? preparing
-            ? t("assistant.statusPreparing")
+            ? preparingStatus === "thinking"
+              ? t("assistant.statusThinking")
+              : t("assistant.statusPreparing")
             : t("assistant.workingLabel")
           : hasEmptyResponse
           ? t("assistant.emptyResponseLabel")

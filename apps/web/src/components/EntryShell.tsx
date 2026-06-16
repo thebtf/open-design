@@ -40,7 +40,13 @@ import {
   trackOnboardingRuntimeScanResult,
   trackPageView,
 } from '../analytics/events';
-import { recordAmrEntry, type AmrEntryAttribution } from '../analytics/amr-attribution';
+import {
+  amrHandoffDeviceId,
+  recordAmrEntry,
+  syncAmrAttributionWithOnboardingProfile,
+  type AmrEntryAttribution,
+} from '../analytics/amr-attribution';
+import { getResolvedDeviceId } from '../analytics/client';
 import {
   beginAmrAuthTracking,
   resolveAmrAuthTracking,
@@ -969,6 +975,16 @@ function OnboardingView({
   const t = useT();
   const analytics = useAnalytics();
   const [step, setStep] = useState(0);
+  // Furthest step the user has legitimately reached. The stepper lets you jump
+  // back to any already-visited step, but never *forward* past it — forward
+  // progress only happens through the gated Continue CTA (which itself can't
+  // leave the Connect step until a runtime is ready). This keeps the wizard
+  // strictly sequential and, unlike gating the stepper on the async AMR
+  // login probe, never flickers disabled→enabled while that status resolves.
+  const [maxStepReached, setMaxStepReached] = useState(0);
+  useEffect(() => {
+    setMaxStepReached((reached) => Math.max(reached, step));
+  }, [step]);
   const [runtime, setRuntime] = useState<'amr' | 'local' | 'byok' | null>(null);
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [cliScanStatus, setCliScanStatus] = useState<'idle' | 'scanning' | 'done'>('idle');
@@ -1159,6 +1175,20 @@ function OnboardingView({
       : amrModels[0]?.id ?? '';
   const selectedAgent = visibleAgents.find((agent) => agent.id === config.agentId) ?? null;
   const selectedAgentChoice = selectedAgent ? (config.agentModels?.[selectedAgent.id] ?? {}) : {};
+  // Connect-step (step 0) gate. Continue may only advance once the selected
+  // runtime is actually usable: AMR signed in, an available local CLI chosen,
+  // or a BYOK provider whose connection test passed. AMR-selected-but-signed-out
+  // is the deliberate exception — there the primary CTA turns into "Sign in to
+  // continue" and must stay enabled so the user can trigger the login that
+  // satisfies the gate (see handlePrimaryAction / amrSelectedAndSignedOut).
+  const byokConnectionVerified =
+    visibleProviderTestState.status === 'done' && visibleProviderTestState.result.ok;
+  const connectStepRuntimeReady =
+    (runtime === 'amr' && amrSignedIn) ||
+    (runtime === 'local' && selectedAgent !== null) ||
+    (runtime === 'byok' && byokConnectionVerified);
+  const connectStepBlocked =
+    step === 0 && !amrSelectedAndSignedOut && !connectStepRuntimeReady;
 
   useEffect(() => {
     return () => {
@@ -1546,21 +1576,13 @@ function OnboardingView({
     agentRevealTimersRef.current = [];
   }
 
-  function handleSkipWithTracking(): void {
-    emitOnboardingClick('skip', 'skip');
-    emitOnboardingComplete('skipped', 'skipped');
-    clearOnboardingSessionId();
-    onFinish();
-  }
   function handleBackWithTracking(): void {
     if (newsletterSubmitting) return;
-    if (step === 0) {
-      // Step 0 "Back" semantically maps to Skip — there's nowhere
-      // earlier to go. Match the Skip telemetry shape rather than
-      // emit a back-without-prior-step row.
-      handleSkipWithTracking();
-      return;
-    }
+    // The secondary button only renders for step > 0 — the Connect step has no
+    // earlier step and no Skip affordance — so this is always a real Back.
+    // (The former step-0 "Skip" path, which emitted the onboarding `skip` /
+    // `skipped` events, was removed when Skip was dropped; those enums are now
+    // deprecated and unused. See packages/contracts/src/analytics/events.ts.)
     emitOnboardingClick('back', 'back');
     setStep((current) => current - 1);
   }
@@ -1577,7 +1599,10 @@ function OnboardingView({
         analytics.track,
         'onboarding_amr_sign_in_continue',
         new Date(),
-        { reuseExistingFrom: ['onboarding_amr_card'] },
+        {
+          metricsConsent: config.telemetry?.metrics === true,
+          reuseExistingFrom: ['onboarding_amr_card'],
+        },
       );
       void handleAmrSignInToContinue(attribution);
       return;
@@ -1637,7 +1662,12 @@ function OnboardingView({
       }
       if (amrLoginPollCancelledRef.current) return;
       beginAmrAuthTracking(attribution);
-      const loginResult = await startVelaLogin(attribution);
+      const odDeviceId = amrHandoffDeviceId({
+        metricsConsent: config.telemetry?.metrics === true,
+        resolvedDeviceId: getResolvedDeviceId(),
+        installationId: config.installationId,
+      });
+      const loginResult = await startVelaLogin(attribution, odDeviceId);
       if (amrLoginPollCancelledRef.current) {
         resolveAmrAuthTracking(analytics.track, 'cancelled');
         if (loginResult.ok || loginResult.alreadyRunning) {
@@ -1743,6 +1773,22 @@ function OnboardingView({
       useCase: snapshot.useCase,
       source: snapshot.source,
     });
+    syncAmrAttributionWithOnboardingProfile(
+      {
+        role: snapshot.role,
+        orgSize: snapshot.orgSize,
+        useCase: snapshot.useCase,
+        source: snapshot.source,
+      },
+      {
+        metricsConsent: config.telemetry?.metrics === true,
+        odDeviceId: amrHandoffDeviceId({
+          metricsConsent: config.telemetry?.metrics === true,
+          resolvedDeviceId: getResolvedDeviceId(),
+          installationId: config.installationId,
+        }),
+      },
+    );
     trackOnboardingClick(analytics.track, {
       page_name: 'onboarding',
       area: 'about_you',
@@ -1965,25 +2011,32 @@ function OnboardingView({
       : t('settings.onboardingContinue');
 
   return (
-    <section className="onboarding-view" aria-labelledby="onboarding-title">
-      <header className="onboarding-view__hero">
-        <span className="onboarding-view__hero-mark" aria-hidden>
-          <img src="/app-icon.svg" alt="" draggable={false} />
-        </span>
-        {t('settings.welcomeKicker') ? (
-          <span className="onboarding-view__kicker">{t('settings.welcomeKicker')}</span>
-        ) : null}
-        <h1 id="onboarding-title">{t('settings.welcomeTitle')}</h1>
-        {t('settings.welcomeSubtitle') ? <p>{t('settings.welcomeSubtitle')}</p> : null}
-      </header>
+    <section className="onboarding-view" aria-label={t('settings.welcomeTitle')}>
+      {t('settings.welcomeKicker') || t('settings.welcomeSubtitle') ? (
+        <header className="onboarding-view__hero">
+          {t('settings.welcomeKicker') ? (
+            <span className="onboarding-view__kicker">{t('settings.welcomeKicker')}</span>
+          ) : null}
+          {t('settings.welcomeSubtitle') ? <p>{t('settings.welcomeSubtitle')}</p> : null}
+        </header>
+      ) : null}
       <ol className="onboarding-view__steps" aria-label={t('settings.welcomeTitle')}>
         {steps.map((label, index) => (
-          <li key={label} className={index === step ? 'is-active' : index < step ? 'is-done' : ''}>
+          <li
+            key={label}
+            className={[
+              index === step ? 'is-active' : '',
+              index < step ? 'is-done' : '',
+              index <= maxStepReached ? 'is-reached' : 'is-upcoming',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
             <span>{index + 1}</span>
             <button
               type="button"
               onClick={() => handleStepNavigation(index)}
-              disabled={onboardingNavigationLocked}
+              disabled={onboardingNavigationLocked || index > maxStepReached}
             >
               {label}
             </button>
@@ -2034,7 +2087,12 @@ function OnboardingView({
                       featured
                       selected={runtime === 'amr'}
                       onClick={() => {
-                        recordAmrEntry(analytics.track, 'onboarding_amr_card');
+                        recordAmrEntry(
+                          analytics.track,
+                          'onboarding_amr_card',
+                          new Date(),
+                          { metricsConsent: config.telemetry?.metrics === true },
+                        );
                         setRuntime('amr');
                         onModeChange('daemon');
                         onAgentChange('amr');
@@ -2340,14 +2398,16 @@ function OnboardingView({
                 {amrLoginError}
               </span>
             ) : null}
-            <button
-              type="button"
-              className="onboarding-view__secondary"
-              onClick={handleBackWithTracking}
-              disabled={onboardingNavigationLocked}
-            >
-              {step === 0 ? t('settings.onboardingSkip') : t('settings.onboardingBack')}
-            </button>
+            {step > 0 ? (
+              <button
+                type="button"
+                className="onboarding-view__secondary"
+                onClick={handleBackWithTracking}
+                disabled={onboardingNavigationLocked}
+              >
+                {t('settings.onboardingBack')}
+              </button>
+            ) : null}
             {step === 0 && amrLoginPending ? (
               <button
                 type="button"
@@ -2362,7 +2422,12 @@ function OnboardingView({
               type="button"
               className="onboarding-view__primary"
               onClick={handlePrimaryAction}
-              disabled={amrLoginPending || amrLoginCancelPending || newsletterSubmitting}
+              disabled={
+                amrLoginPending ||
+                amrLoginCancelPending ||
+                newsletterSubmitting ||
+                connectStepBlocked
+              }
               aria-busy={newsletterSubmitting ? true : undefined}
             >
               <span>{primaryActionLabel}</span>

@@ -267,6 +267,7 @@ import { summarizeRunDiagnosticsForAnalytics } from './run-diagnostics.js';
 import {
   countDesignSystemPreviewModules,
   countNewArtifacts,
+  deriveActivationMilestones,
   didRunCreateDesignSystemFile,
   reconstructAssistantText,
   runAskedUserQuestion,
@@ -11915,6 +11916,22 @@ export async function startServer({
             console.warn('[memory-verify] enforcement failed', err);
           }
         })();
+        // First-touch activation milestones (first-artifact / first-design-
+        // system observed since this stamp shipped — NOT first-ever; see
+        // `deriveActivationMilestones`) written to the PostHog person record
+        // via `$set_once` below. Derived from this same run-outcome snapshot so
+        // the milestone lands at the exact success moment without a second
+        // event; `$set_once` keeps it pinned to the first qualifying run.
+        const activationMilestones = deriveActivationMilestones({
+          result,
+          artifactCount,
+          designSystemCreated,
+          // Gate the DS milestone on the same `isDesignSystemRun` condition the
+          // `run_finished.design_system_created` field uses below, so a plain
+          // chat run that writes a `DESIGN.md` doesn't overstate DS activation.
+          isDesignSystemRun,
+          capturedAtIso: new Date(analyticsCapturedAt).toISOString(),
+        });
         const diagnosticsAnalytics = summarizeRunDiagnosticsForAnalytics({
           events: run.events,
           exitCode: status.exitCode ?? null,
@@ -11946,6 +11963,13 @@ export async function startServer({
             // `design_system_generation` to match the run_created shape.
             area: isDesignSystemRun ? 'design_system_generation' : 'chat_panel',
             result,
+            // PostHog person-property milestones. `$set_once` only writes a
+            // key that doesn't already exist, so the timestamp pins to the
+            // user's FIRST qualifying run observed since rollout (true
+            // first-ever only for users who onboard after rollout; the
+            // installed base gets their next qualifying run — see
+            // `deriveActivationMilestones`). Omitted when no milestone crossed.
+            ...(activationMilestones ? { $set_once: activationMilestones } : {}),
             // `model_id` upgrades the request-side value with the
             // agent-reported model on terminal state; see
             // `finishedModelId` derivation above.

@@ -1734,95 +1734,73 @@
   box-shadow: none;
 }
 
+/* Segmented progress indicator: a horizontal bar per step with the label
+   below it. Bars read as progress, not as clickable cards — upcoming steps
+   are clearly muted and non-interactive. */
 .onboarding-view__steps li {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   min-width: 0;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
   color: var(--text-muted);
-  background: transparent;
-  box-shadow: none;
 }
 
-.onboarding-view__steps li:not(:last-child)::after {
+/* The "line" for each step. Grey while upcoming, accent once the step has
+   been reached (current or earlier). */
+.onboarding-view__steps li::before {
   content: '';
   display: block;
-  flex: 0 1 clamp(22px, 3vw, 54px);
-  width: clamp(22px, 3vw, 54px);
-  height: 1px;
-  margin: 0 10px;
-  background: color-mix(in srgb, var(--border) 88%, transparent);
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  transition: background 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+.onboarding-view__steps li.is-reached::before {
+  background: var(--accent);
+}
+
+/* The legacy number badge is dropped in the bar+label design. */
 .onboarding-view__steps li span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-subtle) 12%);
+  display: none;
 }
 
 .onboarding-view__steps li button {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   border: 0;
   padding: 0;
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.2;
-  text-align: left;
-  overflow-wrap: break-word;
-  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
   cursor: pointer;
 }
 
-.onboarding-view__steps li button:hover:not(:disabled),
-.onboarding-view__steps li button:active {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
+/* Reached-but-not-current steps stay navigable (jump back). */
+.onboarding-view__steps li.is-reached button {
+  color: var(--text);
 }
 
-.onboarding-view__steps li:hover {
-  color: var(--text);
+/* Upcoming steps are not navigable yet — muted and not-allowed. */
+.onboarding-view__steps li.is-upcoming button,
+.onboarding-view__steps li button:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+  opacity: 0.55;
 }
 
 .onboarding-view__steps li.is-active {
   color: var(--text-strong);
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
 }
 
-.onboarding-view__steps li.is-active:hover {
+.onboarding-view__steps li.is-active button {
   color: var(--text-strong);
-}
-
-.onboarding-view__steps li.is-active span {
-  color: var(--accent-contrast, #fff);
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.onboarding-view__steps li.is-done span {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+  font-weight: 700;
 }
 
 .onboarding-view__body {
