@@ -24,11 +24,13 @@ import {
   editLibraryAssetAsPage,
   fetchDesignSystem,
   fetchDesignSystems,
+  fetchLibraryAsset,
   fetchLibraryAssets,
   fetchLibraryAssetAsFile,
   libraryAssetRawUrl,
   type LibraryAssetQuery,
 } from '../providers/registry';
+import { useInView } from './plugins-home/useInView';
 import { navigate } from '../router';
 import { setComposerSeed, setDesignSystemAssetSeed, setHomeComposerAssetSeed } from '../state/libraryHandoff';
 import { Button, Dialog, DialogDescription, DialogFooter, DialogTitle } from '@open-design/components';
@@ -167,6 +169,81 @@ function Thumb({ asset }: { asset: LibraryAsset }) {
   }
 }
 
+// Kinds whose thumbnail does real off-screen work — a network fetch (image,
+// video, font face) or a whole browsing context (html `<iframe>`). These mount
+// lazily; cheap kinds (color swatch / text / url glyph) render immediately.
+const LAZY_THUMB_KINDS = new Set<string>(['image', 'video', 'html', 'font']);
+
+// Wraps {@link Thumb} so the heavy content (full-bytes `<img>`/`<video>`, the
+// `<iframe>` html preview, or an injected `@font-face` specimen) only mounts
+// once the card scrolls near the viewport. Until then a faint kind glyph holds
+// the 4:3 box. `once: true` keeps it mounted after first reveal so scrolling
+// back does not tear down and recreate an iframe browsing context. The wrapper
+// fills the `.thumb` box without changing the card's outer dimensions, so the
+// flat `index` and box-select rects stay stable whether or not it has mounted.
+function LibraryThumb({ asset }: { asset: LibraryAsset }) {
+  const lazy = LAZY_THUMB_KINDS.has(asset.kind);
+  const { ref, inView } = useInView<HTMLDivElement>({ once: true, rootMargin: '300px' });
+  if (!lazy) return <Thumb asset={asset} />;
+  return (
+    <div ref={ref} className={styles.thumbLazy}>
+      {inView ? (
+        <Thumb asset={asset} />
+      ) : (
+        <div className={styles.thumbGlyph} aria-hidden>
+          <KindIcon kind={badgeKind(asset)} size={34} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Parse `{ assetId }` out of a library SSE `data:` payload, or null. */
+function parseEventAssetId(data: unknown): string | null {
+  if (typeof data !== 'string') return null;
+  try {
+    const parsed = JSON.parse(data) as { assetId?: unknown };
+    return typeof parsed.assetId === 'string' ? parsed.assetId : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A card's viewport-space box, snapshotted for hit-testing during a drag. */
+interface CardRect {
+  id: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Snapshot every rendered card's viewport rect (id + bounds) under `grid`. */
+function snapshotCardRects(grid: HTMLElement | null): CardRect[] {
+  const out: CardRect[] = [];
+  if (!grid) return out;
+  grid.querySelectorAll<HTMLElement>('[data-asset-card]').forEach((el) => {
+    const id = el.dataset.assetId;
+    if (!id) return;
+    const r = el.getBoundingClientRect();
+    out.push({ id, left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+  });
+  return out;
+}
+
+/** Ids of cards whose snapshotted rect intersects the band rectangle. */
+function cardIdsInBand(rects: CardRect[], band: Band): string[] {
+  const left = band.x;
+  const top = band.y;
+  const right = band.x + band.w;
+  const bottom = band.y + band.h;
+  const ids: string[] = [];
+  for (const r of rects) {
+    if (r.left < right && r.right > left && r.top < bottom && r.bottom > top) ids.push(r.id);
+  }
+  return ids;
+}
+
 interface Band {
   x: number;
   y: number;
@@ -180,6 +257,10 @@ export function LibrarySection({ active, onOpenProject }: Props) {
   const [kind, setKind] = useState('');
   const [source, setSource] = useState('');
   const [search, setSearch] = useState('');
+  // The input updates `search` instantly (responsive typing) but the server
+  // query keys off `debouncedSearch`, so a fast typist fires one request, not
+  // one per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [band, setBand] = useState<Band | null>(null);
@@ -202,9 +283,20 @@ export function LibrarySection({ active, onOpenProject }: Props) {
   const loadedOnce = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<number | null>(null);
-  const dragRef = useRef<{ startX: number; startY: number; additive: boolean; base: Set<string>; moved: boolean } | null>(
-    null,
-  );
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    additive: boolean;
+    base: Set<string>;
+    moved: boolean;
+    rects: CardRect[];
+  } | null>(null);
+
+  // Debounce the search box before it touches the network (250ms trailing).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const query = useMemo<LibraryAssetQuery>(() => {
     const q: LibraryAssetQuery = {};
@@ -212,9 +304,20 @@ export function LibrarySection({ active, onOpenProject }: Props) {
     // stored as `image`); narrow to images on the server, then split client-side.
     if (kind) q.kind = kind === 'element' ? 'image' : kind;
     if (source) q.source = source;
-    if (search.trim()) q.q = search.trim();
+    if (debouncedSearch.trim()) q.q = debouncedSearch.trim();
     return q;
-  }, [kind, source, search]);
+  }, [kind, source, debouncedSearch]);
+
+  // Whether any filter narrows the default newest-first feed. Tracked in a ref
+  // so the long-lived SSE subscription can read it without resubscribing on
+  // every keystroke. When filters are active the SSE handler can't safely
+  // predict membership (server `source` is an EXISTS join, `q` is a fuzzy
+  // match), so it falls back to a single full reload.
+  const filtersActive = !!(kind || source || debouncedSearch.trim());
+  const filtersActiveRef = useRef(filtersActive);
+  useEffect(() => {
+    filtersActiveRef.current = filtersActive;
+  }, [filtersActive]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -232,26 +335,106 @@ export function LibrarySection({ active, onOpenProject }: Props) {
     void load();
   }, [active, load]);
 
-  // Live updates: clipper captures and deletes refresh the grid.
+  // Latest `load` for the long-lived SSE subscription to call on fallback,
+  // without re-subscribing (which would drop+recreate the EventSource) on every
+  // filter change.
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
+
+  // Live updates: clipper captures and deletes patch the grid incrementally.
+  // A burst of captures used to trigger one full refetch + full re-render PER
+  // event; here events are coalesced over a short window and applied as a
+  // targeted merge (fetch the one new asset / drop the one deleted id). When a
+  // filter is active — or any per-id fetch is ambiguous — we fall back to a
+  // single full reload for that window.
   useEffect(() => {
     if (!active) return;
     let es: EventSource | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const pendingIngest = new Set<string>();
+    const pendingDelete = new Set<string>();
+    let pendingFull = false;
+
+    const flush = async () => {
+      timer = null;
+      // Deletes are free (no fetch); apply them first.
+      if (pendingDelete.size) {
+        const del = new Set(pendingDelete);
+        pendingDelete.clear();
+        for (const id of del) pendingIngest.delete(id);
+        setAssets((prev) => prev.filter((a) => !del.has(a.id)));
+      }
+      // A filtered view can't predict membership client-side — one reload.
+      if (pendingFull || filtersActiveRef.current) {
+        pendingFull = false;
+        pendingIngest.clear();
+        await loadRef.current();
+        return;
+      }
+      if (pendingIngest.size) {
+        const ids = [...pendingIngest];
+        pendingIngest.clear();
+        const fetched = await Promise.all(ids.map((id) => fetchLibraryAsset(id)));
+        // A missing fetch is ambiguous (filtered out? race?) — reload instead.
+        if (fetched.some((a) => a === null)) {
+          await loadRef.current();
+          return;
+        }
+        const byId = new Map(
+          fetched.filter((a): a is LibraryAsset => a !== null).map((a) => [a.id, a]),
+        );
+        setAssets((prev) => {
+          const present = new Set(prev.map((a) => a.id));
+          // Existing ids (incl. dedup re-ingests) refresh in place — dedup does
+          // not bump created_at, so they must NOT reorder.
+          const merged = prev.map((a) => byId.get(a.id) ?? a);
+          // Genuinely new ids prepend (server order is created_at DESC, so the
+          // newest sits first); reverse so the latest event in the burst leads.
+          const fresh = [...byId.values()].filter((a) => !present.has(a.id)).reverse();
+          return fresh.length ? [...fresh, ...merged] : merged;
+        });
+      }
+    };
+
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(() => void flush(), 200);
+    };
+
     try {
       es = new EventSource('/api/library/events');
-      const refresh = () => void load();
-      es.addEventListener('ingest', refresh);
-      es.addEventListener('delete', refresh);
+      const onIngest = (ev: MessageEvent) => {
+        const id = parseEventAssetId(ev.data);
+        if (id) pendingIngest.add(id);
+        else pendingFull = true;
+        schedule();
+      };
+      const onDelete = (ev: MessageEvent) => {
+        const id = parseEventAssetId(ev.data);
+        if (id) pendingDelete.add(id);
+        else pendingFull = true;
+        schedule();
+      };
+      es.addEventListener('ingest', onIngest);
+      es.addEventListener('delete', onDelete);
     } catch {
-      // EventSource unavailable — fall back to manual refresh.
+      // EventSource unavailable — manual Refresh remains the fallback.
     }
-    return () => es?.close();
-  }, [active, load]);
+    return () => {
+      if (timer) clearTimeout(timer);
+      es?.close();
+    };
+  }, [active]);
 
-  // Drop selected ids that no longer exist after a reload / delete.
+  // Drop selected ids that no longer exist after a reload / delete. Membership
+  // is a single Set lookup so a large grid + large selection stays O(n).
   useEffect(() => {
     setSelectedIds((prev) => {
       if (!prev.size) return prev;
-      const next = new Set([...prev].filter((id) => assets.some((a) => a.id === id)));
+      const live = new Set(assets.map((a) => a.id));
+      const next = new Set([...prev].filter((id) => live.has(id)));
       return next.size === prev.size ? prev : next;
     });
   }, [assets]);
