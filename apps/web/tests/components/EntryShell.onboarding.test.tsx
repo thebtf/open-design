@@ -1086,6 +1086,63 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     });
   });
 
+  it('ignores stale BYOK model fetch responses after switching to Local CLI', async () => {
+    let resolveModelFetch: ((response: Response) => void) | null = null;
+    let providerModelRequestCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/integrations/vela/status')) {
+        return Promise.resolve(
+          jsonResponse({ loggedIn: false, profile: 'prod', user: null, configPath: '/x' }),
+        );
+      }
+      if (url.endsWith('/api/provider/models') && init?.method === 'POST') {
+        providerModelRequestCount += 1;
+        return new Promise<Response>((resolve) => {
+          resolveModelFetch = resolve;
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+    const props = renderOnboarding();
+
+    fireEvent.click(screen.getByRole('button', { name: /Bring your own key/i }));
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
+    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://api.anthropic.com' } });
+
+    await waitFor(() => {
+      expect(providerModelRequestCount).toBe(1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Local coding agent/i }));
+    await act(async () => {});
+
+    await act(async () => {
+      resolveModelFetch?.(
+        jsonResponse({
+          ok: true,
+          kind: 'success',
+          latencyMs: 10,
+          models: [
+            { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
+            { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+          ],
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(props.onApiModelChange).not.toHaveBeenCalledWith('claude-opus-4-8');
+    expect((props.onConfigPersist as ReturnType<typeof vi.fn>).mock.calls).not.toContainEqual([
+      expect.objectContaining({
+        mode: 'api',
+        model: 'claude-opus-4-8',
+      }),
+    ]);
+    expect(props.onModeChange).toHaveBeenCalledWith('daemon');
+  });
+
   it('shows the AMR cloud card as a skeleton while agent detection is still in flight', async () => {
     // Before this fix, the AMR cloud card was simply absent for the several
     // seconds AMR's probe takes to settle (showAmrCloudOption was false once

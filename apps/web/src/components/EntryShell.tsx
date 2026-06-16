@@ -1010,6 +1010,8 @@ function OnboardingView({
   const providerModelAutoSelectRef = useRef({
     model: config.model,
     providerModelsInputKey: '',
+    runtime,
+    step,
   });
   const apiProtocol = config.apiProtocol ?? 'anthropic';
   const providerTestInputKey = [
@@ -1028,6 +1030,8 @@ function OnboardingView({
   providerModelAutoSelectRef.current = {
     model: config.model,
     providerModelsInputKey,
+    runtime,
+    step,
   };
   const canTestProvider =
     Boolean(config.apiKey.trim()) &&
@@ -1433,6 +1437,8 @@ function OnboardingView({
     const current = providerModelAutoSelectRef.current;
     if (
       !firstModel ||
+      current.runtime !== 'byok' ||
+      current.step !== 0 ||
       current.providerModelsInputKey !== expectedInputKey ||
       current.model.trim()
     ) {
