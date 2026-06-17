@@ -48,18 +48,9 @@ let
 
   pnpmDepsHash = (import ./pnpm-deps.nix).daemonHash;
   pnpmWorkspaceFilters = map (workspacePath: "./${workspacePath}") workspacePaths;
-  pnpmDeps = fetchPnpmDeps {
-    inherit pname version;
-    src = pnpmDepsSrc;
-    hash = pnpmDepsHash;
-    pnpm = pnpm_10;
-    pnpmWorkspaces = pnpmWorkspaceFilters;
-    fetcherVersion = 3;
-  };
-  betterSqlite3Binding = stdenv.mkDerivation {
-    pname = "${pname}-better-sqlite3-binding";
-    inherit version pnpmDeps;
-    src = pnpmDepsSrc;
+in
+  stdenv.mkDerivation (finalAttrs: {
+    inherit pname version src;
 
     pnpmWorkspaces = pnpmWorkspaceFilters;
 
@@ -67,18 +58,66 @@ let
       nodejs
       pnpm_10
       pnpmConfigHook
+      makeWrapper
+      # Required to rebuild better-sqlite3's native binding from source.
+      # node-gyp drives this via Python; gnumake/pkg-config + the C++
+      # compiler from stdenv complete the toolchain.
       python3
       gnumake
       pkg-config
     ];
 
+    # `fetchPnpmDeps` defaults to `pkgs.pnpm`; pin to the flake's
+    # `pnpm_10` so the dep-fetch matches the install phase.
+    pnpmDeps = fetchPnpmDeps {
+      inherit (finalAttrs) pname version;
+      src = pnpmDepsSrc;
+      hash = pnpmDepsHash;
+      pnpm = pnpm_10;
+      pnpmWorkspaces = pnpmWorkspaceFilters;
+      fetcherVersion = 3;
+    };
+
     env.NODE_ENV = "production";
 
-    # Keep this derivation keyed to dependency/toolchain inputs instead of the
-    # daemon source tree. Daemon code changes can then reuse the native addon.
+    # pnpm_10.configHook runs in postConfigureHooks: it unpacks
+    # `pnpmDeps`, points pnpm at the unpacked store, and runs
+    # `pnpm install --offline --ignore-scripts --frozen-lockfile`.
+    # No custom configurePhase needed.
+
     buildPhase = ''
       runHook preBuild
 
+      # Build better-sqlite3's native binding from source.
+      #
+      # Why from source on Node 24:
+      #   better-sqlite3 (even 12.9.0, latest as of 2026-05) only
+      #   publishes prebuilds up to node-v131 (Node 22). No v137
+      #   (Node 24) prebuild exists. `prebuild-install` would itself
+      #   fail the GitHub fetch and fall through to a compile, so we
+      #   skip the download attempt entirely and compile.
+      #
+      # Why not `pnpm rebuild`:
+      #   In pnpm 10, `onlyBuiltDependencies` interacts with the
+      #   "approve-builds" consent gate; `pnpm rebuild <pkg>` silently
+      #   no-ops in some configurations. Invoke node-gyp directly to
+      #   sidestep all of that.
+      #
+      # Env vars:
+      #   * npm_config_nodedir → use the headers shipped with the
+      #     nixpkgs nodejs we're already building against, so node-gyp
+      #     doesn't try to fetch them from nodejs.org/dist (no network
+      #     in the build sandbox).
+      #   * npm_config_build_from_source → tell better-sqlite3's
+      #     prebuild-install fallback chain to skip the CDN download
+      #     and compile.
+      #
+      # node-gyp lookup:
+      #   nixpkgs nodejs ships node-gyp bundled inside npm at
+      #   ${nodejs}/lib/node_modules/npm/bin/node-gyp-bin. Putting
+      #   that on PATH gives us a `node-gyp` shim without depending
+      #   on pnpm-exec resolving from inside better-sqlite3's tree
+      #   (better-sqlite3 doesn't list node-gyp as a direct dep).
       export npm_config_nodedir=${nodejs}
       export npm_config_build_from_source=true
       export PATH="${nodejs}/lib/node_modules/npm/bin/node-gyp-bin:$PATH"
@@ -91,69 +130,8 @@ let
         exit 1
       fi
 
-      echo "Building reusable better-sqlite3 binding from source at $bsq_dir"
+      echo "Building better-sqlite3 from source at $bsq_dir"
       ( cd "$bsq_dir" && node-gyp rebuild --release --build-from-source )
-
-      if [ ! -f "$bsq_dir/build/Release/better_sqlite3.node" ]; then
-        echo "ERROR: better_sqlite3.node was not produced at $bsq_dir/build/Release/" >&2
-        find "$bsq_dir" -name '*.node' -print >&2 || true
-        exit 1
-      fi
-
-      runHook postBuild
-    '';
-
-    installPhase = ''
-      runHook preInstall
-
-      bsq_dir=$(find node_modules/.pnpm -mindepth 2 -maxdepth 4 \
-        -type d -path '*/better-sqlite3@*/node_modules/better-sqlite3' \
-        -print -quit)
-      mkdir -p $out
-      cp "$bsq_dir/build/Release/better_sqlite3.node" $out/better_sqlite3.node
-
-      runHook postInstall
-    '';
-
-    dontFixup = true;
-  };
-in
-  stdenv.mkDerivation (finalAttrs: {
-    inherit pname version src;
-
-    pnpmWorkspaces = pnpmWorkspaceFilters;
-
-    nativeBuildInputs = [
-      nodejs
-      pnpm_10
-      pnpmConfigHook
-      makeWrapper
-    ];
-
-    inherit pnpmDeps;
-
-    env.NODE_ENV = "production";
-
-    # pnpm_10.configHook runs in postConfigureHooks: it unpacks
-    # `pnpmDeps`, points pnpm at the unpacked store, and runs
-    # `pnpm install --offline --ignore-scripts --frozen-lockfile`.
-    # No custom configurePhase needed.
-
-    buildPhase = ''
-      runHook preBuild
-
-      bsq_dir=$(find node_modules/.pnpm -mindepth 2 -maxdepth 4 \
-        -type d -path '*/better-sqlite3@*/node_modules/better-sqlite3' \
-        -print -quit)
-      if [ -z "$bsq_dir" ]; then
-        echo "ERROR: better-sqlite3 not found under node_modules/.pnpm — pnpm install may have failed" >&2
-        exit 1
-      fi
-
-      echo "Installing cached better-sqlite3 binding into $bsq_dir"
-      mkdir -p "$bsq_dir/build/Release"
-      cp ${betterSqlite3Binding}/better_sqlite3.node "$bsq_dir/build/Release/better_sqlite3.node"
-      chmod u+w "$bsq_dir/build/Release/better_sqlite3.node"
 
       # Fail fast if the .node file didn't land where bindings.js
       # looks for it. Without this assertion, a silent skip produces
@@ -224,7 +202,7 @@ in
 
     passthru = {
       inherit nodejs;
-      inherit pnpmDeps betterSqlite3Binding;
+      pnpmDeps = finalAttrs.pnpmDeps;
     };
 
     meta = with lib; {
