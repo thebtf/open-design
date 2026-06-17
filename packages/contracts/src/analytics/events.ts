@@ -37,6 +37,7 @@ export type AnalyticsEventName =
   | 'file_upload_result'
   // Artifact
   | 'artifact_export_result'
+  | 'artifact_deploy_result'
   // Feedback
   | 'feedback_submit_result'
   | 'assistant_feedback_click'
@@ -130,6 +131,10 @@ export type TrackingAmrEntrySource =
   | 'inline_model_switcher_amr_row'
   | 'settings_amr_agent_card'
   | 'settings_amr_authorize'
+  | 'settings_amr_console'
+  | 'settings_amr_install'
+  | 'avatar_amr_console'
+  | 'handoff_amr_website'
   | 'chat_error_authorize_retry'
   | 'chat_error_recharge'
   | 'chat_error_switch_retry_card'
@@ -142,6 +147,8 @@ export interface AmrEntryAttribution {
   sourceProduct: 'open_design';
   sourceDetail: TrackingAmrEntrySource;
   occurredAt: string;
+  // Open Design install/device id forwarded only on consent-gated AMR handoffs.
+  odDeviceId?: string;
   // Self-reported onboarding profile, forwarded to AMR (anchored to entryId) so
   // AMR can segment paid conversion by who the visitor is. Open strings, not a
   // union: onboarding keeps these open so a new option never forces a contract
@@ -215,6 +222,10 @@ export type TrackingArtifactKind =
   | 'doc'
   | 'unknown';
 
+// NOTE: vercel / cloudflare_pages are intentionally NOT here. Deploy attempts
+// used to ride artifact_export_result with those formats, but that only ever
+// meant "deploy popover opened", never a real publish. Real deploys are now
+// tracked exclusively by artifact_deploy_result (see TrackingDeployProvider).
 export type TrackingExportFormat =
   | 'pdf'
   | 'pptx'
@@ -224,9 +235,7 @@ export type TrackingExportFormat =
   | 'markdown'
   | 'template'
   | 'share_link'
-  | 'share_page'
-  | 'vercel'
-  | 'cloudflare_pages';
+  | 'share_page';
 
 export type TrackingResult = 'success' | 'failed';
 export type TrackingRunResult = 'success' | 'failed' | 'cancelled';
@@ -492,11 +501,14 @@ export type TrackingOnboardingSourceType =
   | 'none';
 
 // `completed`: user clicked through every step (with or without a DS).
-// `skipped`: user clicked Skip from any step. `cancelled`: user closed
-// the onboarding tab / navigated away without finishing.
-// `failed`: terminal error before completion.
+// `cancelled`: user closed the onboarding tab / navigated away without
+// finishing. `failed`: terminal error before completion.
+// `skipped`: DEPRECATED — the onboarding "Skip for now" affordance was
+// removed (Connect is now a required gate), so this is no longer emitted.
+// Kept in the union for historical data / dashboard compatibility.
 export type TrackingOnboardingCompletionResult =
   | 'completed'
+  /** @deprecated no longer emitted — Skip was removed from onboarding. */
   | 'skipped'
   | 'cancelled'
   | 'failed';
@@ -504,6 +516,7 @@ export type TrackingOnboardingCompletionResult =
 export type TrackingOnboardingCompletionType =
   | 'completed_with_design_system'
   | 'completed_without_design_system'
+  /** @deprecated no longer emitted — Skip was removed from onboarding. */
   | 'skipped';
 
 // CLI scan terminal state. `success`: at least one CLI was detected;
@@ -555,6 +568,7 @@ export type TrackingOnboardingClickElement =
   // Action buttons
   | 'continue'
   | 'back'
+  /** @deprecated no longer emitted — Skip was removed from onboarding. */
   | 'skip'
   | 'generate'
   // About you fields
@@ -580,6 +594,7 @@ export type TrackingOnboardingClickAction =
   | 'select_runtime'
   | 'continue'
   | 'back'
+  /** @deprecated no longer emitted — Skip was removed from onboarding. */
   | 'skip'
   | 'generate'
   | 'select_option'
@@ -2049,7 +2064,10 @@ export interface PresentPopoverClickProps {
 export interface ShareOptionPopoverClickProps {
   page_name: 'artifact';
   area: 'share_option_popover';
-  element: TrackingExportFormat;
+  // Export/share formats, plus 'publish_required_guide' for the share-intent
+  // signal: the user opened Share wanting a link but the artifact isn't
+  // deployed yet, so only the "publish online first" guide row is shown.
+  element: TrackingExportFormat | 'publish_required_guide';
   artifact_id: string;
   artifact_kind: TrackingArtifactKind;
   project_id: string;
@@ -2823,6 +2841,32 @@ export interface ArtifactExportResultProps {
   project_kind: TrackingProjectKind | null;
 }
 
+export type TrackingDeployProvider = 'vercel' | 'cloudflare_pages';
+
+// Fired from the deploy modal when a real publish attempt resolves — NOT when
+// the modal merely opens (that path is `artifact_export_result` with
+// export_format vercel/cloudflare_pages and only means "popover opened").
+// `result` is 'success' once the provider accepts the deploy (the link may
+// still be delayed/protected), 'failed' on a hard error or missing config.
+export interface ArtifactDeployResultProps {
+  page_name: 'artifact';
+  area: 'deploy_modal';
+  artifact_id: string;
+  artifact_kind: TrackingArtifactKind;
+  provider: TrackingDeployProvider;
+  result: TrackingExportResult;
+  // True when this attempt saved a new/changed token (the user actually
+  // entered a key this run), so "configured a key AND deployed" is queryable.
+  saved_new_token: boolean;
+  // True when the provider had no saved, configured credentials before this
+  // attempt — i.e. this is a first-time setup-and-deploy.
+  first_configure: boolean;
+  error_code?: string;
+  deploy_duration_ms: number;
+  project_id: string;
+  project_kind: TrackingProjectKind | null;
+}
+
 export interface FeedbackSubmitResultProps {
   page_name: 'chat_panel';
   area: 'chat_panel';
@@ -2985,6 +3029,7 @@ export type AnalyticsEventPayload =
   | { event: 'update_apply_observed'; props: UpdateApplyObservedProps }
   | { event: 'file_upload_result'; props: FileUploadResultProps }
   | { event: 'artifact_export_result'; props: ArtifactExportResultProps }
+  | { event: 'artifact_deploy_result'; props: ArtifactDeployResultProps }
   | { event: 'feedback_submit_result'; props: FeedbackSubmitResultProps }
   | { event: 'assistant_feedback_click'; props: AssistantFeedbackClickProps }
   | {
