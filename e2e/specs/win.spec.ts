@@ -1316,6 +1316,22 @@ async function readTiming(filePath: string): Promise<TimingResult> {
 }
 
 async function seedPackagedOnboardingComplete(): Promise<void> {
+  // Pre-mark first-run onboarding as complete so the packaged app boots
+  // straight to the home shell. Since #4389 the Connect onboarding step is
+  // required and has no Skip affordance, so the only way past it on a fresh
+  // install is an `onboardingCompleted: true` config the daemon reads on boot.
+  //
+  // Write to the SAME data dir the running daemon actually reads —
+  // `<runtimeNamespaceRoot>/data` — not a path derived from the installed
+  // app's baked config. `tools-pack win start` rewrites the launch config's
+  // `namespaceBaseRoot` to the tools-pack runtime root (see
+  // writeInstalledLaunchPackagedConfig in tools/pack/src/win/lifecycle.ts) and
+  // hands it to the runtime via OD_PACKAGED_CONFIG_PATH, so the live daemon's
+  // RUNTIME_DATA_DIR is always under runtimeNamespaceRoot regardless of what
+  // the installer baked. Deriving the path from the installed manifest landed
+  // the seed elsewhere (the AppData fallback), so the daemon never saw it and
+  // the app stuck on onboarding once the Skip button was removed. This mirrors
+  // the macOS smoke's seed, which already writes under runtimeNamespaceRoot.
   const configPath = join(runtimeNamespaceRoot, 'data', 'app-config.json');
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, `${JSON.stringify({ onboardingCompleted: true }, null, 2)}\n`, 'utf8');
