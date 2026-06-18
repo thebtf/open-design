@@ -20,7 +20,7 @@ import { harvestFonts, type FontFile } from "./fonts.js";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-const HTML_CAP = 1_500_000; // 1.5MB
+const HTML_CAP = 6_000_000; // Large SSR payloads can put megabytes of JSON before <body>.
 const CSS_CAP = 400_000; // 400KB per file
 const MAX_CSS_FILES = 6;
 const MAX_LOGOS = 6;
@@ -164,6 +164,43 @@ export function isChallengePage(html: string): boolean {
   const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "";
   if (CHALLENGE_TITLE_RE.test(title)) return true;
   return CHALLENGE_BODY_RE.test(html.slice(0, 60_000));
+}
+
+export function previewablePrefetchHtml(html: string, cap = HTML_CAP): string {
+  const out = html.slice(0, cap);
+  if (/<body\b/i.test(out) || out.length < cap) return out;
+  const title = decodeEntities(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(out)?.[1] ?? "").trim();
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    '<meta charset="utf-8">',
+    `<title>${escapeHtml(title || "Prefetch HTML truncated")}</title>`,
+    "<style>",
+    "body{font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#fff;color:#202124}",
+    "main{max-width:760px;margin:64px auto;padding:0 24px}",
+    "h1{font-size:22px;margin:0 0 12px}",
+    "p{margin:0 0 10px;color:#5f6368}",
+    "code{background:#f1f3f4;border-radius:4px;padding:2px 4px;color:#202124}",
+    "</style>",
+    "</head>",
+    "<body>",
+    "<main>",
+    "<h1>Prefetch HTML was truncated before the page body.</h1>",
+    `<p>The fetched document exceeded the ${cap.toLocaleString("en-US")} byte preview cap before <code>&lt;body&gt;</code> appeared.</p>`,
+    "<p>Use <code>prefetch/material.md</code>, <code>prefetch/styles.css</code>, and saved brand assets for extraction evidence.</p>",
+    "</main>",
+    "</body>",
+    "</html>",
+  ].join("");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function decodeEntities(s: string): string {
@@ -783,7 +820,7 @@ export async function prefetchBrand(
 
   // Persist raw material for the agent to Read deeper if it wants to.
   fs.writeFileSync(path.join(prefetchDir, "material.md"), materialMd);
-  fs.writeFileSync(path.join(prefetchDir, "page.html"), html.slice(0, HTML_CAP));
+  fs.writeFileSync(path.join(prefetchDir, "page.html"), previewablePrefetchHtml(html));
   fs.writeFileSync(path.join(prefetchDir, "styles.css"), allCss.slice(0, 2_000_000));
 
   return { ...partial, thin, materialMd };
