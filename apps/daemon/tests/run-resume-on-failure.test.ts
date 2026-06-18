@@ -142,9 +142,12 @@ describe('resume-on-failure runtime', () => {
     }
   });
 
-  it('does not flag a text-only drop with no committed block as resumable', async () => {
+  it('treats a text-only upstream drop as resumable and resumes next turn', async () => {
     binDir = await mkdtemp(path.join(os.tmpdir(), 'od-resume-textonly-bin-'));
-    const { bin: fakeClaude } = await writeTextOnlyUpstreamClaude(binDir, 'claude-textonly');
+    const { bin: fakeClaude, argsLogPath } = await writeTextOnlyUpstreamClaude(
+      binDir,
+      'claude-textonly',
+    );
 
     delete process.env.POSTHOG_KEY;
     delete process.env.POSTHOG_HOST;
@@ -163,13 +166,26 @@ describe('resume-on-failure runtime', () => {
 
     const conversationId = await createConversation(started.url);
 
-    // Streamed text (so the side-effect gate suppresses the blind retry) but NO
-    // committed tool_use / artifact block. A few tokens reaching the UI is not a
-    // resume boundary — there may be nothing committed to continue — so the run
-    // must NOT be resumable even though it produced "output".
+    // Streamed text suppresses the blind same-run retry path, and text-heavy
+    // generations are the common interrupted-page case this branch now resumes.
     const failed = await sendRunAndWait(started.url, conversationId);
     expect(failed.status).toBe('failed');
-    expect(failed.resumable).not.toBe(true);
+    expect(failed.resumable).toBe(true);
+
+    const recovered = await sendRunAndWait(started.url, conversationId);
+    expect(recovered.status).toBe('succeeded');
+
+    const attempts = (await readArgs(argsLogPath)).filter(
+      (args) => args.includes('--session-id') || args.includes('--resume'),
+    );
+    expect(attempts).toHaveLength(2);
+
+    const firstSessionId = flagValue(attempts[0] ?? [], '--session-id');
+    expect(firstSessionId).toBeTruthy();
+    expect(attempts[0]).not.toContain('--resume');
+
+    const resumedSessionId = flagValue(attempts[1] ?? [], '--resume');
+    expect(resumedSessionId).toBe(firstSessionId);
   });
 });
 
@@ -276,26 +292,44 @@ setTimeout(() => process.exit(1), 20);
   return { bin, argsLogPath };
 }
 
-// Fake Claude CLI that streams a TEXT block (sets userVisibleOutputSeen) but
-// commits no tool_use / artifact block, then fails with an upstream drop.
+// Fake Claude CLI that emits visible stdout text (the resumable branch's new
+// boundary signal) but commits no tool_use / artifact block, then fails with an
+// upstream drop.
 async function writeTextOnlyUpstreamClaude(
   dir: string,
   name: string,
-): Promise<{ bin: string }> {
+): Promise<{ bin: string; argsLogPath: string }> {
   const bin = path.join(dir, name);
+  const counterPath = path.join(dir, `${name}-attempts`);
+  const argsLogPath = path.join(dir, `${name}-args.jsonl`);
   await writeFile(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const counterPath = ${JSON.stringify(counterPath)};
+const argsLogPath = ${JSON.stringify(argsLogPath)};
 if (process.argv.includes('--version')) { console.log('claude-code 1.0.0-resume-textonly'); process.exit(0); }
 if (process.argv.includes('--help')) { console.log('Usage: claude -p [--include-partial-messages]'); process.exit(0); }
-console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
-console.log(JSON.stringify({
-  type: 'assistant',
-  message: { id: 'msg-textonly', content: [{ type: 'text', text: 'Half an answer before the drop.' }], stop_reason: null }
-}));
-process.stderr.write('Upstream request failed: HTTP 503 stream disconnected before completion.\\n');
-setTimeout(() => process.exit(1), 20);
+let attempts = 0;
+try { attempts = Number(fs.readFileSync(counterPath, 'utf8')) || 0; } catch {}
+fs.writeFileSync(counterPath, String(attempts + 1));
+fs.appendFileSync(argsLogPath, JSON.stringify(process.argv.slice(2)) + '\\n');
+if (attempts === 0) {
+  console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
+  console.log(JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg-textonly' }, ttft_ms: 10 } }));
+  console.log(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } }));
+  console.log(JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Half an answer before the drop.' } } }));
+  process.stderr.write('Upstream request failed: HTTP 503 stream disconnected before completion.\\n');
+  setTimeout(() => process.exit(1), 20);
+} else {
+  console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
+  console.log(JSON.stringify({
+    type: 'assistant',
+    message: { id: 'msg-textonly-recovered', content: [{ type: 'text', text: 'Recovered after resuming text output.' }], stop_reason: 'end_turn' }
+  }));
+  setTimeout(() => process.exit(0), 20);
+}
 `, 'utf8');
   await chmod(bin, 0o755);
-  return { bin };
+  return { bin, argsLogPath };
 }
 
 async function putConfig(url: string, patch: Record<string, unknown>): Promise<void> {
