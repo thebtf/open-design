@@ -90,6 +90,7 @@ describe('brand routes', () => {
   it('reconciles extracting brands to failed when the backing project run failed', async () => {
     writeBrandFixture('brand-failed', {
       projectId: 'project-failed',
+      extractionConversationId: 'conversation-failed',
       logoPrimary: 'logos/missing.svg',
       status: 'extracting',
     });
@@ -136,6 +137,7 @@ describe('brand routes', () => {
   it('reconciles extracting brands to failed when the backing run was canceled by the user', async () => {
     writeBrandFixture('brand-canceled', {
       projectId: 'project-canceled',
+      extractionConversationId: 'conversation-canceled',
       logoPrimary: 'logos/missing.svg',
       status: 'extracting',
     });
@@ -178,6 +180,7 @@ describe('brand routes', () => {
   it('does not regress ready brands when a later backing project run is canceled', async () => {
     writeBrandFixture('brand-ready', {
       projectId: 'project-ready',
+      extractionConversationId: 'conversation-extraction-ready',
       logoPrimary: 'logos/missing.svg',
       status: 'ready',
     });
@@ -220,9 +223,74 @@ describe('brand routes', () => {
     expect(storedMeta.error).toBeUndefined();
   });
 
+  it('does not fail extracting brands when a later non-extraction project run is canceled', async () => {
+    writeBrandFixture('brand-extracting', {
+      projectId: 'project-extracting',
+      extractionConversationId: 'conversation-extracting',
+      logoPrimary: 'logos/missing.svg',
+      status: 'extracting',
+    });
+    insertProject(db, {
+      id: 'project-extracting',
+      name: 'Extracting Brand Project',
+      skillId: null,
+      designSystemId: null,
+      createdAt: 1,
+      updatedAt: 1,
+      metadata: { kind: 'brand', brandId: 'brand-extracting' },
+    });
+    insertConversation(db, {
+      id: 'conversation-extracting',
+      projectId: 'project-extracting',
+      title: 'Extract brand',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    upsertMessage(db, 'conversation-extracting', {
+      id: 'message-extracting',
+      role: 'assistant',
+      content: 'Still extracting.',
+      runId: 'run-extracting',
+      runStatus: 'running',
+      startedAt: 1,
+      endedAt: null,
+    });
+    insertConversation(db, {
+      id: 'conversation-extracting-follow-up',
+      projectId: 'project-extracting',
+      title: 'Follow-up edit',
+      createdAt: 3,
+      updatedAt: 3,
+    });
+    upsertMessage(db, 'conversation-extracting-follow-up', {
+      id: 'message-extracting-follow-up',
+      role: 'assistant',
+      content: 'Stopped.',
+      runId: 'run-extracting-follow-up',
+      runStatus: 'canceled',
+      startedAt: 3,
+      endedAt: 4,
+    });
+
+    const detail = await requestJson('/api/brands/brand-extracting');
+    const list = await requestJson('/api/brands');
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.meta.status).toBe('extracting');
+    expect(detail.body.meta.error).toBeUndefined();
+    expect(list.body.brands.find((brand: any) => brand.meta.id === 'brand-extracting')?.meta.status).toBe(
+      'extracting',
+    );
+
+    const storedMeta = JSON.parse(readFileSync(path.join(brandsRoot, 'brand-extracting', 'meta.json'), 'utf8'));
+    expect(storedMeta.status).toBe('extracting');
+    expect(storedMeta.error).toBeUndefined();
+  });
+
   it('surfaces needs_input when the backing project is awaiting user input', async () => {
     writeBrandFixture('brand-blocked', {
       projectId: 'project-blocked',
+      extractionConversationId: 'conversation-blocked',
       logoPrimary: 'logos/missing.svg',
       status: 'extracting',
     });
@@ -270,7 +338,14 @@ describe('brand routes', () => {
 
   function writeBrandFixture(
     id: string,
-    options: { projectId?: string; logoPrimary: string; logoBody?: string; status?: string; error?: string },
+    options: {
+      projectId?: string;
+      extractionConversationId?: string;
+      logoPrimary: string;
+      logoBody?: string;
+      status?: string;
+      error?: string;
+    },
   ) {
     const brandDir = path.join(brandsRoot, id);
     mkdirSync(brandDir, { recursive: true });
@@ -284,6 +359,7 @@ describe('brand routes', () => {
         status: options.status ?? 'ready',
         ...(options.error ? { error: options.error } : {}),
         ...(options.projectId ? { projectId: options.projectId } : {}),
+        ...(options.extractionConversationId ? { extractionConversationId: options.extractionConversationId } : {}),
       }),
     );
     writeFileSync(

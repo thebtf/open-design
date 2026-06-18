@@ -16,6 +16,8 @@ import type { Application, Request, Response } from 'express';
 
 import {
   getProject,
+  listConversationsAwaitingInput,
+  listLatestConversationRunStatuses,
   listLatestProjectRunStatuses,
   listProjectsAwaitingInput,
   type insertProject,
@@ -53,9 +55,10 @@ export interface BrandRoutesDeps {
   /** In-memory run registry, when available, so brand status can reconcile with
    *  active/just-finished backing extraction runs before they age out. */
   runs?: {
-    list: (filter?: { projectId?: string }) => Array<{
+    list: (filter?: { projectId?: string; conversationId?: string }) => Array<{
       id: string;
       projectId?: string | null;
+      conversationId?: string | null;
       status: string;
       updatedAt?: number;
       error?: string | null;
@@ -232,15 +235,21 @@ type BrandRunStatus = {
 
 interface BrandStatusContext {
   latestByProject: Map<string, BrandRunStatus>;
+  latestByConversation: Map<string, BrandRunStatus>;
   /** Projects whose latest assistant turn is a still-unanswered question form
    *  (anti-bot wall / clarifying question). Drives the reversible needs_input. */
   awaitingInput: Set<string>;
+  awaitingInputByConversation: Set<string>;
 }
 
 function createBrandStatusContext(deps: BrandRoutesDeps): BrandStatusContext {
   const latestByProject = new Map<string, BrandRunStatus>();
   for (const [projectId, status] of listLatestProjectRunStatuses(deps.db) as Map<string, BrandRunStatus>) {
     latestByProject.set(projectId, status);
+  }
+  const latestByConversation = new Map<string, BrandRunStatus>();
+  for (const [conversationId, status] of listLatestConversationRunStatuses(deps.db) as Map<string, BrandRunStatus>) {
+    latestByConversation.set(conversationId, status);
   }
   for (const run of deps.runs?.list() ?? []) {
     if (!run.projectId) continue;
@@ -255,7 +264,25 @@ function createBrandStatusContext(deps: BrandRoutesDeps): BrandStatusContext {
       errorCode: run.errorCode ?? null,
     });
   }
-  return { latestByProject, awaitingInput: listProjectsAwaitingInput(deps.db) };
+  for (const run of deps.runs?.list() ?? []) {
+    if (!run.conversationId) continue;
+    const existing = latestByConversation.get(run.conversationId);
+    const updatedAt = Number(run.updatedAt ?? 0);
+    if (existing && updatedAt <= Number(existing.updatedAt ?? 0)) continue;
+    latestByConversation.set(run.conversationId, {
+      value: normalizeBrandRunStatus(run.status),
+      updatedAt,
+      runId: run.id,
+      error: run.error ?? null,
+      errorCode: run.errorCode ?? null,
+    });
+  }
+  return {
+    latestByProject,
+    latestByConversation,
+    awaitingInput: listProjectsAwaitingInput(deps.db),
+    awaitingInputByConversation: listConversationsAwaitingInput(deps.db),
+  };
 }
 
 function reconcileBrandSummaryStatus(
@@ -287,7 +314,9 @@ function reconcileBrandMetaStatus(
 ): BrandMeta {
   if (!meta.projectId) return meta;
   if (meta.status !== 'extracting') return meta;
-  const status = context.latestByProject.get(meta.projectId);
+  const status = meta.extractionConversationId
+    ? context.latestByConversation.get(meta.extractionConversationId)
+    : context.latestByProject.get(meta.projectId);
   if (status && (status.value === 'failed' || status.value === 'canceled')) {
     const error =
       status.error
@@ -303,7 +332,10 @@ function reconcileBrandMetaStatus(
   // The backing run paused on a question form (anti-bot wall / clarifying
   // question). Surface it as needs_input WITHOUT persisting — answering the
   // question resumes extraction, so the brand must be free to flip back.
-  if (context.awaitingInput.has(meta.projectId)) {
+  const isAwaitingInput = meta.extractionConversationId
+    ? context.awaitingInputByConversation.has(meta.extractionConversationId)
+    : context.awaitingInput.has(meta.projectId);
+  if (isAwaitingInput) {
     return { ...meta, status: 'needs_input' };
   }
   return meta;

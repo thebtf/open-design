@@ -182,6 +182,7 @@ export async function startBrandExtraction(
   } = opts;
   const id = newBrandId(url);
   const projectId = brandProjectId(id);
+  const conversationId = randomId();
   const host = hostnameOf(url);
   const now = Date.now();
 
@@ -192,6 +193,7 @@ export async function startBrandExtraction(
     updatedAt: now,
     status: 'extracting',
     projectId,
+    extractionConversationId: conversationId,
   };
   createBrandDir(brandsRoot, id, meta);
 
@@ -220,7 +222,6 @@ export async function startBrandExtraction(
     createdAt: now,
     updatedAt: now,
   });
-  const conversationId = randomId();
   insertConversation(db, {
     id: conversationId,
     projectId,
