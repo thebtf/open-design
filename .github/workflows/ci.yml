@@ -298,45 +298,47 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-          handoff_id="nix-hash-refresh"
-          handoff_root="$RUNNER_TEMP/handoff-comment-$handoff_id"
-          handoff_dir="$(python3 .github/scripts/handoff.py dir comment "$handoff_id" --root "$handoff_root")"
-          mkdir -p "$handoff_dir"
-          marker="<!-- nix-hash-refresh -->"
-          body_path="$handoff_dir/body.md"
-          {
-            printf '%s\n' "$marker"
-            if [ "$HASH_REFRESH_STATUS" = "patch-generated" ]; then
-              printf "A generated Nix hash refresh is available for this PR.\n\n"
-              printf "Apply the diff below with \`git apply\`:\n\n"
-              printf '```diff\n'
-              cat "$source_dir/nix-pnpm-deps.patch"
-              printf '\n```\n'
-            else
-              printf "The failed \`ci\` run attempted to refresh \`nix/pnpm-deps.nix\`, but it could not produce a hash-only patch.\n\n"
-              printf "Inspect the \`update.log\` file in the failed CI run artifacts for details.\n"
+          if [ "$HASH_REFRESH_STATUS" != "patch-generated" ] || [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
+            handoff_id="nix-hash-refresh"
+            handoff_root="$RUNNER_TEMP/handoff-comment-$handoff_id"
+            handoff_dir="$(python3 .github/scripts/handoff.py dir comment "$handoff_id" --root "$handoff_root")"
+            mkdir -p "$handoff_dir"
+            marker="<!-- nix-hash-refresh -->"
+            body_path="$handoff_dir/body.md"
+            {
+              printf '%s\n' "$marker"
+              if [ "$HASH_REFRESH_STATUS" = "patch-generated" ]; then
+                printf "A generated Nix hash refresh is available for this PR.\n\n"
+                printf "Apply the diff below with \`git apply\`:\n\n"
+                printf '```diff\n'
+                cat "$source_dir/nix-pnpm-deps.patch"
+                printf '\n```\n'
+              else
+                printf "The failed \`ci\` run attempted to refresh \`nix/pnpm-deps.nix\`, but it could not produce a hash-only patch.\n\n"
+                printf "Inspect the \`update.log\` file in the failed CI run artifacts for details.\n"
+              fi
+            } > "$body_path"
+            jq -n \
+              --arg kind "comment" \
+              --arg id "$handoff_id" \
+              --arg head "$HEAD_SHA" \
+              --arg base "$BASE_SHA" \
+              --arg marker "$marker" \
+              --argjson schema_version 1 \
+              --argjson pr_number "$PR_NUMBER" \
+              --argjson run_id "$RUN_ID" \
+              '{schema_version: $schema_version, kind: $kind, id: $id, pr_number: $pr_number, head_sha: $head, base_sha: $base, run_id: $run_id, marker: $marker}' \
+              > "$handoff_dir/metadata.json"
+            if [ -f "$source_dir/update.log" ]; then
+              cp "$source_dir/update.log" "$handoff_dir/update.log"
             fi
-          } > "$body_path"
-          jq -n \
-            --arg kind "comment" \
-            --arg id "$handoff_id" \
-            --arg head "$HEAD_SHA" \
-            --arg base "$BASE_SHA" \
-            --arg marker "$marker" \
-            --argjson schema_version 1 \
-            --argjson pr_number "$PR_NUMBER" \
-            --argjson run_id "$RUN_ID" \
-            '{schema_version: $schema_version, kind: $kind, id: $id, pr_number: $pr_number, head_sha: $head, base_sha: $base, run_id: $run_id, marker: $marker}' \
-            > "$handoff_dir/metadata.json"
-          if [ -f "$source_dir/update.log" ]; then
-            cp "$source_dir/update.log" "$handoff_dir/update.log"
+            python3 .github/scripts/handoff.py validate comment "$handoff_dir" >/dev/null
+            {
+              echo "comment_created=true"
+              echo "comment_name=$(python3 .github/scripts/handoff.py artifact-name comment "$handoff_id")"
+              echo "comment_path=$handoff_root"
+            } >> "$GITHUB_OUTPUT"
           fi
-          python3 .github/scripts/handoff.py validate comment "$handoff_dir" >/dev/null
-          {
-            echo "comment_created=true"
-            echo "comment_name=$(python3 .github/scripts/handoff.py artifact-name comment "$handoff_id")"
-            echo "comment_path=$handoff_root"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Upload Nix hash autofix handoff
         if: ${{ steps.nix_handoff.outputs.autofix_created == 'true' }}
@@ -372,8 +374,8 @@ jobs:
           it through the shared handoff contract.
 
           - same-repo PRs: `autofix.yml` will try to push the patch back to the
-            PR branch automatically, and `comment.yml` will publish patch
-            guidance as a fallback;
+            PR branch automatically and will publish patch guidance only if the
+            trusted writer cannot complete the autofix;
           - fork PRs: `comment.yml` will publish patch guidance on the PR.
           EOF
               ;;
