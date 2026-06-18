@@ -286,6 +286,7 @@ function reconcileBrandMetaStatus(
   context: BrandStatusContext,
 ): BrandMeta {
   if (!meta.projectId) return meta;
+  if (meta.status !== 'extracting') return meta;
   const status = context.latestByProject.get(meta.projectId);
   if (status && (status.value === 'failed' || status.value === 'canceled')) {
     const error =
@@ -293,14 +294,12 @@ function reconcileBrandMetaStatus(
       ?? (status.value === 'canceled'
         ? 'Brand extraction was canceled.'
         : 'Brand extraction failed in the backing project.');
-    if (meta.status === 'failed' && meta.error === error) return meta;
     return patchMeta(brandsRoot, meta.id, { status: 'failed', error }) ?? {
       ...meta,
       status: 'failed',
       error,
     };
   }
-  if (meta.status !== 'extracting') return meta;
   // The backing run paused on a question form (anti-bot wall / clarifying
   // question). Surface it as needs_input WITHOUT persisting — answering the
   // question resumes extraction, so the brand must be free to flip back.

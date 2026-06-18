@@ -175,52 +175,49 @@ describe('brand routes', () => {
     expect(storedMeta.status).toBe('failed');
   });
 
-  it('keeps terminal backing run failure visible even if a stale finalize marked the brand ready', async () => {
-    writeBrandFixture('brand-stale-ready', {
-      projectId: 'project-stale-ready',
+  it('does not regress ready brands when a later backing project run is canceled', async () => {
+    writeBrandFixture('brand-ready', {
+      projectId: 'project-ready',
       logoPrimary: 'logos/missing.svg',
       status: 'ready',
-      error: 'Brand extraction was canceled.',
     });
     insertProject(db, {
-      id: 'project-stale-ready',
-      name: 'Stale Ready Brand Project',
+      id: 'project-ready',
+      name: 'Ready Brand Project',
       skillId: null,
       designSystemId: null,
       createdAt: 1,
       updatedAt: 1,
-      metadata: { kind: 'brand', brandId: 'brand-stale-ready' },
+      metadata: { kind: 'brand', brandId: 'brand-ready' },
     });
     insertConversation(db, {
-      id: 'conversation-stale-ready',
-      projectId: 'project-stale-ready',
-      title: 'Extract brand',
+      id: 'conversation-ready',
+      projectId: 'project-ready',
+      title: 'Follow-up edit',
       createdAt: 1,
       updatedAt: 1,
     });
-    upsertMessage(db, 'conversation-stale-ready', {
-      id: 'message-stale-ready',
+    upsertMessage(db, 'conversation-ready', {
+      id: 'message-ready',
       role: 'assistant',
       content: 'Stopped.',
-      runId: 'run-stale-ready',
+      runId: 'run-ready',
       runStatus: 'canceled',
       startedAt: 1,
       endedAt: 2,
     });
 
-    const detail = await requestJson('/api/brands/brand-stale-ready');
+    const detail = await requestJson('/api/brands/brand-ready');
     const list = await requestJson('/api/brands');
 
     expect(detail.status).toBe(200);
-    expect(detail.body.meta.status).toBe('failed');
-    expect(detail.body.meta.error).toBe('Brand extraction was canceled.');
-    expect(list.body.brands.find((brand: any) => brand.meta.id === 'brand-stale-ready')?.meta.status).toBe(
-      'failed',
-    );
+    expect(detail.body.meta.status).toBe('ready');
+    expect(detail.body.meta.error).toBeUndefined();
+    expect(list.body.brands.find((brand: any) => brand.meta.id === 'brand-ready')?.meta.status).toBe('ready');
 
-    const storedMeta = JSON.parse(readFileSync(path.join(brandsRoot, 'brand-stale-ready', 'meta.json'), 'utf8'));
-    expect(storedMeta.status).toBe('failed');
-    expect(storedMeta.error).toBe('Brand extraction was canceled.');
+    const storedMeta = JSON.parse(readFileSync(path.join(brandsRoot, 'brand-ready', 'meta.json'), 'utf8'));
+    expect(storedMeta.status).toBe('ready');
+    expect(storedMeta.error).toBeUndefined();
   });
 
   it('surfaces needs_input when the backing project is awaiting user input', async () => {
