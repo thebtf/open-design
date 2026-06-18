@@ -2236,6 +2236,10 @@ async function testAgentConnectionInternal(
         !!claudeResult &&
         !claudeResult.isError &&
         claudeResult.subtype === 'success';
+      const claudeLateExitOne =
+        input.agentId === 'claude' &&
+        winner.code === 1 &&
+        winner.signal === null;
       const parsedClaudeResultText =
         claudeReportedSuccess ? claudeResult.resultText.trim() : '';
       const visibleText = buffered || parsedClaudeResultText;
@@ -2262,7 +2266,7 @@ async function testAgentConnectionInternal(
           (winner.code === 130 && winner.signal === null)
         );
       const claudeCompletedTurn =
-        input.agentId === 'claude' &&
+        claudeLateExitOne &&
         claudeReportedSuccess &&
         (
           sink.sawTerminalCompletion() ||
