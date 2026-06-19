@@ -29,8 +29,8 @@ Status: proposed · Parent: #3408 · Sibling: agent-startup-latency-profiling.md
 ## Measured data baseline (real production client + local daemon)
 
 - AMR TTFT: turn-1 p50 ~11.7s, turn-2+ p50 ~10.9-11.1s (about ~90% of runs); hit vs miss 10.9s vs 13.3s.
-- **Uncached input per turn (main contributor)**: AMR turn-1 ~100.7k, turn-2+ ~153.2k (claude 91k/126k). First-turn total input ~281k (claude ~629k) — Open Design front-loads system + tools + DS + skill + discovery.
-- Cache efficiency: AMR ~73% (hit reads 392k / still repays 143k); claude ~93%.
+- **Context size per turn**: AMR turn-1 ~100.7k, turn-2+ ~153.2k total input (claude 91k/126k). NOTE: this is the *context size*, not uncached — most of it is cached. The TTFT/cost-relevant number is the **first-call uncached** (~24.5k on turn-2+, see Production measurement), not this total.
+- Cache efficiency (per-turn aggregate, PostHog `run_finished`): AMR ~73-80%, claude ~93%. **This aggregate is within-turn-loop-inflated** — the per-upstream-call truth (`link.usage_events`) is that turn-2+ first call hits only ~21%.
 - Real local daemon claude (minimal turn) breakdown: setup 1.67s + model first byte 3.14s (claude self-reports `[API:timing] first byte 3140ms`).
 - Ruled out: bun install is not in user TTFT (shipped opencode is self-contained, measured); process cold start is not the main contributor.
 
