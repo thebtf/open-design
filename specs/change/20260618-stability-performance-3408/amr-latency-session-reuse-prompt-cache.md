@@ -47,6 +47,26 @@ On the turn-2+ **first** upstream call, AMR re-pays the conversation as cache-co
 2. **daemon flattens history into a new user message every turn** (`buildDaemonTranscript`) → prefixes and the previous turn's native structure do not line up;
 3. **volatile system blocks** (MCP/memory/runContext) are interleaved inside the system prefix → they truncate the cacheable prefix early (for explicit-cache models).
 
+### This is not AMR-specific — it is the default for ~22 of ~24 agents (code + production data)
+
+Cause #2 (recompose the conversation from the DB every turn) is **structural to almost every agent**, not an AMR quirk. Only adapters that carry `resumesSessionViaCli: true` (or `streamFormat:'pi-rpc'`) let the CLI hold its own session and skip the resend — in `apps/daemon/src/runtimes/defs/` that is **only `claude` + `codebuddy` (`--resume <id>`) and `pi`**. Every other def — `amr · codex · gemini · opencode · cursor-agent · devin · hermes · copilot · aider · amp · deepseek · grok-build · kilo · kimi · kiro · qoder · qwen · reasonix · trae-cli · vibe` (and `antigravity`, which deliberately opts out) — has the daemon resend `buildDaemonTranscript(history)` (`apps/web/src/providers/daemon.ts:251`, called unconditionally; `server.ts:7609` gates the skip on `resumesSessionViaCli`).
+
+**Production proof (PostHog `run_finished`, successful runs, 7d): turn-2+ `input_tokens` p50 by provider** — recompose agents balloon as history accumulates; the native-resume agent collapses to ~3k:
+
+| provider | turn-1 | turn-2+ | turn-5+ | mechanism |
+|---|---|---|---|---|
+| codex_cli | 49k | **884k** | 799k | recompose (resends full history) |
+| hermes | 46k | **424k** | 454k | recompose |
+| gemini_cli | 62k | **326k** | 361k | recompose |
+| cursor_agent | 38k | **73k** | 76k | recompose |
+| amr | 37k | **64k** | 59k | recompose |
+| **claude_code** | 17k | **3.0k** | 2.8k | native resume (history not resent) |
+| pi / opencode | 24k | 0.5–0.6k | — | per-call usage reporting (not comparable) |
+
+The claude vs codex/gemini/hermes/amr gap is the resent flattened history, measured. **Caveats (do not over-read):** (1) run_finished `cache_read` is a *within-turn-loop aggregate* and the reporting shape varies per agent (opencode/pi report per upstream call, which is why their tiny turn-2+ input is an artifact, not resume), so the **first-call-of-turn** cache hit — the TTFT-critical number — is only cleanly measurable per upstream call, which we have via `link.usage_events` for AMR only (21%); the equivalent per-call slice for codex/gemini is not in PostHog. (2) `github_copilot_cli`, `kimi_cli`, `qwen_code` currently report **no usage at all**, so they are unmeasured, not necessarily exempt.
+
+**Severity is provider-dependent**, which is why the fix splits by tier: codex (OpenAI) and gemini resend huge histories but the upstream **automatic prefix cache** absorbs most of it (codex turn-2+ aggregate hit ~99%), so the cheap **P2 cacheable-prefix stabilization helps them with no vela change**; AMR's lead model (DeepSeek) auto-cache **decays with the inter-turn gap** (first-call 55%@15s → 21%@120s), so it additionally needs the **P3 session-reuse** project. AMR is simply the highest-reach (31% of users) recompose agent we measured end-to-end — the optimization generalizes to the whole recompose group.
+
 ### Why a high reported cache rate does NOT contradict this (within-turn vs cross-turn)
 
 A counter-intuitive fact to pre-empt: AMR's per-turn cache rate can look healthy (~80%) while the cross-turn re-pay above is exactly the problem. They are not in tension — they measure different things:
@@ -184,4 +204,6 @@ This feasibility was checked premise by premise by codex, with material correcti
 PostHog OpenDesign=420348, `POST /api/projects/420348/query/`. HogQL: use `toFloat()` for numbers, `isNull()` for null, `quantile(0.9)` for P90, and `row_number() OVER (PARTITION BY conversation_id ORDER BY timestamp)` for turn ordinal.
 - Input composition (turn-1 vs turn-2+): `avg(toFloat(properties.uncached_input_tokens))` / `cache_read_input_tokens` / `cache_creation_input_tokens`, bucketed by `if(turn=1,...)`.
 - Hit vs miss TTFT: group by `if(toFloat(properties.cache_read_input_tokens)>0,'HIT','MISS')`.
-- vela verification: `git -C ~/Documents/vela grep -n 'loadSession\|session/load' apps/cli`.
+- **Cross-agent recompose proof (turn-2+ `input_tokens` p50 by provider)** — shows the resent-history balloon across recompose agents vs the native-resume collapse: `WITH o AS (SELECT properties.agent_provider_id AS prov, toFloat(properties.input_tokens) AS inp, row_number() OVER (PARTITION BY properties.conversation_id ORDER BY timestamp) AS turn FROM events WHERE event='run_finished' AND properties.result='success' AND isNotNull(properties.conversation_id) AND isNotNull(properties.input_tokens) AND timestamp >= now()-INTERVAL 7 DAY) SELECT prov, round(quantileIf(0.5)(inp,turn=1)) AS t1, round(quantileIf(0.5)(inp,turn>=2)) AS t2plus, round(quantileIf(0.5)(inp,turn>=5)) AS t5plus FROM o GROUP BY prov ORDER BY t2plus DESC`. Caveat: opencode/pi report usage per upstream call, so their tiny turn-2+ value is a reporting artifact, not native resume; copilot/kimi/qwen report no usage.
+- Which adapters skip the resend: `git grep -n 'resumesSessionViaCli: true' apps/daemon/src/runtimes/defs/` (only claude + codebuddy; pi via `streamFormat:'pi-rpc'`).
+- vela verification: `git -C <vela checkout> grep -n 'loadSession\|session/load' apps/cli` (re-anchor against `nexu-io/vela@main`; the local `fe8266e` checkout has drifted — see Sources caveat).
