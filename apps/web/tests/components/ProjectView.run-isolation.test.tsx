@@ -827,6 +827,60 @@ describe('ProjectView conversation run isolation', () => {
     );
   });
 
+  it('trims retried resumable failed attempts back to the prompting user', async () => {
+    const successfulUser: ChatMessage = {
+      id: 'user-success',
+      role: 'user',
+      content: 'Keep the editorial grid and muted palette.',
+      createdAt: 1,
+    };
+    const failedUser: ChatMessage = {
+      id: 'user-failed',
+      role: 'user',
+      content: 'Add a pricing section beneath the hero.',
+      createdAt: 3,
+    };
+    const firstFailedAssistant: ChatMessage = {
+      id: 'assistant-failed-first',
+      role: 'assistant',
+      content: 'First partial pricing section draft',
+      createdAt: 4,
+      runStatus: 'failed',
+      resumable: true,
+    };
+    const retriedFailedAssistant: ChatMessage = {
+      id: 'assistant-failed-retry',
+      role: 'assistant',
+      content: 'Second partial pricing section draft',
+      createdAt: 5,
+      runStatus: 'failed',
+      resumable: true,
+    };
+    conversationAMessages = [
+      successfulUser,
+      succeededAssistant,
+      failedUser,
+      firstFailedAssistant,
+      retriedFailedAssistant,
+    ];
+
+    renderProjectView();
+
+    await waitFor(() => expect(screen.getByTestId('active-conversation').textContent).toBe('conv-a'));
+
+    fireEvent.click(screen.getByTestId('new-conversation'));
+
+    await waitFor(() => expect(createConversation).toHaveBeenCalledTimes(1));
+    expect(createConversation).toHaveBeenCalledWith(
+      'project-1',
+      undefined,
+      {
+        seedFromConversationId: 'conv-a',
+        seedTrimAfterMessageId: succeededAssistant.id,
+      },
+    );
+  });
+
   it('keeps the new conversation payload compact when the visible messages update', async () => {
     const userMessage: ChatMessage = {
       id: 'user-a',

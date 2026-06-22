@@ -7077,15 +7077,25 @@ export function finalizeActiveAssistantMessagesOnStop(
 
 function getSeedableMessagesForNewConversation(messages: ChatMessage[]): ChatMessage[] {
   if (messages.length < 2) return messages;
-  const lastMessage = messages.at(-1);
-  const priorMessage = messages.at(-2);
+  let failedIndex = messages.length - 1;
+  const lastMessage = messages[failedIndex];
   if (
-    lastMessage?.role === 'assistant'
-    && lastMessage.runStatus === 'failed'
-    && lastMessage.resumable === true
-    && priorMessage?.role === 'user'
+    lastMessage?.role !== 'assistant'
+    || lastMessage.runStatus !== 'failed'
+    || lastMessage.resumable !== true
   ) {
-    return messages.slice(0, -2);
+    return messages;
+  }
+  while (
+    failedIndex > 0
+    && messages[failedIndex - 1]?.role === 'assistant'
+    && messages[failedIndex - 1]?.runStatus === 'failed'
+    && messages[failedIndex - 1]?.resumable === true
+  ) {
+    failedIndex -= 1;
+  }
+  if (messages[failedIndex - 1]?.role === 'user') {
+    return messages.slice(0, failedIndex - 1);
   }
   return messages;
 }
