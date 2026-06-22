@@ -1,0 +1,42 @@
+name: backport-label-guard
+# 谁都能贴 label(GitHub 没法按单个 label 控权限),所以这里兜底:
+# 有人贴 backport label 时,校验贴标人是否有 write 及以上权限(含有 write 的 outside collaborator)。
+# 不够权限 → 自动撤掉 label + 评论提示。撤 label 触发 unlabeled 事件,不会死循环。
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    if: startsWith(github.event.label.name, 'backport ') && github.repository == 'nexu-io/open-design'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - name: 校验贴标人权限
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ACTOR: ${{ github.event.sender.login }}
+          LABEL: ${{ github.event.label.name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          perm=$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq '.permission' 2>/dev/null || echo none)
+          case "$perm" in
+            admin|maintain|write)
+              echo "✅ 授权通过: $ACTOR ($perm)";;
+            *)
+              echo "⛔ $ACTOR 权限 $perm,撤销 label"
+              gh pr edit "$PR" --repo "$REPO" --remove-label "$LABEL"
+              gh pr comment "$PR" --repo "$REPO" --body "ℹ️ \`$LABEL\` 需要 write 及以上权限才能贴(@$ACTOR 当前是 \`$perm\`),已自动移除。如需纳入本次发布,请 @ 维护者确认。"
+              ;;
+          esac

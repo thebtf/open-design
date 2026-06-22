@@ -1,0 +1,44 @@
+name: backport
+# PR 合进 main 后,若带 backport release/vX.Y.Z label,自动 cherry-pick 到对应 release 分支并开 PR。
+# 用 App token 开 PR(非 GITHUB_TOKEN)→ backport PR 会正常触发 ci.yml 跑全量 CI。
+# 冲突时开 draft PR(把冲突标记一起 commit),不卡死流程,人去解。
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  backport:
+    if: github.event.pull_request.merged == true && github.repository == 'nexu-io/open-design'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Backport
+        uses: korthout/backport-action@v3
+        with:
+          github_token: ${{ steps.app.outputs.token }}
+          # label 形如 "backport release/v0.12.0" → 捕获 release/v0.12.0 作为目标分支
+          label_pattern: '^backport ([^ ]+)$'
+          merge_commits: skip
+          pull_title: '[backport ${target_branch}] ${pull_title}'
+          pull_description: '回灌 #${pull_number} 到 `${target_branch}`。\n\n> 干净 pick → CI 绿即可合;冲突 → 这是 draft,解完冲突再合。'
+          # 冲突不放弃:把冲突标记 commit 进 backport 分支并开 draft PR,人接手解
+          experimental: '{ "conflict_resolution": "draft_commit_conflicts" }'
+          # ── 干净 pick 自动合的快车道(默认关)──────────────────────────────
+          # 开启前提:release/* 分支保护「要求 CI 通过才能合」,否则会在 CI 跑完前就合。
+          # 配好分支保护后,取消下面两行注释即可让干净 backport CI 绿后自动合:
+          # auto_merge_enabled: true
+          # auto_merge_method: squash

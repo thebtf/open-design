@@ -1,0 +1,83 @@
+name: cut-release
+# 每周二 09:00(北京)从 main HEAD 切下一个 minor 的 release 分支:
+#   1. 算版本(最高 release/vX.Y.Z → bump minor → X.(Y+1).0;0.11.0 → 0.12.0)
+#   2. 切 release/vX.Y.Z + bump apps/packaged/package.json + push
+#   3. 建 backport release/vX.Y.Z label
+# push 用 App token(非 GITHUB_TOKEN),会自动触发 notify-release-feishu → 打 nightly 包 + 发飞书群。
+
+on:
+  schedule:
+    - cron: '0 1 * * 2'        # 01:00 UTC = 北京周二 09:00
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '完整版本号 x.y.z(留空 = 最高 release 版本 bump minor)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read               # 实际写操作走下面的 App token
+
+jobs:
+  cut:
+    if: github.repository == 'nexu-io/open-design'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 计算下一个版本号
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.version }}" ]; then
+            V="${{ inputs.version }}"
+          else
+            latest=$(git ls-remote --heads origin 'release/v*' \
+              | sed -E 's#.*/release/v##' \
+              | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+            major=${latest%%.*}; rest=${latest#*.}; minor=${rest%%.*}
+            V="${major}.$((minor+1)).0"
+          fi
+          echo "version=$V"          >> "$GITHUB_OUTPUT"
+          echo "branch=release/v$V"  >> "$GITHUB_OUTPUT"
+          echo "切出版本 v$V (分支 release/v$V)"
+
+      - name: 防重复(分支已存在则退出)
+        run: |
+          if git ls-remote --exit-code --heads origin "${{ steps.ver.outputs.branch }}" >/dev/null 2>&1; then
+            echo "::error::${{ steps.ver.outputs.branch }} 已存在,跳过"
+            exit 1
+          fi
+
+      - name: 切分支 + bump 版本 + push
+        run: |
+          set -euo pipefail
+          git config user.name  'open-design-release-bot[bot]'
+          git config user.email 'open-design-release-bot[bot]@users.noreply.github.com'
+          git switch -c "${{ steps.ver.outputs.branch }}"
+          ( cd apps/packaged && npm pkg set version="${{ steps.ver.outputs.version }}" )
+          git commit -am "chore(release): v${{ steps.ver.outputs.version }}"
+          git push origin "${{ steps.ver.outputs.branch }}"   # App token push → 触发 notify-release-feishu(nightly + 飞书)
+
+      - name: 建 backport label
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh label create "backport release/v${{ steps.ver.outputs.version }}" \
+            --repo nexu-io/open-design \
+            --color 0E8A16 \
+            --description "回灌本修复到 release/v${{ steps.ver.outputs.version }}" \
+            --force

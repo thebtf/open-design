@@ -1,0 +1,43 @@
+name: release-gate
+# 发版前的准入闸:确认目标 release 分支上没有「没落地的 backport」。
+# 非空就失败 → 提醒别 tag。建议在 tag/发版前手动跑(或接成 release 流程的前置 required job)。
+#
+# 判据 = 还开着、base = 该 release 分支的 PR。这一条就够覆盖所有「没落地」的情况:
+#   - 冲突 → backport-action 开的是 draft PR(state open,被这里抓到)
+#   - 干净但还没合 / 还在跑 CI → 同样是 open PR,被抓到
+# 全部合进去后,base=该分支的 open PR 归零 → 闸门放行。
+# (korthout 没有「失败打 label」的功能,所以不依赖任何 *-failed label。)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: 'release 分支,如 release/v0.12.0'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gate:
+    if: github.repository == 'nexu-io/open-design'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查未落地的 backport
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BR: ${{ inputs.release_branch }}
+        run: |
+          set -euo pipefail
+          echo "检查 $BR 是否还有没落地的 backport(open PR)…"
+          open=$(gh pr list --repo "$REPO" --base "$BR" --state open \
+                  --json number,title,isDraft \
+                  --jq '.[] | "  #\(.number) \(.title)\(if .isDraft then "  [draft/冲突]" else "" end)"')
+          if [ -n "$open" ]; then
+            echo "::error::$BR 还有未落地的 backport,禁止发版:"
+            echo "$open"
+            exit 1
+          fi
+          echo "✅ $BR 没有悬着的 backport,可以 tag 发版。"
