@@ -9,6 +9,8 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
+import { uiP0CiMatrix, uiP0Groups } from "../lib/playwright/suites.ts";
+
 const execFileAsync = promisify(execFile);
 const e2eRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const workspaceRoot = dirname(e2eRoot);
@@ -233,6 +235,20 @@ describe("packaged smoke workflow", () => {
     expect(workspaceUnitTests).toContain("runs-on: ubuntu-24.04");
     expect(webWorkspaceTests).toContain("runs-on: blacksmith-4vcpu-ubuntu-2404");
     expect(uiP0).toContain("runs-on: blacksmith-8vcpu-ubuntu-2404");
+    expect(uiP0).toContain("include: ${{ fromJSON(needs.scopes.outputs.ui_p0_matrix) }}");
+    expect(uiP0CiMatrix.map((entry) => entry.name)).toEqual([
+      "entry-settings",
+      "project-workspace",
+      "project-runtime",
+      "workspace-restoration",
+    ]);
+    expect(uiP0Groups["project-workspace"].files).toEqual([
+      "ui/app.test.ts",
+      "ui/app-design-files.test.ts",
+      "ui/app-manual-edit.test.ts",
+      "ui/project-management-flows.test.ts",
+      "ui/workspace-keyboard-flows.test.ts",
+    ]);
     expect(visual).toContain("runs-on: blacksmith-8vcpu-ubuntu-2404");
   });
 
