@@ -688,6 +688,35 @@ describe('run event log persistence', () => {
     expect(run.eventsLogStream).toBeNull();
   });
 
+  it("still writes finish()'s own end event for a run that finished with no prior events", async () => {
+    // Regression for the FD-leak guard: finish() sets status terminal before
+    // emitting `end`, so the guard must NOT block that in-progress emit — a
+    // no-output failure / queued-run cancellation, where `end` is the only
+    // event, must still leave a forensic events.jsonl on disk.
+    const runs = createRunsWithLog(tmpDir);
+    const run = runs.create({ projectId: 'p1' });
+
+    runs.finish(run, 'canceled', null, 'SIGTERM'); // no prior emit; end is the only event
+
+    const logPath = path.join(tmpDir, run.id, 'events.jsonl');
+    let lines: string[] = [];
+    for (let i = 0; i < 50; i++) {
+      if (fs.existsSync(logPath)) {
+        const text = fs.readFileSync(logPath, 'utf8').trim();
+        lines = text ? text.split('\n') : [];
+        if (lines.length >= 1) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(fs.existsSync(logPath)).toBe(true);
+    expect(lines.length).toBe(1);
+    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ event: 'end', data: { status: 'canceled' } });
+    // …but the stream is closed and a later emit still must not re-open it.
+    expect(run.eventsLogStream).toBeNull();
+    runs.emit(run, 'diagnostic', { type: 'runtime_close' });
+    expect(run.eventsLogStream).toBeNull();
+  });
+
   it('does not leak real file descriptors across many finished runs with late emits', async () => {
     // fd-level proof of the leak (the actual cause of spawn EBADF), not just the
     // JS-object proxy above. Repeatedly: open the log, finish, then emit late.
