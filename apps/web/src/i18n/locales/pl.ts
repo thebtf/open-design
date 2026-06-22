@@ -2011,6 +2011,8 @@ export const pl: Dict = {
   'fileViewer.empty': 'Wybierz plik, aby go wyświetlić.',
   'fileViewer.loading': 'Ładowanie…',
   'fileViewer.exportPptx': 'Eksportuj jako PPTX',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': 'Otwórz w nowej karcie',
   'fileViewer.copyPath': 'Kopiuj ścieżkę',
   'fileViewer.copied': 'Skopiowano!',

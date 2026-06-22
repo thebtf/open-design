@@ -2011,6 +2011,8 @@ export const esES: Dict = {
   'fileViewer.empty': 'Selecciona un archivo para verlo.',
   'fileViewer.loading': 'Cargando…',
   'fileViewer.exportPptx': 'Exportar como PPTX',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': 'Abrir en pestaña nueva',
   'fileViewer.copyPath': 'Copiar ruta',
   'fileViewer.copied': '¡Copiado!',

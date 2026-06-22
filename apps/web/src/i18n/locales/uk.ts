@@ -2011,6 +2011,8 @@ export const uk: Dict = {
   'fileViewer.empty': 'Виберіть файл для перегляду.',
   'fileViewer.loading': 'Завантаження…',
   'fileViewer.exportPptx': 'Експортувати як PPTX',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': 'Відкрити в новій вкладці',
   'fileViewer.copyPath': 'Копіювати шлях',
   'fileViewer.copied': 'Скопійовано!',

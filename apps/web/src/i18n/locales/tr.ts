@@ -2011,6 +2011,8 @@ export const tr: Dict = {
   'fileViewer.empty': 'Görüntülemek için bir dosya seçin.',
   'fileViewer.loading': 'Yükleniyor…',
   'fileViewer.exportPptx': 'PPTX olarak dışa aktar',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': 'Yeni sekmede aç',
   'fileViewer.copyPath': 'Yolu kopyala',
   'fileViewer.copied': 'Kopyalandı!',

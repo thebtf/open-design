@@ -2011,6 +2011,8 @@ export const ja: Dict = {
   'fileViewer.empty': 'ファイルを選択して表示します。',
   'fileViewer.loading': '読み込み中…',
   'fileViewer.exportPptx': 'PPTX としてエクスポート',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': '新しいタブで開く',
   'fileViewer.copyPath': 'パスをコピー',
   'fileViewer.copied': 'コピーしました！',

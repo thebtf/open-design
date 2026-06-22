@@ -869,6 +869,9 @@ export async function exportProjectAsPptx(opts: {
   title?: string;
   format?: 'pptx' | 'pdf';
   deck?: boolean;
+  // pptx only: produce an editable deck (native shapes/text) instead of a
+  // screenshot one (one image per slide).
+  editable?: boolean;
 }): Promise<ProjectScreenshotExportResult> {
   const format = opts.format ?? 'pptx';
   const path = format === 'pdf' ? 'export/pdf-image' : 'export/pptx';
@@ -881,6 +884,7 @@ export async function exportProjectAsPptx(opts: {
         fileName: opts.fileName,
         ...(opts.title ? { title: opts.title } : {}),
         ...(typeof opts.deck === 'boolean' ? { deck: opts.deck } : {}),
+        ...(opts.editable ? { editable: true } : {}),
       }),
     });
     if (!resp.ok) {

@@ -2627,6 +2627,8 @@ export interface Dict {
   'fileViewer.empty': string;
   'fileViewer.loading': string;
   'fileViewer.exportPptx': string;
+  'fileViewer.exportPptxEditable': string;
+  'fileViewer.exportPptxEditableHint': string;
   'fileViewer.openInNewTab': string;
   'fileViewer.copyPath': string;
   'fileViewer.copied': string;

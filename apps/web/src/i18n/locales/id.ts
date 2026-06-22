@@ -2011,6 +2011,8 @@ export const id: Dict = {
   'fileViewer.empty': 'Pilih file untuk dilihat.',
   'fileViewer.loading': 'Memuat file...',
   'fileViewer.exportPptx': 'Ekspor PPTX',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': 'Buka di tab baru',
   'fileViewer.copyPath': 'Salin path',
   'fileViewer.copied': 'Tersalin',

@@ -946,7 +946,7 @@ interface Props {
   liveHtml?: string;
   filesRefreshKey?: number;
   isDeck?: boolean;
-  onExportAsPptx?: ((fileName: string) => void | Promise<void>) | undefined;
+  onExportAsPptx?: ((fileName: string, opts?: { editable?: boolean }) => void | Promise<void>) | undefined;
   streaming?: boolean;
   commentQueueOnSend?: boolean;
   commentSendDisabled?: boolean;
@@ -4443,7 +4443,7 @@ function HtmlViewer({
   liveHtml?: string;
   filesRefreshKey?: number;
   isDeck: boolean;
-  onExportAsPptx?: ((fileName: string) => void | Promise<void>) | undefined;
+  onExportAsPptx?: ((fileName: string, opts?: { editable?: boolean }) => void | Promise<void>) | undefined;
   streaming: boolean;
   commentQueueOnSend?: boolean;
   commentSendDisabled?: boolean;
@@ -8931,6 +8931,22 @@ function HtmlViewer({
                     >
                       <span className="share-menu-icon"><RemixIcon name="file-ppt-line" size={15} /></span>
                       <span>{t('fileViewer.exportPptx')}</span>
+                    </button>
+                  ) : null}
+                  {showPptxExport ? (
+                    <button
+                      type="button"
+                      className="share-menu-item"
+                      role="menuitem"
+                      disabled={!canPptx}
+                      title={t('fileViewer.exportPptxEditableHint')}
+                      onClick={() => {
+                        setDownloadMenuOpen(false);
+                        fireShareExport('pptx', () => onExportAsPptx?.(file.name, { editable: true }));
+                      }}
+                    >
+                      <span className="share-menu-icon"><RemixIcon name="file-ppt-line" size={15} /></span>
+                      <span>{t('fileViewer.exportPptxEditable')}</span>
                     </button>
                   ) : null}
                   {showImageExport ? (

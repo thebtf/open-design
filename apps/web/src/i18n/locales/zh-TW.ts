@@ -2011,6 +2011,8 @@ export const zhTW: Dict = {
   'fileViewer.empty': '請選擇一個檔案檢視。',
   'fileViewer.loading': '載入中…',
   'fileViewer.exportPptx': '匯出為 PPTX',
+  'fileViewer.exportPptxEditable': '可編輯 PPTX',
+  'fileViewer.exportPptxEditableHint': '原生可編輯形狀與文字(非像素級還原)',
   'fileViewer.openInNewTab': '在新分頁中開啟',
   'fileViewer.copyPath': '複製路徑',
   'fileViewer.copied': '已複製！',

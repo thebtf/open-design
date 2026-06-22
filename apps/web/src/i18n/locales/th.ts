@@ -2011,6 +2011,8 @@ export const th: Dict = {
   'fileViewer.empty': 'คลิกที่ไฟล์เพื่อแสดงดู',
   'fileViewer.loading': 'กำลังเรียกโหลด…',
   'fileViewer.exportPptx': 'ส่งข้อมูลเป็น PPTX',
+  'fileViewer.exportPptxEditable': 'Editable PPTX',
+  'fileViewer.exportPptxEditableHint': 'Native editable shapes & text (not pixel-perfect)',
   'fileViewer.openInNewTab': 'เข้าจากหน้าต่างใหม่',
   'fileViewer.copyPath': 'ก็อปปี้ลิ้งก์',
   'fileViewer.copied': 'ทำการคัดลอก!',

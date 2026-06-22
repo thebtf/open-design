@@ -2011,6 +2011,8 @@ export const zhCN: Dict = {
   'fileViewer.empty': '请选择一个文件查看。',
   'fileViewer.loading': '加载中…',
   'fileViewer.exportPptx': '导出为 PPTX',
+  'fileViewer.exportPptxEditable': '可编辑 PPTX',
+  'fileViewer.exportPptxEditableHint': '原生可编辑形状与文字(非像素级还原)',
   'fileViewer.openInNewTab': '在新标签页中打开',
   'fileViewer.copyPath': '复制路径',
   'fileViewer.copied': '已复制！',
