@@ -157,14 +157,24 @@ export const codexAgentDef = {
       if (process.env.OD_CODEX_DISABLE_PLUGINS === '1') {
         args.push('--disable', 'plugins');
       }
-      if (runtimeContext.cwd) {
-        args.push('-C', runtimeContext.cwd);
-      }
-      const dirs = (extraAllowedDirs || []).filter(
-        (d) => typeof d === 'string' && d.length > 0,
-      );
-      for (const d of dirs) {
-        args.push('--add-dir', d);
+      // `-C <cwd>` and `--add-dir <dir>` are CREATE-only flags: `codex exec
+      // resume` rejects both (`error: unexpected argument '-C' found`), so
+      // appending them on a resume turn would make the follow-up turn die
+      // before the first event. The daemon already spawns the child with
+      // `cwd: effectiveCwd`, and resuming by explicit SESSION_ID does not use
+      // codex's cwd-based session filtering, so the resumed turn still runs in
+      // the right workspace without `-C`. The extra writable dirs were granted
+      // when the session was created and are carried by the resumed session.
+      if (!resumeSessionId) {
+        if (runtimeContext.cwd) {
+          args.push('-C', runtimeContext.cwd);
+        }
+        const dirs = (extraAllowedDirs || []).filter(
+          (d) => typeof d === 'string' && d.length > 0,
+        );
+        for (const d of dirs) {
+          args.push('--add-dir', d);
+        }
       }
       if (options.model && options.model !== 'default') {
         args.push('--model', options.model);

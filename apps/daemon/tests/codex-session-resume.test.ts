@@ -39,7 +39,7 @@ type RunStatus = {
   resumable?: boolean;
 };
 
-type ExecInvocation = { argv: string[]; stdin: string };
+type ExecInvocation = { argv: string[]; stdin: string; cwd: string };
 
 const THREAD = '019eef4f-0000-7000-8000-000000000abc';
 const FIRST_REPLY_SENTINEL = 'FIRST_TURN_REPLY_SENTINEL_8af31';
@@ -220,10 +220,18 @@ let stdin = '';
 let done = false;
 function finish() {
   if (done) return; done = true;
-  try { fs.appendFileSync(logPath, JSON.stringify({ argv, stdin }) + '\\n'); } catch {}
+  try { fs.appendFileSync(logPath, JSON.stringify({ argv, stdin, cwd: process.cwd() }) + '\\n'); } catch {}
   run();
 }
-function run() {${opts.body}
+function run() {
+  // Faithful to the real CLI: codex exec resume rejects the create-only
+  // -C / --add-dir flags. If the daemon ever appends them on a resume turn,
+  // die exactly like the real binary so the e2e catches the regression.
+  if (argv.includes('resume') && (argv.includes('-C') || argv.includes('--add-dir'))) {
+    process.stderr.write("error: unexpected argument '-C' found\\n");
+    setTimeout(() => process.exit(2), 10);
+    return;
+  }${opts.body}
 }
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (d) => { stdin += d; });
@@ -334,8 +342,10 @@ async function waitForRun(url: string, runId: string): Promise<RunStatus> {
 }
 
 // Chat-turn `exec` invocations for this conversation, in call order. Identified
-// by the project id appearing in argv (the `-C <projectDir>` cwd) — this drops
-// the background memory-llm exec (repo-root cwd) and the login/models probes.
+// by the chat turn's cwd (the project working dir, which contains the project
+// id) — this drops the background memory-llm exec (repo-root cwd) and the
+// login/models probes. The cwd is set via the spawn, not an argv flag, and on a
+// resume turn there is no `-C` to key off, so cwd is the reliable discriminator.
 async function readChatTurnExecs(
   logPath: string,
   encoded: string,
@@ -355,7 +365,8 @@ async function readChatTurnExecs(
     .filter(
       (rec) =>
         rec.argv[0] === 'exec' &&
-        rec.argv.some((a) => typeof a === 'string' && a.includes(projectId)),
+        typeof rec.cwd === 'string' &&
+        rec.cwd.includes(projectId),
     );
 }
 

@@ -59,6 +59,35 @@ describe('codex buildArgs session resume', () => {
     expect(modelIndex).toBeLessThan(idIndex);
   });
 
+  it('excludes the create-only `-C` and `--add-dir` flags on resume (rejected by `exec resume`)', () => {
+    const args = codexAgentDef.buildArgs(
+      'prompt',
+      [],
+      ['/extra/writable/dir'],
+      {},
+      { resumeSessionId: THREAD, cwd: '/some/project/dir' },
+    );
+    // `codex exec resume` errors with "unexpected argument '-C' found" / same
+    // for `--add-dir`, so a resume turn must not carry either — the daemon
+    // spawns the child in the right cwd and the resumed session keeps its dirs.
+    expect(args).not.toContain('-C');
+    expect(args).not.toContain('--add-dir');
+    expect(args).not.toContain('/some/project/dir');
+    expect(args).not.toContain('/extra/writable/dir');
+  });
+
+  it('still passes `-C` and `--add-dir` on a create turn', () => {
+    const args = codexAgentDef.buildArgs(
+      'prompt',
+      [],
+      ['/extra/writable/dir'],
+      {},
+      { resumeSessionId: null, cwd: '/some/project/dir' },
+    );
+    expect(args[args.indexOf('-C') + 1]).toBe('/some/project/dir');
+    expect(args[args.indexOf('--add-dir') + 1]).toBe('/extra/writable/dir');
+  });
+
   it('uses plain `exec` when no session context is supplied (back-compat)', () => {
     const args = codexAgentDef.buildArgs('prompt', [], [], {}, {});
     expect(args[0]).toBe('exec');
