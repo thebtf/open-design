@@ -40,6 +40,16 @@ const saveTabs = vi.fn();
 const playSound = vi.fn();
 const showCompletionNotification = vi.fn();
 
+type ByokStreamHandlers = {
+  onDelta: (delta: string) => void;
+  onDone: () => void;
+};
+
+function requireByokStreamHandlers(value: ByokStreamHandlers | null): ByokStreamHandlers {
+  if (!value) throw new Error('Expected API-mode stream handlers');
+  return value;
+}
+
 vi.mock('../../src/i18n', () => ({
   useI18n: () => ({
     locale: 'zh-CN',
@@ -755,9 +765,7 @@ describe('ProjectView conversation run isolation', () => {
         endedAt: 3,
       },
     ];
-    let byokHandlers:
-      | { onDelta: (delta: string) => void; onDone: () => void }
-      | null = null;
+    let byokHandlers: ByokStreamHandlers | null = null;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
     streamMessage.mockImplementation(
       async (
@@ -765,7 +773,7 @@ describe('ProjectView conversation run isolation', () => {
         _systemPrompt: unknown,
         _history: unknown,
         _signal: unknown,
-        handlers: { onDelta: (delta: string) => void; onDone: () => void },
+        handlers: ByokStreamHandlers,
       ) => {
         byokHandlers = handlers;
       },
@@ -785,15 +793,15 @@ describe('ProjectView conversation run isolation', () => {
 
     await waitFor(() => expect(streamMessage).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByTestId('streaming-state').textContent).toBe('streaming'));
-    if (!byokHandlers) throw new Error('Expected API-mode stream handlers');
-    byokHandlers.onDelta('Partial assistant output');
+    const handlers = requireByokStreamHandlers(byokHandlers);
+    handlers.onDelta('Partial assistant output');
 
     fireEvent.click(screen.getByTestId('new-conversation'));
 
     await waitFor(() => expect(createConversation).toHaveBeenCalledTimes(1));
     expect(createConversation).toHaveBeenCalledWith('project-1', undefined, undefined);
 
-    byokHandlers.onDone();
+    handlers.onDone();
   });
 
   it('trims a trailing resumable failed turn from new-conversation seeds', async () => {
