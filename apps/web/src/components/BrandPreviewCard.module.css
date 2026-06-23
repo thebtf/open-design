@@ -801,7 +801,11 @@
 .lightbox {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Must clear the chat composer, which shares this root stacking context and
+     rises to z-index 1500 with its mode-toggle popover (1700 for the home-hero
+     composer); preview modals (.ds-modal-backdrop) sit at 1700, so 1800 keeps
+     this overlay above every composer/popover state in all DesignKitView hosts. */
+  z-index: 1800;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -865,7 +869,9 @@
 .assetModal {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* See .lightbox: stay above the chat composer's elevated z-index (up to 1700)
+     so the artifact preview (e.g. "Pitch deck") is never covered by the input. */
+  z-index: 1800;
   display: flex;
   align-items: center;
   justify-content: center;

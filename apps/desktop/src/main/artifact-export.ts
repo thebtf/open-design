@@ -94,7 +94,10 @@ async function renderImage(
     }
   }
   const image = await window.webContents.capturePage();
-  // nativeImage cannot encode WebP; fall back to PNG for that request.
+  // Only PNG and JPEG reach this point: the export contract and the sidecar
+  // proto validator both reject any other image format (notably WebP) up front,
+  // because Electron's nativeImage encoder supports only these two. Never
+  // silently downgrade an unsupported format to PNG here.
   if (input.imageFormat === "jpeg") {
     const buf = image.toJPEG(92);
     return { bytes: buf.length, mime: "image/jpeg", ok: true, path: await writeTemp("jpg", buf) };

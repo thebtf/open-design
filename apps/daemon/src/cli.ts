@@ -334,6 +334,10 @@ const EXPORT_STRING_FLAGS = new Set([
 ]);
 const EXPORT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'deck']);
 const EXPORT_FORMATS = ['pdf', 'pptx', 'pptx-editable', 'image'];
+// Mirrors EXPORT_IMAGE_FORMATS in packages/contracts. The desktop renderer
+// (Electron nativeImage) can only encode PNG/JPEG, so WebP is rejected here
+// with a clear error instead of silently downgrading to PNG.
+const EXPORT_IMAGE_FORMATS = ['png', 'jpeg'];
 
 function printExportHelp() {
   console.log(`Usage:
@@ -350,7 +354,7 @@ Options:
   --project <id>           Project id (required)
   --format <fmt>           One of: ${EXPORT_FORMATS.join(' | ')} (required)
   --out <path>             Write the file here (defaults to the suggested name)
-  --image-format <fmt>     png | jpeg | webp (for --format image)
+  --image-format <fmt>     png | jpeg (for --format image)
   --deck                   Treat the artifact as a multi-slide deck
   --title <title>          Title used for metadata / default filename
   --json                   Print a machine-readable result envelope
@@ -384,6 +388,10 @@ async function runExport(args) {
   }
   if (!EXPORT_FORMATS.includes(format)) {
     console.error(`invalid --format: ${format} (expected ${EXPORT_FORMATS.join(' | ')})`);
+    process.exit(2);
+  }
+  if (flags['image-format'] && !EXPORT_IMAGE_FORMATS.includes(flags['image-format'])) {
+    console.error(`invalid --image-format: ${flags['image-format']} (expected ${EXPORT_IMAGE_FORMATS.join(' | ')})`);
     process.exit(2);
   }
   const base = await cliDaemonBaseUrl(flags);

@@ -247,7 +247,12 @@ export type DesktopExportPdfResult = {
 };
 
 export type DesktopExportArtifactFormat = "pdf" | "pptx" | "pptx-editable" | "image";
-export type DesktopExportArtifactImageFormat = "png" | "jpeg" | "webp";
+// Electron's `nativeImage` (the off-screen renderer the programmatic exporter
+// uses) can only encode PNG and JPEG. WebP is deliberately excluded so a caller
+// asking for it gets a clear validation error instead of a silent PNG downgrade.
+// (The in-app web Download menu encodes WebP client-side via canvas.toBlob and
+// is unaffected by this list.)
+export type DesktopExportArtifactImageFormat = "png" | "jpeg";
 
 // Generic programmatic export (PDF / PPTX / image). The desktop renderer writes
 // the result to a temporary file and returns its path; the daemon streams those
@@ -680,7 +685,7 @@ function normalizeOptionalPositiveNumber(value: unknown, label: string): number 
 }
 
 const DESKTOP_EXPORT_ARTIFACT_FORMATS: readonly DesktopExportArtifactFormat[] = ["pdf", "pptx", "pptx-editable", "image"];
-const DESKTOP_EXPORT_ARTIFACT_IMAGE_FORMATS: readonly DesktopExportArtifactImageFormat[] = ["png", "jpeg", "webp"];
+const DESKTOP_EXPORT_ARTIFACT_IMAGE_FORMATS: readonly DesktopExportArtifactImageFormat[] = ["png", "jpeg"];
 
 function normalizeDesktopExportArtifactInput(input: unknown): DesktopExportArtifactInput {
   const value = assertObject(input, "desktop artifact export input");

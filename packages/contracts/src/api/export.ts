@@ -9,7 +9,12 @@
 export const EXPORT_FORMATS = ['pdf', 'pptx', 'pptx-editable', 'image'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
-export const EXPORT_IMAGE_FORMATS = ['png', 'jpeg', 'webp'] as const;
+// Programmatic image export delegates to the desktop Electron renderer, whose
+// `nativeImage` encoder only supports PNG and JPEG. WebP is intentionally not
+// offered here so `od export --format image --image-format webp` fails fast with
+// a clear error rather than silently returning PNG bytes. The web Download
+// menu's own client-side path (canvas.toBlob) still offers WebP independently.
+export const EXPORT_IMAGE_FORMATS = ['png', 'jpeg'] as const;
 export type ExportImageFormat = (typeof EXPORT_IMAGE_FORMATS)[number];
 
 /** Default deck stage dimensions (16:9) shared by the browser and Electron paths. */
