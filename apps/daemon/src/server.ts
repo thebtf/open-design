@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import net from 'node:net';
 import { PLUGIN_SHARE_ACTION_PLUGIN_IDS } from '@open-design/contracts';
 import {
   composeSystemPrompt,
@@ -257,7 +256,6 @@ import {
   applyPlugin,
   buildConnectorProbe,
   defaultBundledRoot,
-  detectSkillPluginCandidate,
   dismissSkillPluginCandidate,
   doctorPlugin,
   FIRST_PARTY_ATOMS,
@@ -266,7 +264,6 @@ import {
   getSnapshot,
   installFromLocalFolder,
   installPlugin,
-  insertSkillPluginCandidate,
   isDiffReviewSurfaceId,
   listSkillPluginCandidates,
   listInstalledPlugins,
@@ -382,14 +379,11 @@ import {
 } from './media/models.js';
 import { readMaskedConfig, writeConfig } from './media/config.js';
 import {
-  deleteMediaTask,
-  getMediaTask,
-  insertMediaTask,
   listMediaTasksByProject,
   listRecentMediaTasks,
   reconcileMediaTasksOnBoot,
-  updateMediaTask,
 } from './media/tasks.js';
+import { TASK_TTL_AFTER_DONE_MS, createMediaTaskStore } from './media/task-store.js';
 import {
   MCP_TEMPLATES,
   buildAcpMcpServers,
@@ -519,16 +513,18 @@ import {
   deleteLiveArtifact,
   ensureLiveArtifactPreview,
   getLiveArtifact,
-  LiveArtifactRefreshLockError,
-  LiveArtifactStoreValidationError,
   listLiveArtifacts,
   listLiveArtifactRefreshLogEntries,
   readLiveArtifactCode,
   recoverStaleLiveArtifactRefreshes,
   updateLiveArtifact,
 } from './live-artifacts/store.js';
-import { LiveArtifactRefreshUnavailableError, refreshLiveArtifact } from './live-artifacts/refresh-service.js';
-import { LiveArtifactRefreshAbortError } from './live-artifacts/refresh.js';
+import { refreshLiveArtifact } from './live-artifacts/refresh-service.js';
+import {
+  sendLiveArtifactRouteError,
+  setLiveArtifactCodeHeaders,
+  setLiveArtifactPreviewHeaders,
+} from './live-artifacts/http-helpers.js';
 import { registerConnectorRoutes } from './connectors/routes.js';
 import { registerActiveContextRoutes } from './routes/active-context.js';
 import { registerAutomationRoutes } from './routes/automation.js';
@@ -572,16 +568,14 @@ import { createPluginInstallationHelpers, normalizeProjectPluginFolderPath, reso
 import { createPluginShareTaskStore } from './services/plugin-share-tasks.js';
 import { getRouteRegistrationInventory, installRouteRegistrationGuard } from './route-registration-guard.js';
 import { assertServerContextSatisfiesRoutes } from './route-context-contract.js';
-import { configureConnectorCredentialStore, connectorService, ConnectorServiceError, FileConnectorCredentialStore } from './connectors/service.js';
+import { configureConnectorCredentialStore, connectorService, FileConnectorCredentialStore } from './connectors/service.js';
 import { composioConnectorProvider } from './connectors/composio.js';
 import { configureComposioConfigStore } from './connectors/composio-config.js';
 import { CHAT_TOOL_ENDPOINTS, CHAT_TOOL_OPERATIONS, toolTokenRegistry } from './tool-tokens.js';
 import {
-  aggregateCloudflarePagesStatus,
   buildDeployFileSet,
   checkDeploymentUrl,
   CLOUDFLARE_PAGES_PROVIDER_ID,
-  cloudflarePagesProjectNameForProject,
   DeployError,
   deployToCloudflarePages,
   deployToVercel,
@@ -590,10 +584,17 @@ import {
   prepareDeployPreflight,
   publicDeployConfigForProvider,
   readDeployConfig,
-  readCloudflarePagesDomain,
   VERCEL_PROVIDER_ID,
   writeDeployConfig,
 } from './deploy.js';
+import {
+  checkCloudflarePagesDeploymentLinks,
+  cloudflarePagesDeploymentMetadata,
+  cloudflarePagesProjectNameForDeploy,
+  cloudflarePagesProjectNameFromDeployment,
+  publicDeployment,
+  publicDeployments,
+} from './deploy/cloudflare-pages-helpers.js';
 import {
   allowedBrowserPorts,
   configuredAllowedOrigins,
@@ -602,6 +603,33 @@ import {
 } from './origin-validation.js';
 import { apiTokenFromEnv, isApiAuthDisabled, isApiTokenMiddlewareEnabled } from './api-token-auth.js';
 import { createOpenDesignPublicMetadataService } from './services/open-design-public-metadata.js';
+import { execCommandViaLoginShell } from './services/login-shell.js';
+import {
+  OFFICIAL_MARKETPLACE_ID,
+  createMarketplaceSeedHelpers,
+} from './plugins/marketplace-seed.js';
+import {
+  PLUGIN_SHARE_ACTION_LABELS,
+  USER_PLUGIN_SOURCE_KINDS,
+  copyPluginFolderForProjectContext,
+  detectSkillPluginCandidateOnRunSuccess,
+  ensureGhReady,
+  githubRepoNameFromPluginName,
+  hasGeneratedPluginArtifacts,
+  isPluginAuthoringRun,
+  normalizePluginShareAction,
+  reconcileAssistantMessageOnRunEnd,
+  renderPluginBriefTemplate,
+  renderPluginSharePrompt,
+} from './plugins/share-helpers.js';
+import { sanitizeArchiveFilename } from './projects/archive-filename.js';
+import {
+  isLoopbackHostname,
+  isLoopbackPeerAddress,
+  requireLocalDaemonRequest,
+} from './http/local-daemon-request.js';
+import { renderOAuthResultPage } from './http/oauth-result-page.js';
+import { createToolRequestAuth } from './http/tool-request-auth.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
 /** @typedef {import('@open-design/contracts').ApiError} ApiError */
@@ -616,16 +644,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = resolveProjectRoot(__dirname);
 const RESOURCE_ROOT_ENV = 'OD_RESOURCE_ROOT';
-
-function renderPluginBriefTemplate(template, inputs = {}) {
-  if (typeof template !== 'string' || template.length === 0) return '';
-  return template.replace(/\{\{\s*([a-zA-Z_][\w-]*)\s*\}\}/g, (full, key) => {
-    if (!Object.hasOwn(inputs, key)) return full;
-    const value = inputs[key];
-    if (value === undefined || value === null || value === '') return full;
-    return String(value);
-  });
-}
 
 const DAEMON_RESOURCE_ROOT = resolveDaemonResourceRoot({
   safeBases: [
@@ -704,91 +722,18 @@ const PLUGIN_REGISTRY_DIR = resolveDaemonResourceDir(
   'plugins/registry',
   path.join(PROJECT_ROOT, 'plugins', 'registry'),
 );
-const OFFICIAL_MARKETPLACE_ID = 'official';
-const OFFICIAL_PLUGIN_SOURCE_REPO = 'github:nexu-io/open-design@main';
-
-function defaultMarketplaceSeedConfig(id) {
-  return {
-    trust: id === OFFICIAL_MARKETPLACE_ID ? 'official' : 'restricted',
-    url:   marketplaceManifestUrlForRegistry(id),
-  };
-}
-
-function bundledPluginRegistrySource(sourcePath) {
-  if (isPathWithin(BUNDLED_PLUGINS_DIR, sourcePath)) {
-    const rel = path.relative(BUNDLED_PLUGINS_DIR, sourcePath).split(path.sep).join('/');
-    return `${OFFICIAL_PLUGIN_SOURCE_REPO}/plugins/_official/${rel}`;
-  }
-  const rel = path.relative(PROJECT_ROOT, sourcePath).split(path.sep).join('/');
-  if (!rel || rel.startsWith('..')) return sourcePath;
-  return `${OFFICIAL_PLUGIN_SOURCE_REPO}/${rel}`;
-}
-
-function isPathWithin(base, target) {
-  const relativePath = path.relative(path.resolve(base), path.resolve(target));
-  return (
-    relativePath === '' ||
-    (relativePath.length > 0 &&
-      !relativePath.startsWith('..') &&
-      !path.isAbsolute(relativePath))
-  );
-}
-
-function mergeMarketplaceEntries(manifestText, entries) {
-  try {
-    const parsed = JSON.parse(manifestText);
-    const plugins = Array.isArray(parsed.plugins) ? parsed.plugins : [];
-    const seen = new Set(plugins.map((entry) => String(entry?.name ?? '').toLowerCase()));
-    const generated = entries.filter((entry) => {
-      const key = String(entry.name ?? '').toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return JSON.stringify({
-      ...parsed,
-      metadata: {
-        ...(parsed.metadata && typeof parsed.metadata === 'object' ? parsed.metadata : {}),
-        bundledPreinstallCount: entries.length,
-      },
-      plugins: [...plugins, ...generated],
-    });
-  } catch {
-    return manifestText;
-  }
-}
-
-async function marketplaceSeedManifestText(id, bundledMarketplaceEntries) {
-  const manifestPath = path.join(PLUGIN_REGISTRY_DIR, id, 'open-design-marketplace.json');
-  if (!fs.existsSync(manifestPath)) return null;
-  let manifestText = await fs.promises.readFile(manifestPath, 'utf8');
-  if (id === OFFICIAL_MARKETPLACE_ID && bundledMarketplaceEntries.length > 0) {
-    manifestText = mergeMarketplaceEntries(manifestText, bundledMarketplaceEntries);
-  }
-  return manifestText;
-}
-
-function createMarketplaceFetcher(seedId, bundledMarketplaceEntries) {
-  return async (url) => {
-    const registryId = marketplaceRegistryIdFromUrl(url);
-    if (registryId && (!seedId || registryId === seedId)) {
-      const manifestText = await marketplaceSeedManifestText(registryId, bundledMarketplaceEntries);
-      if (manifestText != null) {
-        return {
-          ok:     true,
-          status: 200,
-          text:   async () => manifestText,
-        };
-      }
-    }
-    const response = await fetch(url, { redirect: 'follow' });
-    return {
-      ok:     response.ok,
-      status: response.status,
-      text:   () => response.text(),
-    };
-  };
-}
+const {
+  bundledPluginRegistrySource,
+  createMarketplaceFetcher,
+  defaultMarketplaceSeedConfig,
+  marketplaceSeedManifestText,
+} = createMarketplaceSeedHelpers({
+  bundledPluginsDir: BUNDLED_PLUGINS_DIR,
+  projectRoot: PROJECT_ROOT,
+  pluginRegistryDir: PLUGIN_REGISTRY_DIR,
+  marketplaceManifestUrlForRegistry,
+  marketplaceRegistryIdFromUrl,
+});
 
 const SANDBOX_MODE_ENABLED = isSandboxModeEnabled(process.env);
 const RUNTIME_DATA_DIR = resolveDataDir(process.env.OD_DATA_DIR, PROJECT_ROOT, {
@@ -1166,392 +1111,8 @@ export function composeProjectDisplayStatus(
   };
 }
 
-/**
- * @param {ApiErrorCode} code
- * @param {string} message
- * @param {Omit<ApiError, 'code' | 'message'>} [init]
- * @returns {ApiError}
- */
-function execFileBuffered(command, args, opts = {}) {
-  return new Promise((resolve) => {
-    execFile(command, args, { timeout: 120_000, maxBuffer: 1024 * 1024, ...opts }, (error, stdout, stderr) => {
-      resolve({
-        ok: !error,
-        code: error?.code,
-        stdout: String(stdout ?? '').trim(),
-        stderr: String(stderr ?? '').trim(),
-        error,
-      });
-    });
-  });
-}
-
-function quotePosixShellArg(value) {
-  const text = String(value ?? '');
-  return `'${text.replace(/'/g, `'\\''`)}'`;
-}
-
-function buildGhShellCommand(args) {
-  return ['gh', ...args].map(quotePosixShellArg).join(' ');
-}
-
-function buildCommandShellCommand(command, args) {
-  return [command, ...args].map(quotePosixShellArg).join(' ');
-}
-
-function buildLoginShellCommand(innerCommand) {
-  // Use a non-login shell and re-export PATH so test fakes and agent wrappers
-  // remain visible; login shells often reset PATH from profile scripts.
-  return `export PATH=${quotePosixShellArg(process.env.PATH ?? '')}; ${innerCommand}`;
-}
-
-function execGhBuffered(args, opts = {}) {
-  if (process.platform === 'win32') return execFileBuffered('gh', args, opts);
-  const shell = process.env.SHELL && process.env.SHELL.trim() ? process.env.SHELL.trim() : '/bin/zsh';
-  return execFileBuffered(shell, ['-c', buildLoginShellCommand(buildGhShellCommand(args))], {
-    env: process.env,
-    ...opts,
-  });
-}
-
-function execCommandViaLoginShell(command, args, opts = {}) {
-  if (process.platform === 'win32') return execFileBuffered(command, args, opts);
-  const shell = process.env.SHELL && process.env.SHELL.trim() ? process.env.SHELL.trim() : '/bin/zsh';
-  return execFileBuffered(shell, ['-c', buildLoginShellCommand(buildCommandShellCommand(command, args))], {
-    env: process.env,
-    ...opts,
-  });
-}
-
-async function readProjectPluginManifest(folder) {
-  const raw = await fs.promises.readFile(path.join(folder, 'open-design.json'), 'utf8');
-  const manifest = JSON.parse(raw);
-  const name = typeof manifest.name === 'string' && manifest.name.trim()
-    ? manifest.name.trim()
-    : path.basename(folder);
-  if (/[/\\]/.test(name) || /^\.+$/.test(name)) {
-    throw new Error(
-      `open-design.json in ${folder}: name "${name}" must not contain path separators or consist only of dots`,
-    );
-  }
-  return {
-    name,
-    title: typeof manifest.title === 'string' ? manifest.title : name,
-    version: typeof manifest.version === 'string' ? manifest.version : '0.1.0',
-    manifest,
-  };
-}
-
-export const __forTestReadProjectPluginManifest = readProjectPluginManifest;
-
-function githubRepoNameFromPluginName(name) {
-  const slug = String(name)
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/(^[-._]+|[-._]+$)/g, '');
-  return slug || 'open-design-plugin';
-}
-
-const PLUGIN_SHARE_ACTION_LABELS = {
-  'publish-github': 'Publish to GitHub',
-  'contribute-open-design': 'Contribute to Open Design',
-};
-
-const USER_PLUGIN_SOURCE_KINDS = new Set([
-  'user',
-  'project',
-  'marketplace',
-  'github',
-  'url',
-  'local',
-]);
-
-const PLUGIN_CONTEXT_SKIP_DIRS = new Set([
-  '.git',
-  '.next',
-  '.nuxt',
-  '.od',
-  '.output',
-  '.tmp',
-  '.turbo',
-  '.venv',
-  '__pycache__',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'out',
-  'target',
-  'vendor',
-]);
-
-const PLUGIN_CONTEXT_SKIP_FILES = new Set([
-  '.DS_Store',
-  'Thumbs.db',
-]);
-
-function normalizePluginShareAction(input) {
-  const value = typeof input === 'string' ? input.trim() : '';
-  return Object.prototype.hasOwnProperty.call(PLUGIN_SHARE_ACTION_PLUGIN_IDS, value)
-    ? value
-    : null;
-}
-
-function renderPluginSharePrompt({ action, sourcePlugin, stagedPath }) {
-  const title = sourcePlugin.title || sourcePlugin.id;
-  if (action === 'publish-github') {
-    return [
-      `Publish the local Open Design plugin "${title}" as a new public GitHub repository.`,
-      '',
-      `The plugin source files have been copied into this project at \`${stagedPath}\`.`,
-      'Use the local daemon share endpoint so the publish flow runs through Open Design\'s validated GitHub path:',
-      '',
-      '```bash',
-      `curl -sS -X POST "$OD_DAEMON_URL/api/projects/$OD_PROJECT_ID/plugins/publish-github" \\`,
-      `  -H 'content-type: application/json' \\`,
-      `  -d '${JSON.stringify({ path: stagedPath })}'`,
-      '```',
-      '',
-      'Read the JSON response. If `ok` is true, report the final repository URL and any validation/log summary. If it fails, report the `message`, `code`, and the useful log lines. The endpoint checks `gh` auth and performs the repository creation; do not hand-roll a second GitHub flow unless you are explaining a daemon endpoint failure.',
-      '',
-      'Do not rewrite the plugin unless publishing requires a small metadata fix. If you make any fix, explain it before publishing.',
-    ].join('\n');
-  }
-  return [
-    `Open a pull request to add the local Open Design plugin "${title}" to the Open Design repository.`,
-    '',
-    `The plugin source files have been copied into this project at \`${stagedPath}\`.`,
-    'Use the local daemon share endpoint so the contribution flow runs through Open Design\'s validated GitHub path:',
-    '',
-    '```bash',
-    `curl -sS -X POST "$OD_DAEMON_URL/api/projects/$OD_PROJECT_ID/plugins/contribute-open-design" \\`,
-    `  -H 'content-type: application/json' \\`,
-    `  -d '${JSON.stringify({ path: stagedPath })}'`,
-    '```',
-    '',
-    'Read the JSON response. If `ok` is true, report the PR URL, branch, and any validation/log summary. If it fails, report the `message`, `code`, and the useful log lines. The endpoint checks `gh` auth, forks/clones, pushes, and opens the PR; do not hand-roll a second GitHub flow unless you are explaining a daemon endpoint failure.',
-    '',
-    'Keep the PR focused on this plugin. Report the PR URL and any validation you ran.',
-  ].join('\n');
-}
-
-async function copyPluginFolderForProjectContext(sourceRoot, destRoot) {
-  const rootReal = await fs.promises.realpath(sourceRoot);
-  const stat = await fs.promises.stat(rootReal);
-  if (!stat.isDirectory()) {
-    const err = new Error('plugin source path is not a directory');
-    err.code = 'ENOTDIR';
-    throw err;
-  }
-  await copyPluginContextDir(rootReal, destRoot, rootReal);
-}
-
-async function copyPluginContextDir(src, dest, rootReal) {
-  await fs.promises.mkdir(dest, { recursive: true });
-  const entries = await fs.promises.readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    if (shouldSkipPluginContextEntry(entry.name)) continue;
-    if (entry.isSymbolicLink()) continue;
-
-    const from = path.join(src, entry.name);
-    const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      const childReal = await fs.promises.realpath(from).catch(() => null);
-      if (!childReal || (childReal !== rootReal && !childReal.startsWith(rootReal + path.sep))) {
-        continue;
-      }
-      await copyPluginContextDir(childReal, to, rootReal);
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    await fs.promises.mkdir(path.dirname(to), { recursive: true });
-    await fs.promises.copyFile(from, to);
-  }
-}
-
-function shouldSkipPluginContextEntry(name) {
-  return PLUGIN_CONTEXT_SKIP_DIRS.has(name) || PLUGIN_CONTEXT_SKIP_FILES.has(name);
-}
-
-async function ensureGhReady() {
-  const version = await execGhBuffered(['--version'], { timeout: 10_000 });
-  if (!version.ok) {
-    return {
-      ok: false,
-      code: 'gh-not-installed',
-      message: 'GitHub CLI is not installed. Install it, then click this action again.',
-      url: 'https://cli.github.com/',
-      log: [version.stderr || version.stdout || 'gh --version failed'],
-    };
-  }
-  const auth = await execGhBuffered(['auth', 'status', '--hostname', 'github.com'], { timeout: 10_000 });
-  if (!auth.ok) {
-    return {
-      ok: false,
-      code: 'gh-not-authenticated',
-      message: 'GitHub CLI is installed but not authenticated. Run `gh auth login --web`, finish browser authorization, then click this action again.',
-      url: 'https://github.com/login/device',
-      log: [auth.stderr || auth.stdout || 'gh auth status failed'],
-    };
-  }
-  return { ok: true, log: [version.stdout, auth.stderr || auth.stdout].filter(Boolean) };
-}
-
 const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'canceled']);
 const LANGFUSE_TERMINAL_FALLBACK_DELAY_MS = 15_000;
-
-function reconcileAssistantMessageOnRunEnd(db, runs, run) {
-  if (!run.assistantMessageId) return;
-  void runs
-    .wait(run)
-    .then((finalStatus) => {
-      db.prepare(
-        `UPDATE messages
-            SET run_status = ?, ended_at = COALESCE(ended_at, ?)
-          WHERE id = ? AND run_status IN ('queued', 'running')`,
-      ).run(finalStatus.status, Date.now(), run.assistantMessageId);
-    })
-    .catch((err) => {
-      console.warn('[runs] message reconciliation failed', err);
-    });
-}
-
-
-function isPluginAuthoringRun(db, run) {
-  if (run?.pluginId === 'od-plugin-authoring') return true;
-  if (
-    typeof run?.appliedPluginSnapshotId === 'string'
-    && run.appliedPluginSnapshotId.length > 0
-  ) {
-    const snapshot = getSnapshot(db, run.appliedPluginSnapshotId);
-    return snapshot?.pluginId === 'od-plugin-authoring';
-  }
-  return false;
-}
-
-async function hasGeneratedPluginArtifacts(projectRoot) {
-  if (!projectRoot || typeof projectRoot !== 'string') return false;
-  const required = [
-    path.join(projectRoot, 'generated-plugin', 'open-design.json'),
-    path.join(projectRoot, 'generated-plugin', 'SKILL.md'),
-  ];
-  try {
-    await Promise.all(required.map((file) => fs.promises.access(file, fs.constants.F_OK)));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Renderable `<question-form>`/`<ask-question>` detection now lives in
-// `./question-form-detect.ts` so the missing-artifacts guard, awaiting-input
-// status, and run analytics all share ONE renderable-form check. See
-// `emittedRenderableQuestionForm` imported above.
-
-function assistantMessageEmittedQuestionForm(db, assistantMessageId) {
-  if (!assistantMessageId) return false;
-  const row = db.prepare(`SELECT content FROM messages WHERE id = ?`).get(assistantMessageId);
-  return emittedRenderableQuestionForm(row?.content);
-}
-
-function deferredSkillPluginCandidateForRun(db, run) {
-  if (!run.projectId || !run.conversationId) return null;
-  return listSkillPluginCandidates(db, run.projectId)
-    .find((candidate) =>
-      candidate.status !== 'dismissed' &&
-      !candidate.assistantMessageId &&
-      candidate.conversationId === run.conversationId,
-    ) ?? null;
-}
-
-export function detectSkillPluginCandidateOnRunSuccess(db, runs, run, input, projectRoot) {
-  if (!run.projectId || !run.conversationId) return;
-  void runs
-    .wait(run)
-    .then(async (finalStatus) => {
-      if (finalStatus.status !== 'succeeded') return;
-      const pausedForQuestion = assistantMessageEmittedQuestionForm(db, run.assistantMessageId);
-      const detected = await detectSkillPluginCandidate({
-        projectId: run.projectId,
-        runId: run.id,
-        conversationId: run.conversationId,
-        assistantMessageId: null,
-        message: input?.message ?? input?.currentPrompt,
-        attachments: input?.attachments,
-        projectRoot,
-      });
-      const candidate = detected ? insertSkillPluginCandidate(db, detected) : null;
-      if (pausedForQuestion) return;
-      const candidateToShow = candidate ?? deferredSkillPluginCandidateForRun(db, run);
-      if (!candidateToShow || candidateToShow.status === 'dismissed') return;
-      upsertSkillPluginCandidateAssistantMessage(db, run, candidateToShow);
-    })
-    .catch((err) => {
-      console.warn('[plugins] skill candidate detection failed', err);
-    });
-}
-
-export function upsertSkillPluginCandidateAssistantMessage(db, run, candidate) {
-  const currentMessagePosition = run.assistantMessageId
-    ? (db.prepare(`SELECT position FROM messages WHERE id = ?`).get(run.assistantMessageId)?.position ?? null)
-    : null;
-  const existingMessagePosition = candidate.assistantMessageId
-    ? (db.prepare(`SELECT position FROM messages WHERE id = ?`).get(candidate.assistantMessageId)?.position ?? null)
-    : null;
-  if (
-    typeof currentMessagePosition === 'number' &&
-    typeof existingMessagePosition === 'number' &&
-    existingMessagePosition > currentMessagePosition
-  ) {
-    return null;
-  }
-  const canReuseExistingMessage =
-    candidate.assistantMessageId &&
-    candidate.assistantMessageId !== run.assistantMessageId &&
-    typeof existingMessagePosition === 'number';
-  const messageId = canReuseExistingMessage ? candidate.assistantMessageId : randomUUID();
-  const shouldMoveReusedMessage =
-    canReuseExistingMessage &&
-    typeof currentMessagePosition === 'number' &&
-    typeof existingMessagePosition === 'number' &&
-    existingMessagePosition <= currentMessagePosition;
-  if (
-    candidate.assistantMessageId &&
-    candidate.assistantMessageId !== messageId &&
-    candidate.assistantMessageId !== run.assistantMessageId
-  ) {
-    db.prepare(`DELETE FROM messages WHERE id = ?`).run(candidate.assistantMessageId);
-  }
-  const now = Date.now();
-  upsertMessage(db, run.conversationId, {
-    id: messageId,
-    role: 'assistant',
-    content: `Open Design found reusable skill material that can become a plugin: ${candidate.title}`,
-    agentId: run.agentId ?? undefined,
-    events: [{
-      kind: 'plugin_candidate',
-      candidateId: candidate.id,
-      title: candidate.title,
-      description: candidate.description,
-      confidence: candidate.confidence,
-      draftPath: candidate.draftPath ?? null,
-    }],
-    createdAt: now,
-    endedAt: now,
-  });
-  if (shouldMoveReusedMessage) {
-    const max = db
-      .prepare(`SELECT COALESCE(MAX(position), -1) AS m FROM messages WHERE conversation_id = ?`)
-      .get(run.conversationId)?.m ?? -1;
-    db.prepare(`UPDATE messages SET position = ? WHERE id = ?`).run(Number(max) + 1, messageId);
-  }
-  db.prepare(
-    `UPDATE skill_plugin_candidates
-        SET assistant_message_id = ?, updated_at = ?
-      WHERE id = ?`,
-  ).run(messageId, now, candidate.id);
-  return messageId;
-}
 
 export function shouldReportRunCompletedFromMessage(saved, body = {}) {
   return Boolean(
@@ -1831,204 +1392,6 @@ export function shouldReportRunCompletionTelemetryFallbackStatus(status: unknown
   return status === 'failed' || status === 'canceled';
 }
 
-const CLOUDFLARE_PAGES_PROJECT_METADATA_KEY = 'cloudflarePagesProjectName';
-
-function cloudflarePagesDeploymentMetadata(projectName) {
-  const normalized = typeof projectName === 'string' ? projectName.trim() : '';
-  return normalized
-    ? { [CLOUDFLARE_PAGES_PROJECT_METADATA_KEY]: normalized }
-    : undefined;
-}
-
-function cloudflarePagesProjectNameFromDeployment(deployment) {
-  const value = deployment?.providerMetadata?.[CLOUDFLARE_PAGES_PROJECT_METADATA_KEY];
-  if (typeof value === 'string' && value.trim()) return value.trim();
-  return cloudflarePagesProjectNameFromUrl(deployment?.url);
-}
-
-function cloudflarePagesProjectNameFromUrl(rawUrl) {
-  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
-  try {
-    const host = new URL(rawUrl).hostname.toLowerCase();
-    if (!host.endsWith('.pages.dev')) return '';
-    const labels = host.slice(0, -'.pages.dev'.length).split('.').filter(Boolean);
-    return labels.at(-1) || '';
-  } catch {
-    return '';
-  }
-}
-
-function cloudflarePagesProjectNameForDeploy(db, projectId, projectName, prior) {
-  const priorName = cloudflarePagesProjectNameFromDeployment(prior);
-  if (priorName) return priorName;
-
-  for (const deployment of listDeployments(db, projectId)) {
-    if (deployment.providerId !== CLOUDFLARE_PAGES_PROVIDER_ID) continue;
-    const stableName = cloudflarePagesProjectNameFromDeployment(deployment);
-    if (stableName) return stableName;
-  }
-
-  return cloudflarePagesProjectNameForProject(projectId, projectName);
-}
-
-function publicDeployment(deployment) {
-  if (!deployment || typeof deployment !== 'object') return deployment;
-  const { providerMetadata: _providerMetadata, ...publicShape } = deployment;
-  return publicShape;
-}
-
-function publicDeployments(deployments) {
-  return (deployments || []).map(publicDeployment);
-}
-
-async function checkCloudflarePagesDeploymentLinks(existing) {
-  const current = existing.cloudflarePages || {};
-  const projectName = current.projectName || cloudflarePagesProjectNameFromDeployment(existing);
-  const config = await readDeployConfig(CLOUDFLARE_PAGES_PROVIDER_ID);
-  const pagesDevUrl = current.pagesDev?.url || existing.url;
-  const pagesDevResult = await checkDeploymentUrl(pagesDevUrl);
-  const pagesDev = {
-    ...(current.pagesDev || {}),
-    url: pagesDevUrl,
-    status: pagesDevResult.reachable ? 'ready' : pagesDevResult.status || 'link-delayed',
-    statusMessage: pagesDevResult.reachable
-      ? 'Public link is ready.'
-      : pagesDevResult.statusMessage || current.pagesDev?.statusMessage || 'Cloudflare Pages is still preparing the pages.dev link.',
-    reachableAt: pagesDevResult.reachable ? Date.now() : current.pagesDev?.reachableAt,
-  };
-  let customDomain = current.customDomain;
-  if (customDomain?.url && customDomain.status !== 'conflict') {
-    let pagesDomain = null;
-    if (config?.token && config?.accountId && projectName) {
-      try {
-        pagesDomain = await readCloudflarePagesDomain({ ...config, projectName }, customDomain.hostname);
-      } catch {
-        pagesDomain = null;
-      }
-    }
-    const customResult = await checkDeploymentUrl(customDomain.url);
-    const pagesDomainStatus = pagesDomain?.status || customDomain.pagesDomainStatus;
-    const failedByApi = ['error', 'blocked', 'deactivated'].includes(String(pagesDomainStatus || '').toLowerCase());
-    const activeByApi = String(pagesDomainStatus || '').toLowerCase() === 'active';
-    const readyByReachability = customResult.reachable && activeByApi;
-    customDomain = {
-      ...customDomain,
-      domainStatus: pagesDomain
-        ? pagesDomain.status === 'active'
-          ? 'active'
-          : failedByApi
-            ? 'failed'
-            : 'pending'
-        : customDomain.domainStatus,
-      pagesDomainStatus,
-      validationData: pagesDomain?.validation_data ?? customDomain.validationData,
-      verificationData: pagesDomain?.verification_data ?? customDomain.verificationData,
-      status: readyByReachability
-        ? 'ready'
-        : customDomain.status === 'failed' || failedByApi
-          ? 'failed'
-          : 'pending',
-      statusMessage: readyByReachability
-        ? 'Custom domain is ready.'
-        : failedByApi
-          ? 'Cloudflare Pages reported a custom-domain error.'
-        : customResult.statusMessage || customDomain.statusMessage || 'Custom domain is still being prepared.',
-    };
-  }
-  const cloudflarePages = {
-    ...current,
-    projectName,
-    pagesDev,
-    ...(customDomain ? { customDomain } : {}),
-  };
-  const aggregate = aggregateCloudflarePagesStatus(pagesDev, customDomain);
-  return {
-    url: pagesDev.url,
-    status: aggregate.status,
-    statusMessage: aggregate.statusMessage,
-    cloudflarePages,
-    providerMetadata: {
-      ...(existing.providerMetadata || {}),
-      cloudflarePages,
-    },
-  };
-}
-
-// Filename slug for the Content-Disposition header on archive downloads.
-// Browsers reject quotes and control bytes; we keep Unicode letters/digits
-// so a project name with non-ASCII characters (e.g. "café-design")
-// survives instead of becoming a row of underscores.
-function sanitizeArchiveFilename(raw) {
-  const cleaned = String(raw ?? '')
-    .replace(/[\\/:*?"<>|]/g, '_')
-    .replace(/[\u0000-\u001f\u007f]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return cleaned;
-}
-
-function sendLiveArtifactRouteError(res, err) {
-  if (err instanceof LiveArtifactStoreValidationError) {
-    return sendApiError(res, 400, 'LIVE_ARTIFACT_INVALID', err.message, {
-      details: { kind: 'validation', issues: err.issues },
-    });
-  }
-  if (err instanceof LiveArtifactRefreshLockError) {
-    return sendApiError(res, 409, 'REFRESH_LOCKED', err.message, {
-      details: { artifactId: err.artifactId },
-    });
-  }
-  if (err instanceof LiveArtifactRefreshUnavailableError) {
-    return sendApiError(res, 400, 'LIVE_ARTIFACT_REFRESH_UNAVAILABLE', err.message);
-  }
-  if (err instanceof LiveArtifactRefreshAbortError) {
-    return sendApiError(res, err.kind === 'cancelled' ? 499 : 504, 'LIVE_ARTIFACT_REFRESH_TIMEOUT', err.message, {
-      details: { kind: err.kind, timeoutMs: err.timeoutMs ?? null, step: err.step ?? null },
-    });
-  }
-  if (err instanceof ConnectorServiceError) {
-    return sendApiError(res, err.status, err.code, err.message, err.details === undefined ? {} : { details: err.details });
-  }
-  if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
-    return sendApiError(res, 404, 'LIVE_ARTIFACT_NOT_FOUND', 'live artifact not found');
-  }
-  return sendApiError(res, 500, 'LIVE_ARTIFACT_STORAGE_FAILED', String(err));
-}
-
-function normalizeLocalAuthority(value) {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed || /[\s/@]/.test(trimmed) || trimmed.includes(',')) return null;
-
-  try {
-    const parsed = new URL(`http://${trimmed}`);
-    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-    if (!hostname || parsed.username || parsed.password || parsed.pathname !== '/') return null;
-    return { hostname, port: parsed.port };
-  } catch {
-    return null;
-  }
-}
-
-function isLoopbackHostname(hostname) {
-  const normalized = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
-  if (normalized === 'localhost') return true;
-  if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
-  if (net.isIP(normalized) === 4) return normalized === '127.0.0.1' || normalized.startsWith('127.');
-  return false;
-}
-
-function isLoopbackPeerAddress(address) {
-  if (typeof address !== 'string') return false;
-  const normalized = address.trim().toLowerCase().replace(/^\[|\]$/g, '');
-  if (!normalized) return false;
-  if (normalized.startsWith('::ffff:')) return isLoopbackPeerAddress(normalized.slice('::ffff:'.length));
-  if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
-  if (net.isIP(normalized) === 4) return normalized === '127.0.0.1' || normalized.startsWith('127.');
-  return false;
-}
-
 const PROJECT_PREVIEW_SCOPE_TTL_MS = 60 * 60 * 1000;
 const PROJECT_PREVIEW_ASSET_PATH_RE = /^\/projects\/([^/]+)\/preview\/([^/]+)\/.+$/u;
 
@@ -2075,220 +1438,6 @@ function parseProjectPreviewAssetPath(pathname) {
   } catch {
     return null;
   }
-}
-
-function localOriginFromHeader(value) {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === 'null' || trimmed.includes(',')) return null;
-
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    if (parsed.pathname !== '/' || parsed.search || parsed.hash || parsed.username || parsed.password) return null;
-    if (!isLoopbackHostname(parsed.hostname)) return null;
-    return parsed.origin;
-  } catch {
-    return null;
-  }
-}
-
-function validateLocalDaemonRequest(req) {
-  if (!isLoopbackPeerAddress(req.socket?.remoteAddress)) {
-    return {
-      ok: false,
-      message: 'request peer must be a loopback address',
-      details: { peer: 'remoteAddress' },
-    };
-  }
-
-  const host = normalizeLocalAuthority(req.get('host'));
-  if (!host || !isLoopbackHostname(host.hostname)) {
-    return {
-      ok: false,
-      message: 'request host must be a loopback daemon address',
-      details: { header: 'host' },
-    };
-  }
-
-  const originHeader = req.get('origin');
-  if (originHeader !== undefined && !localOriginFromHeader(originHeader)) {
-    return {
-      ok: false,
-      message: 'request origin must be a loopback daemon origin',
-      details: { header: 'origin' },
-    };
-  }
-
-  return { ok: true, origin: localOriginFromHeader(originHeader) };
-}
-
-function requireLocalDaemonRequest(req, res, next) {
-  const validation = validateLocalDaemonRequest(req);
-  if (!validation.ok) {
-    return sendApiError(res, 403, 'FORBIDDEN', validation.message, validation.details ? { details: validation.details } : {});
-  }
-
-  res.setHeader('Vary', 'Origin');
-  if (validation.origin) {
-    res.setHeader('Access-Control-Allow-Origin', validation.origin);
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Max-Age', '600');
-  next();
-}
-
-/**
- * Render the small HTML page that the OAuth callback returns to the
- * user's browser tab. It posts a message back to the opener (the
- * Settings dialog window) and offers a manual close button. We keep
- * the markup pure HTML/CSS — no external scripts, no React — so the
- * page works even if the opener was closed and the user just sees a
- * static success/failure screen.
- */
-function renderOAuthResultPage(opts) {
-  const ok = Boolean(opts.ok);
-  const title = ok ? 'Connected' : 'Authorization failed';
-  const heading = ok ? '✅ Connected' : '⚠️ Authorization failed';
-  const body = ok
-    ? `Your MCP server <code>${escapeHtml(opts.serverId ?? '')}</code> is now connected. You can close this tab and return to Open Design.`
-    : escapeHtml(opts.message ?? 'Authorization could not be completed.');
-  const accent = ok ? '#1a7f37' : '#cf222e';
-  const payload = ok
-    ? { type: 'mcp-oauth', ok: true, serverId: opts.serverId ?? null }
-    : { type: 'mcp-oauth', ok: false, message: opts.message ?? null };
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<title>${escapeHtml(title)} — Open Design</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-  :root { color-scheme: light dark; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    display: flex; align-items: center; justify-content: center;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
-    background: #f6f7f9; color: #1f2328; padding: 24px;
-  }
-  @media (prefers-color-scheme: dark) {
-    body { background: #0d1117; color: #e6edf3; }
-    .card { background: #161b22; border-color: #30363d; }
-    code { background: #1f242c; }
-  }
-  .card {
-    max-width: 420px; width: 100%; padding: 28px 28px 22px; border-radius: 12px;
-    background: white; border: 1px solid #d0d7de; box-shadow: 0 8px 24px rgba(0,0,0,.06);
-    text-align: left;
-  }
-  h1 { margin: 0 0 8px; font-size: 18px; color: ${accent}; }
-  p  { margin: 0 0 16px; font-size: 14px; line-height: 1.55; }
-  code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
-  button {
-    appearance: none; border: 1px solid #d0d7de; background: white;
-    border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer;
-  }
-  button:hover { background: #f6f8fa; }
-  @media (prefers-color-scheme: dark) {
-    button { background: #21262d; border-color: #30363d; color: #e6edf3; }
-    button:hover { background: #30363d; }
-  }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h1>${escapeHtml(heading)}</h1>
-    <p>${body}</p>
-    <button type="button" onclick="window.close()">Close this tab</button>
-  </div>
-  <script>
-    try {
-      var payload = ${JSON.stringify(payload)};
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(payload, '*');
-      }
-      if (window.BroadcastChannel) {
-        var bc = new BroadcastChannel('open-design-mcp-oauth');
-        bc.postMessage(payload);
-        bc.close();
-      }
-    } catch (e) { /* ignore postMessage failures */ }
-  </script>
-</body>
-</html>`;
-}
-
-function escapeHtml(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function setLiveArtifactPreviewHeaders(res) {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader(
-    'Content-Security-Policy',
-    [
-      "default-src 'none'",
-      "base-uri 'none'",
-      "script-src 'none'",
-      "object-src 'none'",
-      "connect-src 'none'",
-      "form-action 'none'",
-      "frame-ancestors 'self'",
-      "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      "style-src 'unsafe-inline'",
-      'sandbox allow-same-origin',
-    ].join('; '),
-  );
-}
-
-function setLiveArtifactCodeHeaders(res) {
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-}
-
-function bearerTokenFromRequest(req) {
-  const header = req.get('authorization');
-  if (typeof header !== 'string') return undefined;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return match?.[1];
-}
-
-function authorizeToolRequest(req, res, operation) {
-  const endpoint = req.path;
-  const validation = toolTokenRegistry.validate(bearerTokenFromRequest(req), { endpoint, operation });
-  if (!validation.ok) {
-    const status = validation.code === 'TOOL_ENDPOINT_DENIED' || validation.code === 'TOOL_OPERATION_DENIED' ? 403 : 401;
-    sendApiError(res, status, validation.code, validation.message, {
-      details: { endpoint, operation },
-    });
-    return null;
-  }
-  return validation.grant;
-}
-
-function optionalToolGrantFromRequest(req, options = {}) {
-  const validation = toolTokenRegistry.validate(bearerTokenFromRequest(req), options);
-  return validation.ok ? validation.grant : null;
-}
-
-function requestProjectOverride(projectId, tokenProjectId) {
-  return typeof projectId === 'string' && projectId.length > 0 && projectId !== tokenProjectId;
-}
-
-function requestRunOverride(runId, tokenRunId) {
-  return typeof runId === 'string' && runId.length > 0 && runId !== tokenRunId;
 }
 
 function openNativeFolderDialog() {
@@ -2529,123 +1678,6 @@ function sendMulterError(res, err) {
   }
 
   return sendApiError(res, 500, 'INTERNAL_ERROR', 'upload failed');
-}
-
-const mediaTasks = new Map();
-const TASK_TTL_AFTER_DONE_MS = 10 * 60 * 1000;
-const MEDIA_TERMINAL_STATUSES = new Set(['done', 'failed', 'interrupted']);
-
-function hydrateMediaTask(row) {
-  const task = {
-    id: row.id,
-    projectId: row.projectId,
-    status: row.status,
-    surface: row.surface,
-    model: row.model,
-    progress: Array.isArray(row.progress) ? row.progress.slice() : [],
-    file: row.file ?? null,
-    error: row.error ?? null,
-    startedAt: row.startedAt,
-    endedAt: row.endedAt,
-    waiters: new Set(),
-  };
-  mediaTasks.set(task.id, task);
-  return task;
-}
-
-function getLiveMediaTask(db, taskId) {
-  const cached = mediaTasks.get(taskId);
-  if (cached) return cached;
-  const row = getMediaTask(db, taskId);
-  return row ? hydrateMediaTask(row) : null;
-}
-
-function createMediaTask(db, taskId, projectId, info = {}) {
-  const task = {
-    id: taskId,
-    projectId,
-    status: 'queued',
-    surface: info.surface,
-    model: info.model,
-    progress: [],
-    file: null,
-    error: null,
-    startedAt: Date.now(),
-    endedAt: null,
-    waiters: new Set(),
-  };
-  mediaTasks.set(taskId, task);
-  insertMediaTask(db, {
-    id: taskId,
-    projectId,
-    status: task.status,
-    surface: task.surface,
-    model: task.model,
-    progress: task.progress,
-    file: task.file,
-    error: task.error,
-    startedAt: task.startedAt,
-    endedAt: task.endedAt,
-  });
-  return task;
-}
-
-function persistMediaTask(db, task) {
-  updateMediaTask(db, task.id, {
-    status: task.status,
-    surface: task.surface,
-    model: task.model,
-    progress: task.progress,
-    file: task.file,
-    error: task.error,
-    startedAt: task.startedAt,
-    endedAt: task.endedAt,
-  });
-}
-
-function appendTaskProgress(db, task, line) {
-  task.progress.push(line);
-  persistMediaTask(db, task);
-  notifyTaskWaiters(db, task);
-}
-
-function notifyTaskWaiters(db, task) {
-  const wakers = Array.from(task.waiters);
-  for (const w of wakers) {
-    try {
-      w();
-    } catch {
-      // Never let one bad waiter block the rest.
-    }
-  }
-  if (
-    MEDIA_TERMINAL_STATUSES.has(task.status) &&
-    !task._gcScheduled
-  ) {
-    task._gcScheduled = true;
-    setTimeout(() => {
-      if (task.waiters.size === 0) {
-        mediaTasks.delete(task.id);
-        deleteMediaTask(db, task.id);
-      }
-    }, TASK_TTL_AFTER_DONE_MS).unref?.();
-  }
-}
-
-function mediaTaskSnapshot(task, since = 0) {
-  const snapshot = {
-    taskId: task.id,
-    status: task.status,
-    startedAt: task.startedAt,
-    endedAt: task.endedAt,
-    progress: task.progress.slice(since),
-    nextSince: task.progress.length,
-  };
-  if (task.status === 'done') snapshot.file = task.file;
-  if (task.status === 'failed' || task.status === 'interrupted') {
-    snapshot.error = task.error;
-  }
-  return snapshot;
 }
 
 export function createSseResponse(
@@ -2918,6 +1950,13 @@ export async function startServer({
     PLUGIN_LOCKFILE_PATH,
     PLUGIN_UPLOAD_MAX_BYTES,
   });
+  const mediaTaskStore = createMediaTaskStore(db);
+  const {
+    authorizeToolRequest,
+    optionalToolGrantFromRequest,
+    requestProjectOverride,
+    requestRunOverride,
+  } = createToolRequestAuth(toolTokenRegistry);
   // Wire the upload-destination bridge to this db so multer can route
   // file uploads into baseDir-rooted projects' actual folders.
   projectMetadataLookup = (id) => {
@@ -2979,9 +2018,9 @@ export async function startServer({
         `deleted ${mediaReconcile.deleted} expired terminal task(s)`,
     );
   }
-  mediaTasks.clear();
+  mediaTaskStore.mediaTasks.clear();
   for (const row of listRecentMediaTasks(db, { terminalTtlMs: TASK_TTL_AFTER_DONE_MS })) {
-    hydrateMediaTask(row);
+    mediaTaskStore.hydrateMediaTask(row);
   }
 
   if (process.env.OD_CODEX_DISABLE_PLUGINS === '1') {
@@ -3402,13 +2441,13 @@ export async function startServer({
     readMaskedConfig,
     writeConfig,
     generateMedia,
-    mediaTasks,
-    createMediaTask: (taskId, projectId, info) => createMediaTask(db, taskId, projectId, info),
-    persistMediaTask: (task) => persistMediaTask(db, task),
-    appendTaskProgress: (task, line) => appendTaskProgress(db, task, line),
-    notifyTaskWaiters: (task) => notifyTaskWaiters(db, task),
-    getLiveMediaTask: (taskId) => getLiveMediaTask(db, taskId),
-    mediaTaskSnapshot,
+    mediaTasks: mediaTaskStore.mediaTasks,
+    createMediaTask: mediaTaskStore.createMediaTask,
+    persistMediaTask: mediaTaskStore.persistMediaTask,
+    appendTaskProgress: mediaTaskStore.appendTaskProgress,
+    notifyTaskWaiters: mediaTaskStore.notifyTaskWaiters,
+    getLiveMediaTask: mediaTaskStore.getLiveMediaTask,
+    mediaTaskSnapshot: mediaTaskStore.mediaTaskSnapshot,
     listMediaTasksByProject,
     listElevenLabsVoiceOptions,
   };
@@ -7378,7 +6417,7 @@ export async function startServer({
       if (
         code === 0 &&
         !run.cancelRequested &&
-        isPluginAuthoringRun(db, run) &&
+        isPluginAuthoringRun(db, run, getSnapshot) &&
         !(await hasGeneratedPluginArtifacts(cwd)) &&
         !emittedRenderableQuestionForm(clarifyingQuestionText)
       ) {
