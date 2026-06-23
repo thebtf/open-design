@@ -856,9 +856,15 @@ export function ChatPane({
   const handleToolboxAction = useCallback((id: DesignToolboxActionId) => {
     composerRef.current?.applyDesignToolboxAction(id);
   }, []);
+  const handleNextStepPromptAction = useCallback((prompt: string) => {
+    composerRef.current?.setDraft(prompt);
+  }, []);
   const handlePickSkill = useCallback((skillId: string) => {
     composerRef.current?.applyDesignToolboxSkill(skillId);
   }, []);
+  const nextStepVariant: NextStepActionsVariant = isDesignSystemNextStepProject(projectMetadata)
+    ? 'design-system'
+    : 'default';
   // The `@skill` shown in each featured row's hover detail — matched the same
   // way the composer matches it, using the raw skill name (what gets inlined
   // into the draft). Recomputed only when the skill list changes.
@@ -2070,10 +2076,12 @@ export function ChatPane({
                 onContinueRemainingTasks={onContinueRemainingTasks}
                 onArtifactShare={onArtifactShare}
                 onToolboxAction={handleToolboxAction}
+                onNextStepPromptAction={handleNextStepPromptAction}
                 onPickSkill={handlePickSkill}
                 onArtifactDownload={onArtifactDownload}
                 nextStepSkills={skills}
                 toolboxSkillNames={featuredToolboxSkillNames}
+                nextStepVariant={nextStepVariant}
                 onForkFromMessage={onForkFromMessage}
                 onAssistantFeedback={onAssistantFeedback}
                 forkingMessageId={forkingMessageId}
@@ -2414,10 +2422,12 @@ function ChatRows({
   onContinueRemainingTasks,
   onArtifactShare,
   onToolboxAction,
+  onNextStepPromptAction,
   onPickSkill,
   onArtifactDownload,
   nextStepSkills,
   toolboxSkillNames,
+  nextStepVariant,
   onForkFromMessage,
   onAssistantFeedback,
   forkingMessageId,
@@ -2454,10 +2464,12 @@ function ChatRows({
   onContinueRemainingTasks?: (assistantMessage: ChatMessage, todos: TodoItem[]) => void;
   onArtifactShare?: (fileName: string) => void;
   onToolboxAction?: (id: DesignToolboxActionId) => void;
+  onNextStepPromptAction?: (prompt: string) => void;
   onPickSkill?: (skillId: string) => void;
   onArtifactDownload?: (fileName: string) => void;
   nextStepSkills?: SkillSummary[];
   toolboxSkillNames?: Partial<Record<DesignToolboxActionId, string | null>>;
+  nextStepVariant?: NextStepActionsVariant;
   onForkFromMessage?: (message: ChatMessage) => void;
   onAssistantFeedback?: (message: ChatMessage, change: ChatMessageFeedbackChange) => void;
   forkingMessageId?: string | null;
@@ -2575,10 +2587,12 @@ function ChatRows({
             : undefined
         }
         onToolboxAction={onToolboxAction}
+        onNextStepPromptAction={onNextStepPromptAction}
         onPickSkill={onPickSkill}
         onArtifactDownload={onArtifactDownload}
         nextStepSkills={nextStepSkills}
         toolboxSkillNames={toolboxSkillNames}
+        nextStepVariant={nextStepVariant}
       />
     );
   };

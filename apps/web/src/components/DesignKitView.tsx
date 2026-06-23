@@ -357,15 +357,33 @@ export function DesignKitView({
 
       <div className={styles.cover}>
         {kit.showcaseHtml ? (
-          <span className={styles.coverFrameViewport} aria-hidden>
-            <iframe
-              className={styles.coverFrame}
-              title={`${kit.name} preview`}
-              sandbox="allow-scripts"
-              srcDoc={buildSrcdoc(kit.showcaseHtml)}
-              tabIndex={-1}
-            />
-          </span>
+          <>
+            <span className={styles.coverFrameViewport} aria-hidden>
+              <iframe
+                className={styles.coverFrame}
+                title={`${kit.name} preview`}
+                sandbox="allow-scripts"
+                srcDoc={buildSrcdoc(kit.showcaseHtml)}
+                tabIndex={-1}
+              />
+            </span>
+            {!compact ? (
+              <button
+                type="button"
+                className={styles.coverPreviewBtn}
+                onClick={() =>
+                  onPreviewCover ? onPreviewCover() : setCoverPreviewOpen(true)
+                }
+                data-testid="design-kit-cover-preview"
+                aria-label={t('common.openPreview')}
+              >
+                <span className={styles.coverPreviewPill}>
+                  <ExpandGlyph />
+                  {t('common.openPreview')}
+                </span>
+              </button>
+            ) : null}
+          </>
         ) : (
           <BrandLogo
             brandId={kit.brandId}
@@ -827,6 +845,36 @@ export function DesignKitView({
           </div>
         </div>
       ) : null}
+
+      {coverPreviewOpen && kit.showcaseHtml ? (
+        <div
+          className={styles.assetModal}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${kit.name} preview`}
+          onClick={() => setCoverPreviewOpen(false)}
+        >
+          <div className={styles.assetModalPanel} onClick={(event) => event.stopPropagation()}>
+            <div className={styles.assetModalHeader}>
+              <h3>{kit.name}</h3>
+              <button
+                type="button"
+                className={styles.assetModalClose}
+                onClick={() => setCoverPreviewOpen(false)}
+                aria-label={t('newBrand.close')}
+              >
+                <CloseGlyph />
+              </button>
+            </div>
+            <iframe
+              className={styles.assetModalFrame}
+              title={`${kit.name} preview`}
+              sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+              srcDoc={buildSrcdoc(kit.showcaseHtml)}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -870,6 +918,20 @@ function CloseGlyph() {
   return (
     <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden>
       <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ExpandGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" aria-hidden>
+      <path
+        d="M9.5 2.5H13.5V6.5M6.5 13.5H2.5V9.5M13.5 2.5L9 7M2.5 13.5L7 9"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

@@ -1014,6 +1014,7 @@ function DesignSystemDetail({
           kit={kit}
           badgeSlot={badgeSlot}
           actionsSlot={actionsSlot}
+          onPreviewCover={() => onPreviewFull(system)}
           editor={
             isUser
               ? {
