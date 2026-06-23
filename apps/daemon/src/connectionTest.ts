@@ -699,6 +699,22 @@ function truncateSample(text: unknown): string {
   return `${trimmed.slice(0, SAMPLE_MAX_CHARS - 1)}…`;
 }
 
+function antigravityUpstreamDetail(
+  classificationDetail: string,
+  rawDetail: string,
+): string {
+  const raw = rawDetail.trim();
+  if (raw && classifyAgentServiceFailure(raw) === 'UPSTREAM_UNAVAILABLE') {
+    return redactSecrets(raw);
+  }
+  const matchedLine = classificationDetail
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => classifyAgentServiceFailure(line) === 'UPSTREAM_UNAVAILABLE');
+  if (matchedLine) return redactSecrets(truncateSample(matchedLine));
+  return 'Antigravity reported an upstream provider error.';
+}
+
 export function isSmokeOkReply(text: unknown): boolean {
   return typeof text === 'string' && text.trim().toLowerCase() === 'ok';
 }
@@ -2421,7 +2437,7 @@ async function testAgentConnectionInternal(
             latencyMs,
             model,
             agentName: def.name,
-            detail: redactSecrets(rawDetail || 'Antigravity reported an upstream provider error.'),
+            detail: antigravityUpstreamDetail(classificationDetail, rawDetail),
             diagnostics: buildDiagnostics({
               phase: 'connection_smoke_test',
               exitCode: winner.code,

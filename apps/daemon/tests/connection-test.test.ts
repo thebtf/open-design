@@ -3373,6 +3373,47 @@ process.stdin.on('end', () => process.exit(0));
     );
   });
 
+  it('preserves Antigravity upstream details found before the raw log tail', async () => {
+    await withFakeAntigravity(
+      `
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const logIndex = args.indexOf('--log-file');
+if (logIndex === -1 || !args[logIndex + 1]) {
+  console.error('missing --log-file');
+  process.exit(1);
+}
+const unrelatedTail = ' unrelated tail'.repeat(80);
+fs.writeFileSync(
+  args[logIndex + 1],
+  'Provider returned status 503: upstream temporarily unavailable for test model.\\n' + unrelatedTail,
+);
+process.stdin.resume();
+process.stdin.on('end', () => process.exit(0));
+`,
+      async () => {
+        const res = await realFetch(`${baseUrl}/api/test/connection`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mode: 'agent', agentId: 'antigravity' }),
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json() as { detail?: string; [key: string]: unknown };
+        expect(body).toMatchObject({
+          ok: false,
+          kind: 'upstream_unavailable',
+          agentName: 'Antigravity',
+          detail: expect.stringContaining('Provider returned status 503'),
+          diagnostics: {
+            phase: 'connection_smoke_test',
+            exitCode: 0,
+          },
+        });
+        expect(body.detail).not.toContain('unrelated tail');
+      },
+    );
+  });
+
   it('keeps OpenCode smoke tests green when git bootstrap is unavailable', async () => {
     const gitDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'od-opencode-git-missing-'));
     const oldPath = process.env.PATH;
