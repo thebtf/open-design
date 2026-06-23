@@ -6,7 +6,11 @@ name: backport
 
 on:
   pull_request_target:
-    types: [closed]
+    # closed: backport labels present at merge time.
+    # labeled: also catch a backport label added AFTER the PR was already merged (a common
+    #          slip — people forget to label before merging). The `if` below skips still-open
+    #          PRs, so labelling an open PR does nothing until it actually merges.
+    types: [closed, labeled]
 
 permissions:
   contents: read
