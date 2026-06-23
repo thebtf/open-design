@@ -55,6 +55,19 @@ function startOfflineBrandExtraction(
   });
 }
 
+// Regression guard for the seeded brand-extraction prompts. The daemon folds a
+// skill body into the SYSTEM prompt when a project has an active `skillId`; it
+// does NOT register `skills/` as Claude-Code `Skill` / slash commands. A seeded
+// prompt that tells the agent to "use the `brand-extract` skill" is therefore
+// executed as a `Skill {"skill":"brand-extract"}` tool call that has no registry
+// to resolve against and always fails — the red Skill card users hit mid-
+// extraction. The seeded prompt must never instruct loading/invoking a skill.
+function expectNoPhantomSkillCall(prompt: string): void {
+  expect(prompt).not.toMatch(/use the `?brand-extract`? skill/i);
+  expect(prompt).not.toMatch(/\buse the `[^`]+` skill\b/i);
+  expect(prompt).not.toMatch(/\bload the `?brand-extract`? skill\b/i);
+}
+
 /** Build a tiny but structurally-valid PNG buffer with the given dimensions so
  *  the imagery size gate decodes a real width/height (header-only). */
 function pngBuffer(width: number, height: number): Buffer {
@@ -187,6 +200,78 @@ describe('agent-driven brand extraction engine', () => {
     await expect(
       startOfflineBrandExtraction({ url: 'ftp://nope', brandsRoot, projectsRoot, skillsRoot: SKILLS_ROOT, db }),
     ).rejects.toThrow(/valid http/i);
+  });
+
+  // The bug: an extraction run opened with a seeded prompt that said "use the
+  // `brand-extract` skill", which the agent ran as a `Skill {"skill":
+  // "brand-extract"}` tool call that always fails (the daemon does not expose
+  // `skills/` as Claude-Code slash skills). These tests pin every seeded prompt
+  // the agent can actually receive so the inducement can never come back.
+  it('website ENRICHMENT prompt never tells the agent to invoke a brand-extract skill', async () => {
+    const db = openDatabase(tempDir, { dataDir: tempDir });
+    // No userDesignSystemsRoot → no programmatic pass → the enrichment prompt is
+    // seeded directly (matches the "reserves the brand" baseline test).
+    const result = await startOfflineBrandExtraction({
+      url: 'acme.com',
+      brandsRoot,
+      projectsRoot,
+      skillsRoot: SKILLS_ROOT,
+      db,
+      logoFallback: NO_LOGO_FALLBACK,
+    });
+    const prompt = getProject(db, result.projectId)?.pendingPrompt ?? '';
+    expect(prompt).toContain('DESIGN SYSTEM ENRICHMENT');
+    // Workflow stays inline and the real measurement tool is still named.
+    expect(prompt).toContain('agent-browser');
+    expectNoPhantomSkillCall(prompt);
+    // And it positively steers the agent away from the phantom call.
+    expect(prompt).toContain('Do NOT try to load or invoke a `brand-extract` skill');
+  });
+
+  it('website EXTRACTION fallback prompt never tells the agent to invoke a brand-extract skill', async () => {
+    const db = openDatabase(tempDir, { dataDir: tempDir });
+    // userDesignSystemsRoot + a fully blocked origin → the programmatic pass
+    // bails and the agent drives from the scaffold on the fallback prompt.
+    const result = await startOfflineBrandExtraction({
+      url: 'blocked.example',
+      brandsRoot,
+      projectsRoot,
+      skillsRoot: SKILLS_ROOT,
+      db,
+      userDesignSystemsRoot,
+      prefetch: async () => null,
+      logoFallback: NO_LOGO_FALLBACK,
+      imageryFallback: NO_IMAGERY_FALLBACK,
+    });
+    const prompt = getProject(db, result.projectId)?.pendingPrompt ?? '';
+    expect(prompt).toContain('DESIGN SYSTEM EXTRACTION');
+    expect(prompt).toContain('agent-browser');
+    expectNoPhantomSkillCall(prompt);
+    expect(prompt).toContain('Do NOT try to load or invoke a `brand-extract` skill');
+  });
+
+  it('DESIGN.md enrichment prompt never tells the agent to invoke a brand-extract skill', async () => {
+    const db = openDatabase(tempDir, { dataDir: tempDir });
+    // Pasted DESIGN.md (no website) → the programmatic parser registers a system
+    // and seeds the DESIGN.md enrichment prompt. This branch never used the skill
+    // phrasing, but the guard keeps it that way as the prompts evolve.
+    const result = await startOfflineBrandExtraction({
+      designMd: DESIGN_MD_INPUT,
+      description: 'A custom newsroom system for sharp editorial tools.',
+      brandsRoot,
+      projectsRoot,
+      skillsRoot: SKILLS_ROOT,
+      db,
+      userDesignSystemsRoot,
+      prefetch: async () => {
+        throw new Error('website prefetch should not run for DESIGN.md-only input');
+      },
+      logoFallback: NO_LOGO_FALLBACK,
+      imageryFallback: NO_IMAGERY_FALLBACK,
+    });
+    const prompt = getProject(db, result.projectId)?.pendingPrompt ?? '';
+    expect(prompt).toContain('context/input-DESIGN.md');
+    expectNoPhantomSkillCall(prompt);
   });
 
   it('renderBrandPreviewIntoProject re-renders brand.html from a partial brand.json', async () => {

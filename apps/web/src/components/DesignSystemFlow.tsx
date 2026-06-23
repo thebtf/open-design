@@ -750,7 +750,7 @@ export function DesignSystemCreationFlow({
     const sourceUrlCount = sourceUrls.length;
     const githubRepoCount = githubUrls.length;
     const localFolderCount = state.codeFolders?.length ?? 0;
-    const figFileCount = state.figFiles?.length ?? 0;
+    const figFileCount = (state.figFiles?.length ?? 0) + figmaUrlsFromState(state).length;
     const assetFileCount = state.assetFiles?.length ?? 0;
     const hasDesignMd = Boolean(state.designMd.trim());
     const snapshot = {
@@ -810,16 +810,20 @@ export function DesignSystemCreationFlow({
       // a backing project where the brand-extract skill enriches it live.
       const extractUrl =
         nonGithubSourceUrlsFromState(state)[0] ?? sourceUrlsFromState(state)[0] ?? '';
-      if (!extractUrl && !hasDesignMd) {
-        setError('Add a website, pick a brand, or paste a DESIGN.md to create a design system.');
+      const fallbackDesignMd = !extractUrl && !hasDesignMd
+        ? buildFallbackDesignMdFromState(state)
+        : '';
+      const designMdForExtraction = hasDesignMd ? state.designMd : fallbackDesignMd;
+      if (!extractUrl && !designMdForExtraction) {
+        setError('Add a website, DESIGN.md, description, file, Figma source, or notes to create a design system.');
         setStep('setup');
-        emitCreateResult('failed', undefined, 'DS_EXTRACT_NO_URL', undefined);
-        onGenerateSettled?.(snapshot, { result: 'failed', errorCode: 'DS_EXTRACT_NO_URL' });
+        emitCreateResult('failed', undefined, 'DS_EXTRACT_NO_SOURCE', undefined);
+        onGenerateSettled?.(snapshot, { result: 'failed', errorCode: 'DS_EXTRACT_NO_SOURCE' });
         return;
       }
       const result = await brandExtract.run(extractUrl, {
-        description: state.company,
-        designMd: state.designMd,
+        description: [state.company.trim(), state.notes.trim()].filter(Boolean).join('\n\n'),
+        designMd: designMdForExtraction,
       });
       if (!result) {
         setError('Could not start the extraction. Check the link and try again.');
@@ -918,7 +922,7 @@ export function DesignSystemCreationFlow({
             onClick={() => {
               emitCreateFormClick('continue_to_generation');
               if (!hasCreationSource(state)) {
-                setError('Add a website, pick a brand, or paste a DESIGN.md to create a design system.');
+                setError('Add a website, DESIGN.md, description, file, Figma source, or notes to create a design system.');
                 return;
               }
               setStep('confirm');
@@ -1216,7 +1220,7 @@ export function DesignSystemCreationFlow({
               onClick={() => {
                 emitCreateFormClick('continue_to_generation');
                 if (!hasCreationSource(state)) {
-                  setError('Add a website, pick a brand, or paste a DESIGN.md to create a design system.');
+                  setError('Add a website, DESIGN.md, description, file, Figma source, or notes to create a design system.');
                   return;
                 }
                 setStep('confirm');
