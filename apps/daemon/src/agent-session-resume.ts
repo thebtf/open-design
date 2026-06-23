@@ -230,11 +230,17 @@ export function computeIncludeStable(
   return !isResuming || storedStableHash !== currentStableHash;
 }
 
-/** True when CLI output indicates a resume target session is missing. */
-export function isClaudeResumeFailure(text: string): boolean {
-  if (!text) return false;
-  if (CLAUDE_RESUME_FAILURE_PATTERNS.some((re) => re.test(text))) return true;
-  return hasClaudeResumeFailureResultEvent(text);
+/**
+ * True when CLI output indicates a resume target session is missing. Prose
+ * signatures are matched on `stderr` (where Claude prints the failure); the
+ * version-stable structured `result` event is matched on `stdout` (the
+ * stream-json channel). We deliberately do NOT scan ordinary assistant stdout
+ * for the prose phrases — a successful turn whose model text happens to contain
+ * "session not found" must not be mistaken for a resume failure.
+ */
+export function isClaudeResumeFailure(stderr: string, stdout = ''): boolean {
+  if (stderr && CLAUDE_RESUME_FAILURE_PATTERNS.some((re) => re.test(stderr))) return true;
+  return stdout ? hasClaudeResumeFailureResultEvent(stdout) : false;
 }
 
 // Signature codex prints when `exec resume <thread_id>` targets a thread whose
@@ -276,11 +282,20 @@ export function isOpencodeResumeFailure(text: string): boolean {
  * Generalizes the resume-fallback so every `resumesSessionViaCli` adapter
  * routes through one decision point in server.ts. Unknown agents return false
  * (no fallback) — a new resume-capable adapter must opt in here explicitly.
+ *
+ * Detection scans only the CLI's FAILURE channel, never successful assistant
+ * output: codex/opencode print their resume-miss to `stderr` (a generic phrase
+ * like OpenCode's "Session not found" must not be matched against the model's
+ * stdout, or a turn that merely *mentions* it would be falsely failed); Claude's
+ * prose is on stderr and its structured `result` marker on stdout.
  */
-export function isAgentResumeFailure(agentId: string, text: string): boolean {
-  if (!text) return false;
-  if (agentId === 'codex') return isCodexResumeFailure(text);
-  if (agentId === 'opencode') return isOpencodeResumeFailure(text);
+export function isAgentResumeFailure(
+  agentId: string,
+  stderr: string,
+  stdout = '',
+): boolean {
+  if (agentId === 'codex') return isCodexResumeFailure(stderr);
+  if (agentId === 'opencode') return isOpencodeResumeFailure(stderr);
   // claude + codebuddy share Claude Code's stream-json result shape.
-  return isClaudeResumeFailure(text);
+  return isClaudeResumeFailure(stderr, stdout);
 }

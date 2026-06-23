@@ -330,7 +330,8 @@ describe('isClaudeResumeFailure', () => {
       session_id: '00000000-0000-0000-0000-000000000000',
       errors: [rewordedProse],
     });
-    expect(isClaudeResumeFailure(rewordedResult)).toBe(true);
+    // The structured result event arrives on stdout (the stream-json channel).
+    expect(isClaudeResumeFailure('', rewordedResult)).toBe(true);
   });
 
   // Guard against over-clearing: a transient in-turn failure (overload /
@@ -348,7 +349,7 @@ describe('isClaudeResumeFailure', () => {
       session_id: 'live-session',
       errors: ['Overloaded'],
     });
-    expect(isClaudeResumeFailure(inTurnApiError)).toBe(false);
+    expect(isClaudeResumeFailure('', inTurnApiError)).toBe(false);
 
     const success = JSON.stringify({
       type: 'result',
@@ -359,7 +360,7 @@ describe('isClaudeResumeFailure', () => {
       num_turns: 2,
       session_id: 'live-session',
     });
-    expect(isClaudeResumeFailure(success)).toBe(false);
+    expect(isClaudeResumeFailure('', success)).toBe(false);
   });
 });
 
@@ -409,11 +410,24 @@ describe('isAgentResumeFailure dispatch', () => {
     ).toBe(false);
   });
 
-  it('routes opencode to the session-not-found detector', () => {
-    expect(isAgentResumeFailure('opencode', 'Error: Session not found')).toBe(true);
+  it('routes opencode to the session-not-found detector (on stderr only)', () => {
+    // The CLI prints the miss to stderr (2nd positional is stdout).
+    expect(isAgentResumeFailure('opencode', 'Error: Session not found', '')).toBe(true);
     // codex prose is not an OpenCode resume failure.
     expect(
       isAgentResumeFailure('opencode', 'no rollout found for thread id abc'),
+    ).toBe(false);
+  });
+
+  it('does NOT treat a generic phrase in successful assistant stdout as a resume miss (#4629 nettee)', () => {
+    // A turn that SUCCEEDS but whose model output literally says "session not
+    // found" must not be failed + have its session cleared — the phrase is only
+    // a resume miss when it comes from the CLI's stderr failure channel.
+    expect(
+      isAgentResumeFailure('opencode', '', 'Sure — your previous session was not found in the list, here it is...'),
+    ).toBe(false);
+    expect(
+      isAgentResumeFailure('codex', '', 'The logs mention "no rollout found for thread id" as an example.'),
     ).toBe(false);
   });
 

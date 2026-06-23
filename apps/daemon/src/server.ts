@@ -7844,7 +7844,7 @@ export async function startServer({
         def.resumesSessionViaCli === true &&
         agentResumeCtx.isResuming &&
         run.conversationId &&
-        isAgentResumeFailure(def.id, `${agentStderrTail}\n${agentStdoutTail}`)
+        isAgentResumeFailure(def.id, agentStderrTail, agentStdoutTail)
       ) {
         clearAgentSession(db, run.conversationId, def.id);
         send('error', createSseErrorPayload(
