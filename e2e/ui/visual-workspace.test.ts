@@ -153,7 +153,7 @@ test('[P2] captures the avatar menu surface', async ({ page }) => {
   await captureVisual(page, 'visual-avatar-menu');
 });
 
-test('[P1] Avatar menu exposes the AMR account wallet entry for the active AMR agent', async ({ page }) => {
+test('[P1] Avatar menu surfaces the signed-in plan/balance and upgrade entry', async ({ page }) => {
   await configureVisualPage(page, {
     agents: [VISUAL_AMR_AGENT, ...VISUAL_CLI_AGENTS],
     config: {
@@ -163,16 +163,33 @@ test('[P1] Avatar menu exposes the AMR account wallet entry for the active AMR a
       agentCliEnv: { amr: { OPEN_DESIGN_AMR_PROFILE: 'test' } },
     },
   });
+  // Override the default signed-out status so the Open Design account row
+  // renders the live plan/balance + upgrade entry (last-registered route wins).
+  await page.route('**/api/integrations/vela/status', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        loggedIn: true,
+        loginInFlight: false,
+        profile: 'test',
+        user: { id: 'u1', email: 'leaf@example.com' },
+        account: { plan: 'plus', balanceUsd: '247.5087' },
+        configPath: '/home/test/.amr/config.json',
+      }),
+    });
+  });
   await gotoVisualHome(page);
   await gotoVisualWorkspace(page);
 
   const menu = await openAvatarMenu(page);
-  const amrAccount = menu.locator('.avatar-amr-account-link');
-  await expect(amrAccount).toContainText('AMR account');
-  await expect(amrAccount).toContainText('Balance & recharge');
-  await expect(amrAccount).toHaveAttribute(
+  const row = menu.locator('.avatar-amr-row');
+  await expect(row).toContainText('Open Design');
+  await expect(row).toContainText('Plus');
+  await expect(row).toContainText('$247.51');
+  await expect(row.locator('.avatar-amr-row__upgrade')).toHaveAttribute(
     'href',
-    'https://vela.powerformer.net/wallet?source=open_design',
+    /view=plans/,
   );
 });
 
