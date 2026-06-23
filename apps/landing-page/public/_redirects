@@ -77,9 +77,6 @@
 # those URLs would 404 without a redirect. Send them to the canonical
 # (English) `/plugins/...` until the legacy locale set is retired
 # entirely.
-/fa/plugins/*  /plugins/:splat  301
-/hu/plugins/*  /plugins/:splat  301
-/th/plugins/*  /plugins/:splat  301
 
 # ─────────────────────────────────────────────────────────────────────
 # Catalog migration: legacy /skills /systems /templates -> /plugins/*
@@ -157,9 +154,6 @@
 /zh/skills/*     /zh/plugins/skills/     301
 /zh/systems/*    /zh/plugins/systems/    301
 /zh/templates/*  /zh/plugins/templates/  301
-/zh-tw/skills/*     /zh-tw/plugins/skills/     301
-/zh-tw/systems/*    /zh-tw/plugins/systems/    301
-/zh-tw/templates/*  /zh-tw/plugins/templates/  301
 /ja/skills/*     /ja/plugins/skills/     301
 /ja/systems/*    /ja/plugins/systems/    301
 /ja/templates/*  /ja/plugins/templates/  301
@@ -184,32 +178,13 @@
 /it/skills/*     /it/plugins/skills/     301
 /it/systems/*    /it/plugins/systems/    301
 /it/templates/*  /it/plugins/templates/  301
-/vi/skills/*     /vi/plugins/skills/     301
-/vi/systems/*    /vi/plugins/systems/    301
-/vi/templates/*  /vi/plugins/templates/  301
-/pl/skills/*     /pl/plugins/skills/     301
-/pl/systems/*    /pl/plugins/systems/    301
-/pl/templates/*  /pl/plugins/templates/  301
-/id/skills/*     /id/plugins/skills/     301
-/id/systems/*    /id/plugins/systems/    301
-/id/templates/*  /id/plugins/templates/  301
-/nl/skills/*     /nl/plugins/skills/     301
-/nl/systems/*    /nl/plugins/systems/    301
-/nl/templates/*  /nl/plugins/templates/  301
-/ar/skills/*     /ar/plugins/skills/     301
-/ar/systems/*    /ar/plugins/systems/    301
-/ar/templates/*  /ar/plugins/templates/  301
 /tr/skills/*     /tr/plugins/skills/     301
 /tr/systems/*    /tr/plugins/systems/    301
 /tr/templates/*  /tr/plugins/templates/  301
-/uk/skills/*     /uk/plugins/skills/     301
-/uk/systems/*    /uk/plugins/systems/    301
-/uk/templates/*  /uk/plugins/templates/  301
 
 # Localized plugin previews were de-duplicated to the canonical English
 # build (previews are language-agnostic visual assets); fall back to them.
 /zh/plugins/previews/*  /plugins/previews/:splat  301
-/zh-tw/plugins/previews/*  /plugins/previews/:splat  301
 /ja/plugins/previews/*  /plugins/previews/:splat  301
 /ko/plugins/previews/*  /plugins/previews/:splat  301
 /de/plugins/previews/*  /plugins/previews/:splat  301
@@ -218,13 +193,7 @@
 /es/plugins/previews/*  /plugins/previews/:splat  301
 /pt-br/plugins/previews/*  /plugins/previews/:splat  301
 /it/plugins/previews/*  /plugins/previews/:splat  301
-/vi/plugins/previews/*  /plugins/previews/:splat  301
-/pl/plugins/previews/*  /plugins/previews/:splat  301
-/id/plugins/previews/*  /plugins/previews/:splat  301
-/nl/plugins/previews/*  /plugins/previews/:splat  301
-/ar/plugins/previews/*  /plugins/previews/:splat  301
 /tr/plugins/previews/*  /plugins/previews/:splat  301
-/uk/plugins/previews/*  /plugins/previews/:splat  301
 
 # Agent detail route migration: the per-agent pages moved from
 # `/agents/<slug>/` to `/agents/<slug>-design/` (design keyword in the URL) and
@@ -247,7 +216,6 @@
 # hub pages (/<loc>/plugins/, /<loc>/plugins/{skills,systems,templates}/) have
 # static files and are served directly (static assets win over _redirects).
 /zh/plugins/*  /plugins/:splat  301
-/zh-tw/plugins/*  /plugins/:splat  301
 /ja/plugins/*  /plugins/:splat  301
 /ko/plugins/*  /plugins/:splat  301
 /de/plugins/*  /plugins/:splat  301
@@ -256,13 +224,7 @@
 /es/plugins/*  /plugins/:splat  301
 /pt-br/plugins/*  /plugins/:splat  301
 /it/plugins/*  /plugins/:splat  301
-/vi/plugins/*  /plugins/:splat  301
-/pl/plugins/*  /plugins/:splat  301
-/id/plugins/*  /plugins/:splat  301
-/nl/plugins/*  /plugins/:splat  301
-/ar/plugins/*  /plugins/:splat  301
 /tr/plugins/*  /plugins/:splat  301
-/uk/plugins/*  /plugins/:splat  301
 
 # --- Retired marketing locales (2026-06 GSC review) --------------------------
 # Removed from app/i18n.ts:LANDING_LOCALES (near-zero Google return). Keep in
