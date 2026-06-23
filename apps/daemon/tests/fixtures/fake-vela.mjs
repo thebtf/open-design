@@ -50,7 +50,7 @@
  *                                   session/set_model (legacy behaviour)
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { argv, stdin, stdout, stderr, env, exit } from 'node:process';
@@ -128,6 +128,13 @@ const DEFAULT_MODEL_LIST_JSON = JSON.stringify({
 let currentModelId = null;
 const sessionsWithModel = new Set();
 const STRICT_SET_MODEL = process.env.FAKE_VELA_REQUIRE_SET_MODEL !== '0';
+// Whether THIS process bound a resumed upstream session via session/load.
+// vela spawns one process per turn, so a fresh session/new turn and a resumed
+// session/load turn are distinct processes — `didLoad` lets the RESUME_FAILED
+// branch fire ONLY on the resume turn (mirroring a session that vanished
+// upstream), so a daemon that clears the dead handle and reseeds with a fresh
+// session/new on the next turn recovers instead of failing forever.
+let didLoad = false;
 
 function writeMessage(obj) {
   stdout.write(`${JSON.stringify(obj)}\n`);
@@ -151,6 +158,19 @@ function writeError(id, message, code = -32603) {
 
 function logDiag(line) {
   stderr.write(`[fake-vela] ${line}\n`);
+}
+
+// Append one line per session-bind method (`new` / `load`) to the file named by
+// FAKE_VELA_INVOCATION_LOG, so a multi-turn server test can assert the resume
+// sequence across the separate per-turn vela processes (e.g. ['new','load','new']).
+function logInvocation(method) {
+  const file = env.FAKE_VELA_INVOCATION_LOG;
+  if (!file) return;
+  try {
+    appendFileSync(file, `${JSON.stringify({ method })}\n`);
+  } catch {
+    /* best-effort diagnostics only */
+  }
 }
 
 function emitSessionUpdates(sessionId) {
@@ -190,13 +210,18 @@ function handleMessage(msg) {
       });
       return;
     case 'session/new':
+      logInvocation('new');
       if (SESSION_NEW_ERROR) {
         writeError(id, SESSION_NEW_ERROR);
         return;
       }
       writeResult(id, {
         sessionId: SESSION_ID,
-        openCodeSessionId: OPENCODE_SESSION_ID,
+        // FAKE_VELA_OMIT_OPENCODE_SESSION_ID models an older vela (or a handshake
+        // that never surfaced the durable handle): the daemon captures a null
+        // handle, which must CLEAR the row so the next turn opens a fresh session
+        // instead of resuming a non-existent one.
+        ...(env.FAKE_VELA_OMIT_OPENCODE_SESSION_ID ? {} : { openCodeSessionId: OPENCODE_SESSION_ID }),
         models: {
           currentModelId,
           availableModels: AVAILABLE_MODELS,
@@ -208,6 +233,8 @@ function handleMessage(msg) {
       // handle. (vela validates existence before the first prompt, so a missing
       // session surfaces as resume_failed on session/prompt, not here.)
       const durable = typeof params?.sessionId === 'string' ? params.sessionId : OPENCODE_SESSION_ID;
+      logInvocation('load');
+      didLoad = true;
       writeResult(id, { sessionId: SESSION_ID, openCodeSessionId: durable });
       return;
     }
@@ -233,9 +260,11 @@ function handleMessage(msg) {
       return;
     }
     case 'session/prompt': {
-      if (RESUME_FAILED) {
+      if (RESUME_FAILED && didLoad) {
         // Structured resume-miss: the resumed session is gone. Mirrors vela's
-        // pre-prompt probe emitting resume_failed BEFORE any model call.
+        // pre-prompt probe emitting resume_failed BEFORE any model call. Gated on
+        // `didLoad` so it fires only on a resume turn — a fresh session/new turn
+        // (e.g. the daemon reseeding after it cleared the dead handle) succeeds.
         writeMessage({
           jsonrpc: '2.0',
           id,
@@ -386,6 +415,13 @@ function loginAndExit() {
   stdout.write('Code: FAKE-CODE\n');
   if (delayMs > 0) setTimeout(finish, delayMs);
   else finish();
+}
+
+// `vela --version`: the daemon's executable-resolution probe (def.versionArgs)
+// expects a version string and a clean exit, NOT the ACP stdio loop.
+if (argv[2] === '--version' || (argv.includes('--version') && argv[2] !== 'agent')) {
+  stdout.write('vela 0.0.0-fake\n');
+  exit(0);
 }
 
 if (argv[2] === 'login') {

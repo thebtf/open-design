@@ -7832,20 +7832,15 @@ export async function startServer({
       }
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
-      if (acpSession?.hasFatalError()) {
-        markRpcCloseReason('fatal_rpc_error');
-        return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
-      }
-      parseBufferedAntigravityGeminiJsonEventStream();
-      flushAgentTitleMarkerBuffer();
-      // Resume-target-missing recovery runs BEFORE the generic stream-error
-      // short-circuit: some CLIs (codex `exec resume`) report "no rollout found
-      // for thread id" as a stream `error` event, which would otherwise be
-      // swallowed by the stream_error path and leave the dead session id stored
-      // — every later turn would retry the same broken resume (#4275 class).
-      // Clearing the stale handle here lets the next turn start fresh + re-seed
-      // the full transcript, so a missing session costs one cold turn, never a
-      // broken conversation.
+      // Resume-target-missing recovery runs BEFORE the generic fatal/stream-error
+      // short-circuits. The signal arrives differently per adapter: codex reports
+      // "no rollout found for thread id" as a stream `error` event, while AMR/vela
+      // reports a structured `resume_failed` JSON-RPC error that the ACP bridge
+      // turns into a FATAL. Either would otherwise be swallowed by the
+      // `fatal_rpc_error` / `stream_error` paths below and leave the dead session
+      // id stored — so every later turn would retry the same broken resume (#4275
+      // class). Clearing the stale handle here lets the next turn start fresh +
+      // re-seed the full transcript: one cold turn, never a broken conversation.
       if (
         !run.cancelRequested &&
         (def.resumesSessionViaCli === true || def.resumesSessionViaAcpLoad === true) &&
@@ -7861,6 +7856,12 @@ export async function startServer({
         ));
         return design.runs.finish(run, 'failed', code ?? 1, signal ?? null);
       }
+      if (acpSession?.hasFatalError()) {
+        markRpcCloseReason('fatal_rpc_error');
+        return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
+      }
+      parseBufferedAntigravityGeminiJsonEventStream();
+      flushAgentTitleMarkerBuffer();
       if (agentStreamError) {
         markRpcCloseReason('stream_error');
         return finishWithRetryDecision('failed', code === 0 ? 1 : (code ?? 1), signal ?? null);
