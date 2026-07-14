@@ -572,33 +572,56 @@ When you write or edit an HTML file in the project folder through the native fil
 - After the final self-check, briefly name the written file and summarize the result instead.
 - A filesystem run that emits a source-code \`<artifact>\` is treated as an unexpected fallback by the host.`;
 
-export function buildExamplePromptOverride(
+type PromptPartWriter = (part: string) => void;
+
+function appendExamplePromptOverride(
+  pushPromptPart: PromptPartWriter,
+  pushVerbatimPromptPart: PromptPartWriter,
   title?: string | null,
   brief?: Record<string, string> | null,
-): string {
-  let text = `# Example prompt mode — full-quality direct generation
+): void {
+  pushPromptPart(`# Example prompt mode — full-quality direct generation
 
-The user selected a curated example prompt from the gallery and sent it without modification. This prompt is a complete, self-contained creative brief that has been carefully designed to produce a showcase-quality artifact.`;
+The user selected a curated example prompt from the gallery and sent it without modification. This prompt is a complete, self-contained creative brief that has been carefully designed to produce a showcase-quality artifact.`);
 
   if (title) {
-    text += `\n\nSelected example: "${title}"`;
+    pushPromptPart('\n\nSelected example: "');
+    pushVerbatimPromptPart(title);
+    pushPromptPart('"');
   }
 
   if (brief && Object.keys(brief).length > 0) {
-    text += `\n\nPre-filled creative brief (treat as if the user already answered all discovery questions):`;
+    pushPromptPart(
+      '\n\nPre-filled creative brief (treat as if the user already answered all discovery questions):',
+    );
     for (const [key, value] of Object.entries(brief)) {
-      text += `\n- ${key.replace(/_/g, ' ')}: ${value}`;
+      pushPromptPart('\n- ');
+      pushVerbatimPromptPart(key.replace(/_/g, ' '));
+      pushPromptPart(': ');
+      pushVerbatimPromptPart(value);
     }
   }
 
-  text += `\n\nRules:
+  pushPromptPart(`\n\nRules:
 1. Do NOT emit \`<question-form id="discovery">\`, do NOT show "Quick brief — 30 seconds", and do NOT ask any clarifying questions.
 2. Treat the user's message as the FULL specification — it contains all visual direction, content themes, and structural intent needed.
 3. Generate the artifact at your absolute highest quality. This is a showcase piece — match or exceed the standard of a hand-crafted design.
 4. Infer any unspecified details (copy, layout choices, imagery descriptions) in a way that is maximally coherent with the stated creative direction.
-5. Proceed directly to planning and building. Output your TodoWrite plan and then the artifact immediately.`;
+5. Proceed directly to planning and building. Output your TodoWrite plan and then the artifact immediately.`);
+}
 
-  return text;
+export function buildExamplePromptOverride(
+  title?: string | null,
+  brief?: Record<string, string> | null,
+): string {
+  const parts: string[] = [];
+  appendExamplePromptOverride(
+    (part) => parts.push(part),
+    (part) => parts.push(part),
+    title,
+    brief,
+  );
+  return parts.join('');
 }
 
 const ACTIVE_DESIGN_SYSTEM_VISUAL_DIRECTION_OVERRIDE = `
@@ -952,6 +975,19 @@ export function composeSystemPrompt({
   if (isSlimCharterHead && streamFormat === 'claude-stream-json') {
     parts.push(CLAUDE_PLAN_TOOL_NOTE, '\n\n---\n\n');
   }
+  const verbatimPromptPartIndexes = new Set<number>();
+  const pushVerbatimPromptPart = (part: string): void => {
+    verbatimPromptPartIndexes.add(parts.length);
+    parts.push(part);
+  };
+  const pushPromptSectionHeading = (heading: string, name?: string): void => {
+    parts.push(`\n\n## ${heading}`);
+    if (name) {
+      parts.push(' — ');
+      pushVerbatimPromptPart(name);
+    }
+    parts.push('\n\n');
+  };
   const activeDesignSystemBody = designSystemBody?.trim();
   const activeSkillModes = new Set(
     Array.isArray(skillModes)
@@ -1007,7 +1043,12 @@ export function composeSystemPrompt({
   // and LLM inference time. The MEDIA_GENERATION_CONTRACT (pushed below) is
   // the sole workflow authority for these surfaces.
   if (metadata?.examplePrompt === true) {
-    parts.push(buildExamplePromptOverride(metadata.examplePromptTitle, metadata.examplePromptBrief));
+    appendExamplePromptOverride(
+      (part) => parts.push(part),
+      pushVerbatimPromptPart,
+      metadata.examplePromptTitle,
+      metadata.examplePromptBrief,
+    );
     parts.push('\n\n---\n\n');
   } else if (metadata?.skipDiscoveryBrief === true) {
     parts.push(SKIP_DISCOVERY_BRIEF_OVERRIDE);
@@ -1104,8 +1145,9 @@ export function composeSystemPrompt({
     // repeated rationale prose cut. The classic wording below stays
     // byte-stable for the classic stack.
     parts.push(
-      `\n\n## Personal memory (auto-extracted from past chats)\n\nPreferences and context sedimented from this user's previous conversations — authoritative for tone, terminology, and what they already told you; never re-ask what is captured here. On conflict the active design system wins tokens and the active skill wins workflow (see Precedence). Use memory to silently expand short asks into a full internal brief before acting; ask a clarifying question only when a critical target, permission, or conflict cannot be resolved from the request plus memory.\n\n${memoryBody.trim()}`,
+      `\n\n## Personal memory (auto-extracted from past chats)\n\nPreferences and context sedimented from this user's previous conversations — authoritative for tone, terminology, and what they already told you; never re-ask what is captured here. On conflict the active design system wins tokens and the active skill wins workflow (see Precedence). Use memory to silently expand short asks into a full internal brief before acting; ask a clarifying question only when a critical target, permission, or conflict cannot be resolved from the request plus memory.\n\n`,
     );
+    pushVerbatimPromptPart(memoryBody.trim());
     if ((memoryHooks?.rewrite ?? true)) {
       parts.push(
         `\n\n## Intent gateway — turn short asks into a brief\n\nWhen memory lets you expand a short or underspecified request into a clear brief, surface it as ONE collapsed card at the very start of your reply, then continue working without waiting for confirmation:\n\n<od-card type="task-brief">\n{ "summary": "<one line restating the expanded intent>", "fields": [ {"label": "Audience", "value": "…"}, {"label": "Deliverable", "value": "…"}, {"label": "Done means", "value": "…"} ] }\n</od-card>\n\nAt most one per turn; skip it when the request is already explicit or trivial (you may emit one compact chip instead: <od-card type="memory-applied">{ "summary": "Applied your profile and 2 rules", "used": [ {"type": "profile", "name": "Work profile"} ] }</od-card>). The card replaces the turn-1 discovery form when intent is already clear — it never replaces TodoWrite or the pre-ship self-check, and never appears as prose.`,
@@ -1123,8 +1165,9 @@ export function composeSystemPrompt({
 
   if (!isSlimCore && memoryBody && memoryBody.trim().length > 0) {
     parts.push(
-      `\n\n## Personal memory (auto-extracted from past chats)\n\nThe following facts have been sedimented from this user's previous conversations and edited in the settings panel. Treat them as preferences and context, NOT hard rules: when they collide with the active design system tokens, the brand wins; when they collide with the active skill's workflow, the skill wins. They are still authoritative for tone, voice, terminology, and what the user already told you about themselves and their goals — never re-ask the user about something already captured here.\n\nUse memory as a task-intent gateway. When the user's request is short or underspecified, silently expand it into an internal task brief before acting: infer the task type, user/profile background, project/artifact context, delivery preferences, known feedback meanings, constraints, and validation/finish line. Proceed from that richer brief so the user does not need to repeat setup. Ask a clarifying question only when a critical target, permission, or conflict cannot be resolved from the current request plus memory. Do not dump the full internal brief unless the user asks to inspect it. Expanding intent this way changes only WHAT you know going in; it never shortcuts the standard build flow — you still plan with TodoWrite and still run the anti-slop / brand self-check on every artifact-producing turn.\n\n${memoryBody.trim()}`,
+      `\n\n## Personal memory (auto-extracted from past chats)\n\nThe following facts have been sedimented from this user's previous conversations and edited in the settings panel. Treat them as preferences and context, NOT hard rules: when they collide with the active design system tokens, the brand wins; when they collide with the active skill's workflow, the skill wins. They are still authoritative for tone, voice, terminology, and what the user already told you about themselves and their goals — never re-ask the user about something already captured here.\n\nUse memory as a task-intent gateway. When the user's request is short or underspecified, silently expand it into an internal task brief before acting: infer the task type, user/profile background, project/artifact context, delivery preferences, known feedback meanings, constraints, and validation/finish line. Proceed from that richer brief so the user does not need to repeat setup. Ask a clarifying question only when a critical target, permission, or conflict cannot be resolved from the current request plus memory. Do not dump the full internal brief unless the user asks to inspect it. Expanding intent this way changes only WHAT you know going in; it never shortcuts the standard build flow — you still plan with TodoWrite and still run the anti-slop / brand self-check on every artifact-producing turn.\n\n`,
     );
+    pushVerbatimPromptPart(memoryBody.trim());
 
     // Two-loop memory instruction blocks. These pair with the memory body
     // above (Workstream 1A renders a `### Profile` first and a
@@ -1151,34 +1194,36 @@ export function composeSystemPrompt({
 
   if (userInstructions && userInstructions.trim().length > 0) {
     parts.push(
-      `\n\n## Custom instructions (user-level)\n\nThe user has set the following persistent instructions. Apply them as defaults to every project. When a project-level instruction below contradicts a point here, the project-level version wins.\n\n${userInstructions.trim()}`,
+      `\n\n## Custom instructions (user-level)\n\nThe user has set the following persistent instructions. Apply them as defaults to every project. When a project-level instruction below contradicts a point here, the project-level version wins.\n\n`,
     );
+    pushVerbatimPromptPart(userInstructions.trim());
   }
 
   if (projectInstructions && projectInstructions.trim().length > 0) {
     parts.push(
-      `\n\n## Custom instructions (project-level)\n\nThe user has set the following instructions for this specific project. They take precedence over user-level custom instructions whenever both address the same topic (e.g. if user-level says "use spaces" but project-level says "use tabs", use tabs).\n\n${projectInstructions.trim()}`,
+      `\n\n## Custom instructions (project-level)\n\nThe user has set the following instructions for this specific project. They take precedence over user-level custom instructions whenever both address the same topic (e.g. if user-level says "use spaces" but project-level says "use tabs", use tabs).\n\n`,
     );
+    pushVerbatimPromptPart(projectInstructions.trim());
   }
 
   if (activeDesignSystemBody && activeDesignSystemBody.length > 0) {
-    const usageBlock =
-      designSystemUsageMd && designSystemUsageMd.trim().length > 0
-        ? designSystemUsageMd.trim()
-        : DEFAULT_DESIGN_SYSTEM_USAGE;
-    parts.push(
-      `\n\n## How to use this design system${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\n${usageBlock}`,
-    );
+    pushPromptSectionHeading('How to use this design system', designSystemTitle);
+    if (designSystemUsageMd && designSystemUsageMd.trim().length > 0) {
+      pushVerbatimPromptPart(designSystemUsageMd.trim());
+    } else {
+      parts.push(DEFAULT_DESIGN_SYSTEM_USAGE);
+    }
 
+    pushPromptSectionHeading('Active design system', designSystemTitle);
     parts.push(
-      `\n\n## Active design system${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nTreat the following DESIGN.md as authoritative for color, typography, spacing, and component rules. Do not invent tokens outside this palette. When you copy the active skill's seed template, bind these tokens into its \`:root\` block before generating any layout.\n\n${activeDesignSystemBody}`,
+      "Treat the following DESIGN.md as authoritative for color, typography, spacing, and component rules. Do not invent tokens outside this palette. When you copy the active skill's seed template, bind these tokens into its `:root` block before generating any layout.\n\n",
     );
+    pushVerbatimPromptPart(activeDesignSystemBody);
 
     const importModeGuidance = renderDesignSystemImportModeGuidance(designSystemImportMode);
     if (importModeGuidance) {
-      parts.push(
-        `\n\n## Design system import mode${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\n${importModeGuidance}`,
-      );
+      pushPromptSectionHeading('Design system import mode', designSystemTitle);
+      parts.push(importModeGuidance);
     }
   }
 
@@ -1193,42 +1238,56 @@ export function composeSystemPrompt({
   // individually gated: missing files skip silently, preserving the
   // legacy DESIGN.md-only behaviour for prose-only brands.
   if (designSystemTokensCss && designSystemTokensCss.trim().length > 0) {
+    pushPromptSectionHeading('Active design system tokens', designSystemTitle);
     parts.push(
-      `\n\n## Active design system tokens${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nThe block below is this brand's tokens.css contract — every \`:root\` custom property and any scoped override (e.g. \`:root[lang=...]\`) the brand defines. **Paste the unscoped \`:root { ... }\` block verbatim into the artifact's first \`<style>\`** so every \`var(--*)\` reference resolves at runtime.\n\nDo not invent new tokens. Do not redefine these values. Do not write raw hex outside this :root block. The DESIGN.md above is prose; this is the binding contract.\n\n\`\`\`css\n${designSystemTokensCss.trim()}\n\`\`\``,
+      `The block below is this brand's tokens.css contract — every \`:root\` custom property and any scoped override (e.g. \`:root[lang=...]\`) the brand defines. **Paste the unscoped \`:root { ... }\` block verbatim into the artifact's first \`<style>\`** so every \`var(--*)\` reference resolves at runtime.\n\nDo not invent new tokens. Do not redefine these values. Do not write raw hex outside this :root block. The DESIGN.md above is prose; this is the binding contract.\n\n\`\`\`css\n`,
     );
+    pushVerbatimPromptPart(designSystemTokensCss.trim());
+    parts.push('\n```');
   }
 
   if (designSystemComponentsManifest && designSystemComponentsManifest.trim().length > 0) {
+    pushPromptSectionHeading('Reference component manifest', designSystemTitle);
     parts.push(
-      `\n\n## Reference component manifest${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nA compact structured summary derived from this brand's components.html fixture. Use it as the component inventory for generated artifacts: match the listed selectors, component groups, class names, token references, focus behavior, and spacing cadence. Prefer these manifest entries over inventing new component shapes.\n\n\`\`\`text\n${designSystemComponentsManifest.trim()}\n\`\`\``,
+      `A compact structured summary derived from this brand's components.html fixture. Use it as the component inventory for generated artifacts: match the listed selectors, component groups, class names, token references, focus behavior, and spacing cadence. Prefer these manifest entries over inventing new component shapes.\n\n\`\`\`text\n`,
     );
+    pushVerbatimPromptPart(designSystemComponentsManifest.trim());
+    parts.push('\n```');
   } else if (designSystemFixtureHtml && designSystemFixtureHtml.trim().length > 0) {
+    pushPromptSectionHeading('Reference fixture', designSystemTitle);
     parts.push(
-      `\n\n## Reference fixture${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nA self-contained worked artifact in this design system. Match its component shapes (button structure, card structure, type-scale rhythm, focus ring, spacing cadence) when generating new artifacts. Copying fragments is encouraged as long as you keep the \`var(--*)\` references intact — they are already wired to the tokens above.\n\n\`\`\`html\n${designSystemFixtureHtml.trim()}\n\`\`\``,
+      `A self-contained worked artifact in this design system. Match its component shapes (button structure, card structure, type-scale rhythm, focus ring, spacing cadence) when generating new artifacts. Copying fragments is encouraged as long as you keep the \`var(--*)\` references intact — they are already wired to the tokens above.\n\n\`\`\`html\n`,
     );
+    pushVerbatimPromptPart(designSystemFixtureHtml.trim());
+    parts.push('\n```');
   }
 
   if (designSystemPullIndex && designSystemPullIndex.trim().length > 0) {
+    pushPromptSectionHeading('Pull-layer files available on demand', designSystemTitle);
     parts.push(
-      `\n\n## Pull-layer files available on demand${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nThis design-system package declares richer files for inspection, source evidence, or human preview. Keep the push prompt light: use the index below to decide what to read later. When the runtime tool environment is available, read a listed path with \`\"$OD_NODE_BIN\" \"$OD_BIN\" tools design-systems read --path <path>\`; the daemon will reject paths outside this manifest allowlist.\n\n\`\`\`text\n${designSystemPullIndex.trim()}\n\`\`\``,
+      `This design-system package declares richer files for inspection, source evidence, or human preview. Keep the push prompt light: use the index below to decide what to read later. When the runtime tool environment is available, read a listed path with \`"$OD_NODE_BIN" "$OD_BIN" tools design-systems read --path <path>\`; the daemon will reject paths outside this manifest allowlist.\n\n\`\`\`text\n`,
     );
+    pushVerbatimPromptPart(designSystemPullIndex.trim());
+    parts.push('\n```');
   }
 
   if (craftBody && craftBody.trim().length > 0) {
-    const sectionLabel =
-      Array.isArray(craftSections) && craftSections.length > 0
-        ? ` — ${craftSections.join(', ')}`
-        : '';
+    parts.push('\n\n## Active craft references');
+    if (Array.isArray(craftSections) && craftSections.length > 0) {
+      parts.push(' — ');
+      pushVerbatimPromptPart(craftSections.join(', '));
+    }
     parts.push(
-      `\n\n## Active craft references${sectionLabel}\n\nThe following craft rules are universal — they apply on top of the active design system above, regardless of brand. The DESIGN.md decides *which* tokens to use; craft rules decide *how* to use them. On any conflict between a craft rule and a brand DESIGN.md, the brand wins for token values; craft rules still apply to anything the brand does not override (letter-spacing, accent overuse caps, anti-slop patterns).\n\n${craftBody.trim()}`,
+      '\n\nThe following craft rules are universal — they apply on top of the active design system above, regardless of brand. The DESIGN.md decides *which* tokens to use; craft rules decide *how* to use them. On any conflict between a craft rule and a brand DESIGN.md, the brand wins for token values; craft rules still apply to anything the brand does not override (letter-spacing, accent overuse caps, anti-slop patterns).\n\n',
     );
+    pushVerbatimPromptPart(craftBody.trim());
   }
 
   if (skillBody && skillBody.trim().length > 0) {
     const preflight = derivePreflight(skillBody);
-    parts.push(
-      `\n\n## Active skill${skillName ? ` — ${skillName}` : ''}\n\nFollow this skill's workflow exactly.${preflight}\n\n${skillBody.trim()}`,
-    );
+    pushPromptSectionHeading('Active skill', skillName);
+    parts.push(`Follow this skill's workflow exactly.${preflight}\n\n`);
+    pushVerbatimPromptPart(skillBody.trim());
   }
 
   if (!isAskMode) {
@@ -1236,7 +1295,7 @@ export function composeSystemPrompt({
   }
 
   if (pluginBlock && pluginBlock.trim().length > 0) {
-    parts.push(pluginBlock);
+    pushVerbatimPromptPart(pluginBlock);
   }
 
   // Plan §3.L2 / spec §23.4 — splice per-stage atom blocks immediately
@@ -1248,7 +1307,7 @@ export function composeSystemPrompt({
   if (Array.isArray(activeStageBlocks) && activeStageBlocks.length > 0) {
     for (const block of activeStageBlocks) {
       if (typeof block === 'string' && block.trim().length > 0) {
-        parts.push(block);
+        pushVerbatimPromptPart(block);
       }
     }
   }
@@ -1261,7 +1320,7 @@ export function composeSystemPrompt({
     mediaExecution,
     isSlimCore ? 'facts' : 'classic',
   );
-  if (metaBlock) parts.push(metaBlock);
+  if (metaBlock) pushVerbatimPromptPart(metaBlock);
 
   // Decks have a load-bearing framework (nav, counter, scroll JS, print
   // stylesheet for PDF stitching). Pin it last so it overrides any softer
@@ -1349,7 +1408,7 @@ export function composeSystemPrompt({
   // lands.
   const cfg = critique ?? defaultCritiqueConfig();
   if (cfg.enabled && critiqueBrand && critiqueSkill && !isMediaSurface && !isAskMode) {
-    parts.push('\n\n' + renderPanelPrompt({ cfg, brand: critiqueBrand, skill: critiqueSkill }));
+    pushVerbatimPromptPart('\n\n' + renderPanelPrompt({ cfg, brand: critiqueBrand, skill: critiqueSkill }));
   }
 
   // The three tail overrides below exist to re-assert rules the classic
@@ -1399,10 +1458,13 @@ export function composeSystemPrompt({
     "stop and ask the user a real question instead.",
   );
 
-  const prompt = parts.join('');
-  return promptToolVocabulary === 'native'
-    ? neutralizeOpenDesignToolNames(prompt)
-    : prompt;
+  return parts
+    .map((part, index) =>
+      promptToolVocabulary === 'native' && !verbatimPromptPartIndexes.has(index)
+        ? neutralizeOpenDesignToolNames(part)
+        : part,
+    )
+    .join('');
 }
 
 /**

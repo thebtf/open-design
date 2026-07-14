@@ -113,5 +113,107 @@ describe('daemon composeSystemPrompt — API mode (#313)', () => {
       expect(prompt).toContain("runtime's native tool-call interface");
       expect(prompt).toContain('This runtime owns its tool names');
     });
+
+    it('keeps native filesystem semantics in the slim charter', () => {
+      const prompt = composeSystemPrompt({
+        streamFormat: antigravityAgentDef.streamFormat,
+        executionProfile: antigravityAgentDef.executionProfile,
+        promptToolVocabulary: antigravityAgentDef.promptToolVocabulary,
+        promptCoreVariant: 'slim',
+      });
+      const nativeToolsIdx = prompt.indexOf('# Native runtime tools');
+      const charterIdx = prompt.indexOf('# Open Design charter');
+
+      expect(prompt).not.toMatch(/API mode — no tools available/i);
+      expect(nativeToolsIdx).toBeGreaterThanOrEqual(0);
+      expect(charterIdx).toBeGreaterThan(nativeToolsIdx);
+      expect(prompt).toContain('filesystem-backed project');
+      for (const toolName of ['TodoWrite', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']) {
+        expect(prompt).not.toMatch(new RegExp(`\\b${toolName}\\b`));
+      }
+    });
+
+    it('preserves injected memory copy in the slim native prompt', () => {
+      const injectedCopy = 'Pre-Read: Read, Write, Edit, Bash, and Grep.';
+      const prompt = composeSystemPrompt({
+        streamFormat: antigravityAgentDef.streamFormat,
+        executionProfile: antigravityAgentDef.executionProfile,
+        promptToolVocabulary: antigravityAgentDef.promptToolVocabulary,
+        promptCoreVariant: 'slim',
+        memoryBody: `MEMORY ${injectedCopy}`,
+      });
+
+      expect(prompt).toContain(`MEMORY ${injectedCopy}`);
+    });
+
+    it('preserves injected copy while neutralizing only Open Design core instructions', () => {
+      const injectedCopy = 'Pre-Read: Read, Write, Edit, Bash, and Grep.';
+      const prompt = composeSystemPrompt({
+        streamFormat: antigravityAgentDef.streamFormat,
+        executionProfile: antigravityAgentDef.executionProfile,
+        promptToolVocabulary: antigravityAgentDef.promptToolVocabulary,
+        memoryBody: `MEMORY ${injectedCopy}`,
+        userInstructions: `USER ${injectedCopy}`,
+        projectInstructions: `PROJECT ${injectedCopy}`,
+        designSystemTitle: `DESIGN TITLE ${injectedCopy}`,
+        designSystemUsageMd: `DESIGN USAGE ${injectedCopy}`,
+        designSystemBody: `DESIGN BODY ${injectedCopy}`,
+        designSystemTokensCss: `:root { --copy: "${injectedCopy}"; }`,
+        designSystemComponentsManifest: `MANIFEST ${injectedCopy}`,
+        designSystemPullIndex: `PULL INDEX ${injectedCopy}`,
+        craftSections: [`CRAFT SECTION ${injectedCopy}`],
+        craftBody: `CRAFT BODY ${injectedCopy}`,
+        skillName: `SKILL NAME ${injectedCopy}`,
+        skillBody: `SKILL BODY ${injectedCopy}\nassets/template.html`,
+        pluginBlock: `PLUGIN ${injectedCopy}`,
+        activeStageBlocks: [`STAGE ${injectedCopy}`],
+        metadata: {
+          kind: 'template',
+          examplePrompt: true,
+          examplePromptTitle: `EXAMPLE TITLE ${injectedCopy}`,
+          examplePromptBrief: { brief: `EXAMPLE BRIEF ${injectedCopy}` },
+        },
+        template: {
+          name: `TEMPLATE ${injectedCopy}`,
+          description: `TEMPLATE DESCRIPTION ${injectedCopy}`,
+          files: [{ name: 'index.html', content: `<h1>${injectedCopy}</h1>` }],
+        },
+      });
+
+      for (const expected of [
+        `MEMORY ${injectedCopy}`,
+        `USER ${injectedCopy}`,
+        `PROJECT ${injectedCopy}`,
+        `DESIGN TITLE ${injectedCopy}`,
+        `DESIGN USAGE ${injectedCopy}`,
+        `DESIGN BODY ${injectedCopy}`,
+        `MANIFEST ${injectedCopy}`,
+        `PULL INDEX ${injectedCopy}`,
+        `CRAFT SECTION ${injectedCopy}`,
+        `CRAFT BODY ${injectedCopy}`,
+        `SKILL NAME ${injectedCopy}`,
+        `SKILL BODY ${injectedCopy}`,
+        `PLUGIN ${injectedCopy}`,
+        `STAGE ${injectedCopy}`,
+        `EXAMPLE TITLE ${injectedCopy}`,
+        `EXAMPLE BRIEF ${injectedCopy}`,
+        `TEMPLATE ${injectedCopy}`,
+        `TEMPLATE DESCRIPTION ${injectedCopy}`,
+        `<h1>${injectedCopy}</h1>`,
+      ]) {
+        expect(prompt).toContain(expected);
+      }
+      expect(prompt).toContain(':root { --copy: "Pre-Read: Read, Write, Edit, Bash, and Grep."; }');
+      expect(prompt).toContain(
+        '**Pre-flight (do this before any other tool):** read `assets/template.html`',
+      );
+      expect(prompt).not.toContain(
+        '**Pre-flight (do this before any other tool):** Read `assets/template.html`',
+      );
+      expect(prompt).toContain('Output your task list plan and then the artifact immediately.');
+      expect(prompt).not.toContain('Output your TodoWrite plan and then the artifact immediately.');
+      expect(prompt).toContain('you still plan with task list');
+      expect(prompt).not.toContain('you still plan with TodoWrite');
+    });
   });
 });
