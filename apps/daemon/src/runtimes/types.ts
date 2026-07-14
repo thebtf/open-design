@@ -1,5 +1,5 @@
 import type { ExecFileOptions } from 'node:child_process';
-import type { AgentDiagnostic, ModelMetadata } from '@open-design/contracts';
+import type { AgentDiagnostic, ExecutionProfile, ModelMetadata } from '@open-design/contracts';
 
 export type { AgentDiagnostic } from '@open-design/contracts';
 
@@ -109,6 +109,8 @@ export type RuntimeAgentDef = {
     runtimeContext?: RuntimeContext,
   ) => string[];
   streamFormat: string;
+  // Plain stdout does not necessarily mean the runtime lacks filesystem tools.
+  executionProfile?: ExecutionProfile;
   fallbackBins?: string[];
   versionProbeTimeoutMs?: number;
   helpArgs?: string[];

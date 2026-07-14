@@ -4066,7 +4066,8 @@ export async function startServer({
       mediaExecution,
       byokMediaDefaults,
       streamFormat,
-      executionProfile: executionProfileFromStreamFormat(streamFormat),
+      executionProfile:
+        getAgentDef(agentId)?.executionProfile ?? executionProfileFromStreamFormat(streamFormat),
       ...(pluginBlock ? { pluginBlock } : {}),
       ...(activeStageBlocks ? { activeStageBlocks } : {}),
       userInstructions,
@@ -5082,7 +5083,8 @@ export async function startServer({
     lifecycle.mark('prompt_build_end');
     lifecycle.mark('launch_preflight_start');
     // (model resolution + AMR concretization hoisted above the resume guard)
-    const executionProfile = executionProfileFromStreamFormat(def.streamFormat);
+    const executionProfile =
+      def.executionProfile ?? executionProfileFromStreamFormat(def.streamFormat);
     // Accumulates the agent's visible text this run so the close handler can
     // tell whether the turn ended on a clarifying question form. The
     // `od-plugin-authoring` plugin's turn-1 flow is to emit a

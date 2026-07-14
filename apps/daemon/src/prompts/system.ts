@@ -847,6 +847,8 @@ export function composeSystemPrompt({
     metadata?.kind === 'video' ||
     metadata?.kind === 'audio';
   const isSlimCharterHead = isSlimCore && !isAskModeEarly && !isMediaSurfaceEarly;
+  const resolvedExecutionProfile =
+    executionProfile ?? executionProfileFromStreamFormat(streamFormat);
 
   // Head ordering differs by variant, following prompt-caching prefix rules
   // (stable content first — see shared prompt-caching guidance):
@@ -860,25 +862,26 @@ export function composeSystemPrompt({
   // turn — with the security section reading as its first subsection, so the
   // ask document keeps the same identity-first H1 > H2 hierarchy as design
   // mode. Both blocks are static, so the swap is cache-neutral.
-  // Plain-stream (BYOK/API) slim runs put the API-mode override BEFORE the
+  // Tool-less text-artifact slim runs put the API-mode override BEFORE the
   // charter: its "every later instruction … is overridden" scope must cover
-  // the charter's TodoWrite/render instructions, which classic guaranteed by
-  // always composing the override first. Cache-neutral — plain runs use the
-  // text_artifact charter variant and form their own prefix family anyway.
+  // the charter's planning/render instructions, matching classic's authority
+  // order. Native filesystem runs keep their own capabilities and skip it.
   const parts: string[] = isSlimCharterHead
     ? [
-        ...(streamFormat === 'plain' ? [API_MODE_OVERRIDE, '\n\n---\n\n'] : []),
-        renderSlimCoreCharter(
-          executionProfile ?? executionProfileFromStreamFormat(streamFormat),
-        ),
+        ...(resolvedExecutionProfile === 'text_artifact'
+          ? [API_MODE_OVERRIDE, '\n\n---\n\n']
+          : []),
+        renderSlimCoreCharter(resolvedExecutionProfile),
         '\n\n---\n\n',
       ]
     : isSlimCore && isAskModeEarly
       ? [
-          // Ask mode on a plain stream still leads with the API override so
-          // its "overrides every rule below" scope covers the chat charter,
-          // matching classic's authority order (API before CHAT).
-          ...(streamFormat === 'plain' ? [API_MODE_OVERRIDE, '\n\n---\n\n'] : []),
+          // Ask mode on a tool-less text-artifact profile still leads with the
+          // API override so its scope covers the chat charter, matching
+          // classic's authority order (API before CHAT).
+          ...(resolvedExecutionProfile === 'text_artifact'
+            ? [API_MODE_OVERRIDE, '\n\n---\n\n']
+            : []),
           CHAT_MODE_OVERRIDE,
           '\n\n---\n\n',
           PROMPT_INJECTION_RESISTANCE,
@@ -890,8 +893,10 @@ export function composeSystemPrompt({
             // either — CHAT_MODE_OVERRIDE forbids creating media, which would
             // contradict the media-generation contract appended below as the
             // sole workflow authority. Keep classic's skeleton: API override
-            // first on plain streams, then injection resistance.
-            ...(streamFormat === 'plain' ? [API_MODE_OVERRIDE, '\n\n---\n\n'] : []),
+            // first on text-artifact profiles, then injection resistance.
+            ...(resolvedExecutionProfile === 'text_artifact'
+              ? [API_MODE_OVERRIDE, '\n\n---\n\n']
+              : []),
             PROMPT_INJECTION_RESISTANCE,
             '\n\n---\n\n',
           ]
@@ -914,12 +919,9 @@ export function composeSystemPrompt({
         : [],
   );
   const resolvedExclusiveSurface = resolveExclusiveSurface({ metadata, skillMode, skillModes });
-  const resolvedExecutionProfile =
-    executionProfile ?? executionProfileFromStreamFormat(streamFormat);
 
-  // API/BYOK mode (streamFormat === 'plain'): mirrors the same fix from
-  // `@open-design/contracts`'s composer. The daemon hits this path for
-  // any plain-stream adapter (e.g. DeepSeek), so without pinning the
+  // Tool-less text-artifact mode mirrors the API/BYOK fix from
+  // `@open-design/contracts`'s composer. Without pinning the
   // override above DISCOVERY_AND_PHILOSOPHY here too, those daemon
   // agents still emit the `<todo-list>` / `[读取 X]` pseudo-tool
   // markup described in #313. Keep the wording byte-identical to the
@@ -930,7 +932,7 @@ export function composeSystemPrompt({
   // mid-conversation only invalidates the cached suffix, not the whole prompt.
   const slimTurnVariableParts: string[] = [];
 
-  if (streamFormat === 'plain' && !isSlimCore) {
+  if (resolvedExecutionProfile === 'text_artifact' && !isSlimCore) {
     // Slim runs (charter head AND ask head) already composed this first.
     parts.push(API_MODE_OVERRIDE);
     parts.push('\n\n---\n\n');

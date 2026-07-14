@@ -79,5 +79,13 @@ describe('daemon composeSystemPrompt — API mode (#313)', () => {
       const prompt = composeSystemPrompt({ streamFormat: 'plain' });
       expect(prompt).toMatch(/<artifact>/);
     });
+
+    it('omits the API-mode override for filesystem-capable plain runtimes', () => {
+      const prompt = composeSystemPrompt({
+        streamFormat: 'plain',
+        executionProfile: 'filesystem',
+      });
+      expect(prompt).not.toMatch(/API mode — no tools available/i);
+    });
   });
 });
