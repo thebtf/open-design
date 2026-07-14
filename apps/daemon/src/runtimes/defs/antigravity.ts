@@ -234,6 +234,7 @@ export const antigravityAgentDef = {
   promptViaStdin: true,
   streamFormat: 'plain',
   executionProfile: 'filesystem',
+  promptToolVocabulary: 'native',
   installUrl: 'https://antigravity.google/cli',
   docsUrl: 'https://antigravity.google/docs/cli-overview',
 } satisfies RuntimeAgentDef;

@@ -4026,6 +4026,7 @@ export async function startServer({
       }
     }
 
+    const promptAgentDef = getAgentDef(agentId);
     const prompt = composeSystemPrompt({
       agentId,
       includeCodexImagegenOverride: false,
@@ -4067,7 +4068,8 @@ export async function startServer({
       byokMediaDefaults,
       streamFormat,
       executionProfile:
-        getAgentDef(agentId)?.executionProfile ?? executionProfileFromStreamFormat(streamFormat),
+        promptAgentDef?.executionProfile ?? executionProfileFromStreamFormat(streamFormat),
+      promptToolVocabulary: promptAgentDef?.promptToolVocabulary,
       ...(pluginBlock ? { pluginBlock } : {}),
       ...(activeStageBlocks ? { activeStageBlocks } : {}),
       userInstructions,

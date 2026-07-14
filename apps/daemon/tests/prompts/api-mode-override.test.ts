@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { composeSystemPrompt } from '../../src/prompts/system.js';
+import { antigravityAgentDef } from '../../src/runtimes/defs/antigravity.js';
 
 /**
  * Daemon-side mirror of the API-mode override fix for #313.
@@ -86,6 +87,31 @@ describe('daemon composeSystemPrompt — API mode (#313)', () => {
         executionProfile: 'filesystem',
       });
       expect(prompt).not.toMatch(/API mode — no tools available/i);
+    });
+
+    it('uses native tool vocabulary for the Antigravity filesystem path', () => {
+      const prompt = composeSystemPrompt({
+        streamFormat: antigravityAgentDef.streamFormat,
+        executionProfile: antigravityAgentDef.executionProfile,
+        promptToolVocabulary: antigravityAgentDef.promptToolVocabulary,
+      });
+      expect(prompt).not.toMatch(/API mode — no tools available/i);
+      for (const toolName of [
+        'TodoWrite',
+        'Read',
+        'Write',
+        'Edit',
+        'Bash',
+        'Glob',
+        'Grep',
+        'WebFetch',
+        'WebSearch',
+      ]) {
+        expect(prompt).not.toMatch(new RegExp(`\\b${toolName}\\b`));
+      }
+      expect(prompt).toContain('filesystem-backed project');
+      expect(prompt).toContain("runtime's native tool-call interface");
+      expect(prompt).toContain('This runtime owns its tool names');
     });
   });
 });

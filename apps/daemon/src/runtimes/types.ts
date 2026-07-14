@@ -95,6 +95,8 @@ export type RuntimePromptBudgetError = {
   limit: number;
 };
 
+export type RuntimePromptToolVocabulary = 'open-design' | 'native';
+
 export type RuntimeAgentDef = {
   id: string;
   name: string;
@@ -111,6 +113,8 @@ export type RuntimeAgentDef = {
   streamFormat: string;
   // Plain stdout does not necessarily mean the runtime lacks filesystem tools.
   executionProfile?: ExecutionProfile;
+  // Native-tool CLIs own their tool names; avoid OD-managed tool tokens in prompts.
+  promptToolVocabulary?: RuntimePromptToolVocabulary;
   fallbackBins?: string[];
   versionProbeTimeoutMs?: number;
   helpArgs?: string[];

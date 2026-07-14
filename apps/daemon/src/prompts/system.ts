@@ -50,6 +50,7 @@ import {
   type MediaExecutionPolicy,
   type MediaSurface,
 } from '@open-design/contracts';
+import type { RuntimePromptToolVocabulary } from '../runtimes/types.js';
 
 // Prepended first in every composed prompt so it wins precedence over all
 // later sections, including skill bodies and user/project instructions.
@@ -631,6 +632,37 @@ function renderDesignSystemImportModeGuidance(
   return undefined;
 }
 
+const NATIVE_TOOL_VOCABULARY_OVERRIDE = `# Native runtime tools (read first — overrides named-tool instructions below)
+
+This runtime owns its tool names and exposes its own filesystem and shell capabilities. Treat every later instruction to inspect, create, change, search, or validate project files as an outcome to complete with whatever native capabilities are available. Treat planning and progress instructions the same way: use a native task-list feature when one exists; otherwise keep a concise prose plan and continue.
+
+Never emit, simulate, or narrate a tool call. The Open Design host only needs the resulting project files, progress text, and final summary.`;
+
+const OPEN_DESIGN_TOOL_NAME_REPLACEMENTS = {
+  TodoWrite: 'task list',
+  WebFetch: 'web fetch',
+  WebSearch: 'web search',
+  Read: 'read',
+  Write: 'write',
+  Edit: 'edit',
+  Bash: 'shell',
+  Glob: 'file search',
+  Grep: 'text search',
+} as const;
+
+const OPEN_DESIGN_TOOL_NAME_PATTERN =
+  /\b(?:TodoWrite|WebFetch|WebSearch|Read|Write|Edit|Bash|Glob|Grep)\b/g;
+
+function neutralizeOpenDesignToolNames(prompt: string): string {
+  return prompt.replace(
+    OPEN_DESIGN_TOOL_NAME_PATTERN,
+    (toolName) =>
+      OPEN_DESIGN_TOOL_NAME_REPLACEMENTS[
+        toolName as keyof typeof OPEN_DESIGN_TOOL_NAME_REPLACEMENTS
+      ],
+  );
+}
+
 export interface ComposeInput {
   agentId?: string | null | undefined;
   includeCodexImagegenOverride?: boolean | undefined;
@@ -786,6 +818,8 @@ export interface ComposeInput {
   // `detectPlatformIntentSignal`). ORed with the metadata-based platform
   // gate for PLATFORM_CONTRACTS_BLOCK under slim; absent = metadata only.
   platformHintSignal?: boolean | undefined;
+  // Native-tool runtimes receive outcome-oriented instructions without OD tool names.
+  promptToolVocabulary?: RuntimePromptToolVocabulary | undefined;
 }
 
 export function composeSystemPrompt({
@@ -828,6 +862,7 @@ export function composeSystemPrompt({
   promptCoreVariant,
   mediaHintSignal,
   platformHintSignal,
+  promptToolVocabulary,
 }: ComposeInput): string {
   // Slim core collapses the discovery layer + designer charter + their tail
   // overrides into one charter document; the classic stack keeps the legacy
@@ -849,6 +884,10 @@ export function composeSystemPrompt({
   const isSlimCharterHead = isSlimCore && !isAskModeEarly && !isMediaSurfaceEarly;
   const resolvedExecutionProfile =
     executionProfile ?? executionProfileFromStreamFormat(streamFormat);
+  const nativeToolVocabularyParts =
+    promptToolVocabulary === 'native'
+      ? [NATIVE_TOOL_VOCABULARY_OVERRIDE, '\n\n---\n\n']
+      : [];
 
   // Head ordering differs by variant, following prompt-caching prefix rules
   // (stable content first — see shared prompt-caching guidance):
@@ -871,6 +910,7 @@ export function composeSystemPrompt({
         ...(resolvedExecutionProfile === 'text_artifact'
           ? [API_MODE_OVERRIDE, '\n\n---\n\n']
           : []),
+        ...nativeToolVocabularyParts,
         renderSlimCoreCharter(resolvedExecutionProfile),
         '\n\n---\n\n',
       ]
@@ -882,6 +922,7 @@ export function composeSystemPrompt({
           ...(resolvedExecutionProfile === 'text_artifact'
             ? [API_MODE_OVERRIDE, '\n\n---\n\n']
             : []),
+          ...nativeToolVocabularyParts,
           CHAT_MODE_OVERRIDE,
           '\n\n---\n\n',
           PROMPT_INJECTION_RESISTANCE,
@@ -897,10 +938,11 @@ export function composeSystemPrompt({
             ...(resolvedExecutionProfile === 'text_artifact'
               ? [API_MODE_OVERRIDE, '\n\n---\n\n']
               : []),
+            ...nativeToolVocabularyParts,
             PROMPT_INJECTION_RESISTANCE,
             '\n\n---\n\n',
           ]
-        : [PROMPT_INJECTION_RESISTANCE, '\n\n---\n\n'];
+        : [PROMPT_INJECTION_RESISTANCE, '\n\n---\n\n', ...nativeToolVocabularyParts];
   // The slim charter's plan step is deliberately generic ("use your runtime's
   // plan/todo tool, else a numbered list") so it works on codex / opencode /
   // ACP agents that have no such tool. Claude-family runs (streamFormat
@@ -1357,7 +1399,10 @@ export function composeSystemPrompt({
     "stop and ask the user a real question instead.",
   );
 
-  return parts.join('');
+  const prompt = parts.join('');
+  return promptToolVocabulary === 'native'
+    ? neutralizeOpenDesignToolNames(prompt)
+    : prompt;
 }
 
 /**

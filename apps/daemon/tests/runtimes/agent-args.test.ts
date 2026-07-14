@@ -532,6 +532,7 @@ test('antigravity pipes prompt via stdin without a prompt flag', () => {
   assert.equal(antigravity.streamFormat, 'plain');
   assert.equal(antigravity.promptViaStdin, true);
   assert.equal(antigravity.executionProfile, 'filesystem');
+  assert.equal(antigravity.promptToolVocabulary, 'native');
 
   const args = antigravity.buildArgs('write hello world', [], [], {}, {});
   assert.deepEqual(args, []);
