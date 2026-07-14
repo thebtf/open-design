@@ -133,25 +133,19 @@ describe('daemon composeSystemPrompt — API mode (#313)', () => {
       }
     });
 
-    it('preserves injected memory copy in the slim native prompt', () => {
+
+    it.each([
+      ['classic', undefined],
+      ['slim', 'slim'],
+    ] as const)(
+      'preserves injected copy while neutralizing only Open Design core instructions (%s)',
+      (_variant, promptCoreVariant) => {
       const injectedCopy = 'Pre-Read: Read, Write, Edit, Bash, and Grep.';
       const prompt = composeSystemPrompt({
         streamFormat: antigravityAgentDef.streamFormat,
         executionProfile: antigravityAgentDef.executionProfile,
         promptToolVocabulary: antigravityAgentDef.promptToolVocabulary,
-        promptCoreVariant: 'slim',
-        memoryBody: `MEMORY ${injectedCopy}`,
-      });
-
-      expect(prompt).toContain(`MEMORY ${injectedCopy}`);
-    });
-
-    it('preserves injected copy while neutralizing only Open Design core instructions', () => {
-      const injectedCopy = 'Pre-Read: Read, Write, Edit, Bash, and Grep.';
-      const prompt = composeSystemPrompt({
-        streamFormat: antigravityAgentDef.streamFormat,
-        executionProfile: antigravityAgentDef.executionProfile,
-        promptToolVocabulary: antigravityAgentDef.promptToolVocabulary,
+        promptCoreVariant,
         memoryBody: `MEMORY ${injectedCopy}`,
         userInstructions: `USER ${injectedCopy}`,
         projectInstructions: `PROJECT ${injectedCopy}`,
@@ -212,8 +206,11 @@ describe('daemon composeSystemPrompt — API mode (#313)', () => {
       );
       expect(prompt).toContain('Output your task list plan and then the artifact immediately.');
       expect(prompt).not.toContain('Output your TodoWrite plan and then the artifact immediately.');
-      expect(prompt).toContain('you still plan with task list');
-      expect(prompt).not.toContain('you still plan with TodoWrite');
-    });
+      if (promptCoreVariant !== 'slim') {
+        expect(prompt).toContain('you still plan with task list');
+        expect(prompt).not.toContain('you still plan with TodoWrite');
+      }
+      },
+    );
   });
 });

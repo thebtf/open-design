@@ -1855,6 +1855,204 @@ process.stdin.on('end', () => {
     }
   });
 
+  it('keeps Critique Theater active for plain text-artifact runtimes', async () => {
+    if (!process.env.OD_DATA_DIR) {
+      throw new Error('OD_DATA_DIR is required for text-artifact critique tests');
+    }
+
+    const projectId = `critique-text-artifact-project-${randomUUID()}`;
+    const skillId = `critique-text-artifact-${randomUUID()}`;
+    const skillDir = resolve(process.env.OD_DATA_DIR, 'skills', skillId);
+    const originalCritiqueEnabled = process.env.OD_CRITIQUE_ENABLED;
+
+    const createProjectResponse = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: projectId,
+        name: 'Text-artifact critique eligibility fixture',
+        designSystemId: 'default',
+      }),
+    });
+    expect(createProjectResponse.ok).toBe(true);
+
+    await fsp.mkdir(skillDir, { recursive: true });
+    await fsp.writeFile(
+      resolve(skillDir, 'SKILL.md'),
+      `---
+name: ${skillId}
+description: Text-artifact critique eligibility regression fixture.
+---
+
+# Text-artifact critique fixture
+
+This skill supplies the context needed to make critique eligible.
+`,
+      'utf8',
+    );
+
+    process.env.OD_CRITIQUE_ENABLED = 'true';
+
+    try {
+      await withFakeAgent(
+        'qwen',
+        `
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('1.0.0-test');
+  process.exit(0);
+}
+let prompt = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+  prompt += chunk;
+});
+process.stdin.on('end', () => {
+  if (!prompt.includes('<CRITIQUE_RUN')) {
+    process.stdout.write('missing-critique-panel\\n');
+    process.exit(0);
+  }
+  process.stdout.write([
+    '<CRITIQUE_RUN version="1" maxRounds="3" threshold="8.0" scale="10">',
+    '  <ROUND n="1">',
+    '    <PANELIST role="designer">',
+    '      <NOTES>v1</NOTES>',
+    '      <ARTIFACT mime="text/html"><![CDATA[<html><body>draft</body></html>]]></ARTIFACT>',
+    '    </PANELIST>',
+    '    <PANELIST role="critic" score="9.0"><DIM name="hierarchy" score="9">ok</DIM></PANELIST>',
+    '    <PANELIST role="brand" score="9.0"><DIM name="voice" score="9">ok</DIM></PANELIST>',
+    '    <PANELIST role="a11y" score="9.0"><DIM name="contrast" score="9">ok</DIM></PANELIST>',
+    '    <PANELIST role="copy" score="9.0"><DIM name="clarity" score="9">ok</DIM></PANELIST>',
+    '    <ROUND_END n="1" composite="9.0" must_fix="0" decision="ship">',
+    '      <REASON>Ship on round 1.</REASON>',
+    '    </ROUND_END>',
+    '  </ROUND>',
+    '  <SHIP round="1" composite="9.0" status="shipped">',
+    '    <ARTIFACT mime="text/html"><![CDATA[<html><body>final</body></html>]]></ARTIFACT>',
+    '    <SUMMARY>Text-artifact route remained critique-eligible.</SUMMARY>',
+    '  </SHIP>',
+    '</CRITIQUE_RUN>',
+  ].join('\\n') + '\\n');
+  process.exit(0);
+});
+`,
+        async () => {
+          const response = await fetch(`${baseUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agentId: 'qwen',
+              projectId,
+              designSystemId: 'default',
+              message: 'draft a text artifact with critique orchestration',
+              skillIds: [skillId],
+            }),
+          });
+          const body = await response.text();
+
+          expect(response.ok).toBe(true);
+          expect(body).toContain('event: critique.run_started');
+          expect(body).toContain('event: critique.ship');
+          expect(body).toContain('Text-artifact route remained critique-eligible.');
+          expect(body).toContain('"status":"shipped"');
+          expect(body).not.toContain('missing-critique-panel');
+        },
+      );
+    } finally {
+      if (originalCritiqueEnabled == null) {
+        delete process.env.OD_CRITIQUE_ENABLED;
+      } else {
+        process.env.OD_CRITIQUE_ENABLED = originalCritiqueEnabled;
+      }
+      await fsp.rm(skillDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips Critique Theater for plain filesystem runtimes', async () => {
+    if (!process.env.OD_DATA_DIR) {
+      throw new Error('OD_DATA_DIR is required for filesystem critique tests');
+    }
+
+    const skillId = `critique-filesystem-${randomUUID()}`;
+    const skillDir = resolve(process.env.OD_DATA_DIR, 'skills', skillId);
+    const originalCritiqueEnabled = process.env.OD_CRITIQUE_ENABLED;
+
+    await fsp.mkdir(skillDir, { recursive: true });
+    await fsp.writeFile(
+      resolve(skillDir, 'SKILL.md'),
+      `---
+name: ${skillId}
+description: Filesystem critique eligibility regression fixture.
+---
+
+# Filesystem critique fixture
+
+This skill supplies the context needed to make critique otherwise eligible.
+`,
+      'utf8',
+    );
+
+    process.env.OD_CRITIQUE_ENABLED = 'true';
+
+    try {
+      await withFakeAgent(
+        'agy',
+        `
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('1.1.1-test');
+  process.exit(0);
+}
+let prompt = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+  prompt += chunk;
+});
+process.stdin.on('end', () => {
+  const hasFilesystemHandoff =
+    prompt.includes('## Filesystem handoff') ||
+    prompt.includes('You work in a filesystem-backed project');
+  const checks = [
+    hasFilesystemHandoff ? 'filesystem-handoff-enabled' : 'missing-filesystem-handoff',
+    prompt.includes('API mode — no tools available') ? 'unexpected-api-mode' : 'api-mode-disabled-for-filesystem',
+    prompt.includes('<CRITIQUE_RUN') ? 'unexpected-critique-panel' : 'critique-panel-disabled-for-filesystem',
+  ];
+  process.stdout.write(checks.join('\\n') + '\\n');
+  process.exit(0);
+});
+`,
+        async () => {
+          const response = await fetch(`${baseUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agentId: 'antigravity',
+              designSystemId: 'default',
+              message: 'draft a filesystem artifact without critique orchestration',
+              skillIds: [skillId],
+            }),
+          });
+          const body = await response.text();
+
+          expect(response.ok).toBe(true);
+          expect(body).toContain('filesystem-handoff-enabled');
+          expect(body).toContain('critique-panel-disabled-for-filesystem');
+          expect(body).toContain('api-mode-disabled-for-filesystem');
+          expect(body).not.toContain('missing-filesystem-handoff');
+          expect(body).not.toContain('unexpected-critique-panel');
+          expect(body).not.toContain('unexpected-api-mode');
+        },
+      );
+    } finally {
+      if (originalCritiqueEnabled == null) {
+        delete process.env.OD_CRITIQUE_ENABLED;
+      } else {
+        process.env.OD_CRITIQUE_ENABLED = originalCritiqueEnabled;
+      }
+      await fsp.rm(skillDir, { recursive: true, force: true });
+    }
+  });
+
   it('preserves plugin-local and composed @-mention skills in plugin-bound runs', async () => {
     const pluginId = `plugin-local-${randomUUID()}`;
     const pluginFixtureDir = await createPluginFixture({

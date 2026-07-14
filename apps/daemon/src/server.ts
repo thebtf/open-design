@@ -3952,8 +3952,10 @@ export async function startServer({
     //
     // Non-plain adapters (claude-stream-json, copilot-stream-json,
     // json-event-stream, acp-json-rpc, pi-rpc) emit their own wrapper
-    // protocol; the v1 critique parser only understands plain stdout. The
-    // spawn path falls through to legacy generation for those, so the
+    // protocol; the v1 critique parser only understands plain stdout. Plain
+    // filesystem profiles also skip it because their canonical output is a
+    // project file, not the stdout artifact envelope the parser consumes.
+    // The spawn path falls through to legacy generation for those, so the
     // panel addendum has to be suppressed here too: otherwise the model
     // is instructed to emit Critique Theater tags that no orchestrator
     // consumes.
@@ -3967,11 +3969,17 @@ export async function startServer({
       || resolvedExclusiveSurface === 'video'
       || resolvedExclusiveSurface === 'audio';
     const isPlainAdapter = (streamFormat ?? 'plain') === 'plain';
+    const promptAgentDef = getAgentDef(agentId);
+    const promptExecutionProfile =
+      promptAgentDef?.executionProfile ?? executionProfileFromStreamFormat(streamFormat);
     const critiqueShouldRun = critiqueEnabledForRun
       && critiqueBrand !== undefined
       && critiqueSkill !== undefined
       && !isMediaSurface
-      && isPlainAdapter;
+      && isPlainAdapter
+      // Critique Theater v1 consumes stdout artifacts. Filesystem profiles
+      // write canonical project files instead, even when their stream is plain.
+      && promptExecutionProfile === 'text_artifact';
     // Only thread the critique fields when the run is actually eligible;
     // otherwise the composer's own internal eligibility check (cfg.enabled
     // && brand && skill && !isMediaSurface) might still fire on
@@ -4026,7 +4034,6 @@ export async function startServer({
       }
     }
 
-    const promptAgentDef = getAgentDef(agentId);
     const prompt = composeSystemPrompt({
       agentId,
       includeCodexImagegenOverride: false,
@@ -4067,8 +4074,7 @@ export async function startServer({
       mediaExecution,
       byokMediaDefaults,
       streamFormat,
-      executionProfile:
-        promptAgentDef?.executionProfile ?? executionProfileFromStreamFormat(streamFormat),
+      executionProfile: promptExecutionProfile,
       promptToolVocabulary: promptAgentDef?.promptToolVocabulary,
       ...(pluginBlock ? { pluginBlock } : {}),
       ...(activeStageBlocks ? { activeStageBlocks } : {}),
@@ -6479,6 +6485,46 @@ export async function startServer({
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
 
+    const deliverPromptToChildStdin = () => {
+      const stdin = child.stdin;
+      if (!writePromptToChildStdin || !stdin) return;
+
+      writePromptToChildStdin = false;
+      const promptInputFormat = def.promptInputFormat ?? 'text';
+      lifecycle.mark('model_call_start');
+      lifecycle.mark('stdin_write_start');
+      const markStdinWriteEnd = (err?: Error | null) => {
+        if (err) return;
+        lifecycle.mark('stdin_write_end');
+      };
+      if (promptInputFormat === 'stream-json') {
+        // Wrap the prompt as an Anthropic user message and write it as one
+        // JSONL line. Do NOT close stdin: claude-code keeps reading further
+        // messages until EOF, which is what lets the daemon stream more user
+        // messages into the same turn. The stdin is closed on a clean terminal
+        // turn (see applyClaudeStreamJsonRunBookkeeping) or when the child
+        // exits (run terminates, user cancels).
+        const userMessage = JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: composed }],
+          },
+        });
+        try {
+          stdin.write(`${userMessage}\n`, 'utf8', markStdinWriteEnd);
+        } catch (err) {
+          // Swallow EPIPE here for the same reason as the listener above —
+          // a fast-exiting child has already routed its failure through
+          // stderr / exit handlers.
+          if (err && err.code !== 'EPIPE') throw err;
+        }
+        run.stdinOpen = true;
+      } else {
+        stdin.end(composed, 'utf8', markStdinWriteEnd);
+      }
+    };
+
     // Reset the inactivity watchdog on every raw stdout byte so that
     // structured adapters that buffer partial lines (Codex item.completed,
     // pi-rpc session/prompt, ACP agent messages) and models that spend a
@@ -6581,13 +6627,12 @@ export async function startServer({
     });
 
     // Critique Theater branch (M0 dark launch, default disabled).
-    // Only plain-stream adapters are routed through runOrchestrator in v1.
-    // Adapters that emit structured wrappers (claude-stream-json,
-    // qoder-stream-json, copilot-stream-json, json-event-stream,
-    // acp-json-rpc, pi-rpc) fall
-    // through to the legacy single-pass code path below with a one-time
-    // stderr warning so the parser never sees wrapper bytes. Per-format
-    // decoding into the orchestrator is a v2 concern.
+    // Only plain-stream text-artifact adapters are routed through
+    // runOrchestrator in v1. Adapters that emit structured wrappers
+    // (claude-stream-json, qoder-stream-json, copilot-stream-json,
+    // json-event-stream, acp-json-rpc, pi-rpc) and plain filesystem
+    // adapters fall through to the legacy single-pass code path below.
+    // Per-format decoding and filesystem-artifact orchestration are v2 concerns.
     //
     // Use critiqueShouldRun (computed in the prompt builder) instead of
     // just the env var or the rollout resolver so the orchestrator gate
@@ -6694,6 +6739,9 @@ export async function startServer({
             resolve({ code, signal });
           });
         });
+        // Prompt-via-stdin plain adapters cannot produce the critique stream
+        // until stdin closes, so deliver before the orchestrator awaits stdout.
+        deliverPromptToChildStdin();
         try {
           const orchestratorResult = await runOrchestrator({
             runId: critiqueRunId,
@@ -7956,41 +8004,7 @@ export async function startServer({
         cleanupPromptFile();
       }
     });
-    if (writePromptToChildStdin && child.stdin) {
-      const promptInputFormat = def.promptInputFormat ?? 'text';
-      lifecycle.mark('model_call_start');
-      lifecycle.mark('stdin_write_start');
-      const markStdinWriteEnd = (err?: Error | null) => {
-        if (err) return;
-        lifecycle.mark('stdin_write_end');
-      };
-      if (promptInputFormat === 'stream-json') {
-        // Wrap the prompt as an Anthropic user message and write it as one
-        // JSONL line. Do NOT close stdin: claude-code keeps reading further
-        // messages until EOF, which is what lets the daemon stream more user
-        // messages into the same turn. The stdin is closed on a clean terminal
-        // turn (see applyClaudeStreamJsonRunBookkeeping) or when the child
-        // exits (run terminates, user cancels).
-        const userMessage = JSON.stringify({
-          type: 'user',
-          message: {
-            role: 'user',
-            content: [{ type: 'text', text: composed }],
-          },
-        });
-        try {
-          child.stdin.write(`${userMessage}\n`, 'utf8', markStdinWriteEnd);
-        } catch (err) {
-          // Swallow EPIPE here for the same reason as the listener above —
-          // a fast-exiting child has already routed its failure through
-          // stderr / exit handlers.
-          if (err && err.code !== 'EPIPE') throw err;
-        }
-        run.stdinOpen = true;
-      } else {
-        child.stdin.end(composed, 'utf8', markStdinWriteEnd);
-      }
-    }
+    deliverPromptToChildStdin();
   };
 
   orbitService.setRunHandler(async ({
