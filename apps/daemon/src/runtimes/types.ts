@@ -274,6 +274,8 @@ export type DetectedAgent = Omit<
   // shared web/CLI shape — agents pick it up by reading the runtime
   // def directly, the registry payload stays unchanged.
   | 'inactivityTimeoutMs'
+  | 'executionProfile'
+  | 'promptToolVocabulary'
   | 'authProbe'
 > & {
   models: RuntimeModelOption[];

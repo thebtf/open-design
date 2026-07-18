@@ -367,6 +367,28 @@ test('codex model picker includes current OpenAI choices in priority order', asy
   }
 });
 
+test('Antigravity detection omits execution metadata from the public record', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'od-agents-antigravity-public-metadata-'));
+  try {
+    await withEnvSnapshot(['PATH', 'OD_AGENT_HOME'], async () => {
+      const agyBin = join(dir, 'agy');
+      writeFileSync(agyBin, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "agy 1.1.1"; exit 0; fi\nexit 0\n');
+      chmodSync(agyBin, 0o755);
+      process.env.OD_AGENT_HOME = dir;
+      process.env.PATH = dir;
+
+      const agents = await detectAgents();
+      const detected = agents.find((agent) => agent.id === 'antigravity');
+
+      assert.ok(detected);
+      assert.equal(Object.hasOwn(detected, 'executionProfile'), false);
+      assert.equal(Object.hasOwn(detected, 'promptToolVocabulary'), false);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('claude probes auth status so rescans reflect CLI auth changes', async () => {
   assert.deepEqual(claude.authProbe, {
     args: ['auth', 'status'],

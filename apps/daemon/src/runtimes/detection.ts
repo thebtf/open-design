@@ -270,12 +270,12 @@ function stripFns(
   // Drop the buildArgs / listModels closures but keep declarative metadata
   // (reasoningOptions, streamFormat, name, bin, etc.). `models` is
   // populated separately by `fetchModels`, so we strip the static
-  // `fallbackModels` slot here too. `helpArgs` / `capabilityFlags` /
-  // `fallbackBins` / `maxPromptArgBytes` / `env` are probe-or-spawn-only
-  // metadata and shouldn't bleed into the API response either.
-  // `inactivityTimeoutMs` is a spawn-time hint for the chat-run watchdog
-  // and is not part of the public AgentInfo contract — strip it here so
-  // the runtime registry stays the only consumer.
+  // `fallbackModels`, execution metadata, and probe-or-spawn-only settings
+  // (`helpArgs` / `capabilityFlags` / `fallbackBins` / `maxPromptArgBytes` /
+  // `env`) shouldn't bleed into the API response either. `inactivityTimeoutMs`
+  // is a spawn-time hint for the chat-run watchdog and is not part of the
+  // public AgentInfo contract — strip it here so the runtime registry stays
+  // the only consumer.
   const {
     buildArgs,
     listModels,
@@ -287,6 +287,8 @@ function stripFns(
     versionProbeTimeoutMs,
     maxPromptArgBytes,
     env,
+    executionProfile,
+    promptToolVocabulary,
     inactivityTimeoutMs,
     authProbe,
     ...rest
